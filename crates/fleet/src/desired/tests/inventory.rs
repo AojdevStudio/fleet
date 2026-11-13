@@ -382,3 +382,58 @@ fn rollout_entries_are_parsed_and_checked() {
         assert_eq!(load_err(&with(entry)), message);
     }
 }
+
+#[test]
+fn macos_lane_layout_puts_each_runner_in_its_lane() {
+    let lanes = |root: &str, platform: &str, mode: &str, directory: &str| {
+        let label = if platform == "linux-x64" {
+            "linux-build"
+        } else {
+            "macos-build"
+        };
+        inventory_toml(&format!(
+            r#"
+[[hosts]]
+id = "m4"
+platform = "{platform}"
+ssh = "m4"
+root = "{root}"
+service_mode = "{mode}"
+labels = ["fleet", "{label}"]
+runners = [{{ name = "m4-ios", directory = "{directory}" }}]
+"#
+        ))
+    };
+    let mac = |root: &str, directory: &str| lanes(root, "darwin-arm64", "launchagent", directory);
+    for root in ["/Users/builder/actions-runners", "~/actions-runners"] {
+        let inventory = load(&mac(root, "ios/actions-runner")).unwrap();
+        let host = inventory.find_host("m4").unwrap();
+        assert_eq!(host.runner_path(&host.runners[0]), format!("{root}/ios/actions-runner"));
+    }
+    assert_eq!(
+        load_err(&mac("/Users/builder/actions-runners", "ios")),
+        "m4: runner directory must be <lane>/actions-runner under /Users/builder/actions-runners: 'ios'"
+    );
+    assert!(load_err(&mac("/Users/builder/actions-runners", "../actions-runner")).contains("<lane>/actions-runner"));
+    assert!(load_err(&mac("/Users/builder/actions-runners", "ios/other")).contains("<lane>/actions-runner"));
+    for root in [
+        "/Users/builder/actions-runners/ios",
+        "/Users/../actions-runners",
+        "/home/builder/actions-runners",
+    ] {
+        assert_eq!(
+            load_err(&mac(root, "ios/actions-runner")),
+            "m4: root must be beneath ~/gh-runners"
+        );
+    }
+    assert_eq!(
+        load_err(&lanes(
+            "~/actions-runners",
+            "linux-x64",
+            "systemd",
+            "ios/actions-runner"
+        )),
+        "m4: root must be beneath ~/gh-runners",
+        "the lane layout is macOS only"
+    );
+}
