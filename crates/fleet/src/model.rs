@@ -329,6 +329,9 @@ pub struct FleetView {
     /// runner-up central pools, when the inventory names a coordinator.
     #[serde(default)]
     pub pools: Option<crate::runner_up::PoolsView>,
+    /// Repositories moving to the central pools, from the inventory's `[[rollout]]` list.
+    #[serde(default)]
+    pub rollout: Vec<crate::rollout::RolloutRepoView>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]

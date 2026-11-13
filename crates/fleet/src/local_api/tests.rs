@@ -159,6 +159,7 @@ async fn views_carry_no_secrets() {
             "/v1/desired",
             "/v1/monitoring",
             "/v1/pools",
+            "/v1/rollout",
         ] {
             let (status, body) = call(&e, get(path)).await;
             assert_eq!(status, StatusCode::OK);
@@ -523,4 +524,39 @@ async fn plain_text_errors_keep_a_status_appropriate_code() {
             serde_json::from_slice(&axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap()).unwrap();
         assert_eq!(body["code"], code, "{path}");
     }
+}
+
+#[tokio::test]
+async fn rollout_lists_moving_and_retiring_repositories() {
+    let (_dir, e) = engine(true);
+    let (status, body) = call(&e, get("/v1/rollout")).await;
+    assert_eq!(status, StatusCode::OK);
+    let repos = |key: &str| -> Vec<String> {
+        body[key]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["repo"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(repos("repos").len(), 4);
+    assert_eq!(
+        repos("moving"),
+        ["acme-demo/ios-app", "acme-demo/infra", "acme-demo/ml"]
+    );
+    assert_eq!(
+        repos("retiring"),
+        ["acme-demo/web", "acme-demo/ios-app", "acme-demo/infra"]
+    );
+    let web = &body["repos"][0];
+    assert_eq!(
+        (web["state"].as_str(), web["safeToRetire"].as_bool()),
+        (Some("merged"), Some(true))
+    );
+    let ios = &body["repos"][1]["oldRunners"][0];
+    assert_eq!(ios["name"], "mini-02");
+    assert!(
+        ios["runnerKey"].is_string(),
+        "an old runner GitHub lists links to its runner"
+    );
 }

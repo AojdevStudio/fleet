@@ -8,6 +8,7 @@ import type { FleetSummary } from "./FleetSummary";
 import type { MachineView } from "./MachineView";
 import type { OrgStatusView } from "./OrgStatusView";
 import type { QueueView } from "./QueueView";
+import type { RolloutRepoView } from "./RolloutRepoView";
 import type { RunnerUpPoolsView } from "./RunnerUpPoolsView";
 import type { RunnerView } from "./RunnerView";
 import type { TailnetStatusView } from "./TailnetStatusView";
@@ -36,4 +37,8 @@ plan: FleetPlanStatus, orgs: Array<OrgStatusView>, tailnet: TailnetStatusView, m
 /**
  * runner-up central pools, when the inventory names a coordinator.
  */
-pools: RunnerUpPoolsView | null, };
+pools: RunnerUpPoolsView | null, 
+/**
+ * Repositories moving to the central pools, from the inventory's `[[rollout]]` list.
+ */
+rollout: Array<RolloutRepoView>, };

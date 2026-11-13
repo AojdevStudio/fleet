@@ -347,3 +347,38 @@ fn runner_up_section_names_a_posix_coordinator() {
         assert_eq!(load_err(&with(section)), message);
     }
 }
+
+#[test]
+fn rollout_entries_are_parsed_and_checked() {
+    let with = |entry: &str| format!("{}\n[[rollout]]\n{entry}", base());
+    let inventory = load(&with(
+        "repo = \"acme/web\"\nstate = \"pr-open\"\nold_runners = [\"old-1\"]",
+    ))
+    .unwrap();
+    let entry = &inventory.rollout[0];
+    assert_eq!(
+        (entry.repo.as_str(), entry.state),
+        ("acme/web", super::super::model::RolloutState::PrOpen)
+    );
+    assert_eq!((entry.old_runners.len(), entry.safe_to_retire), (1, false));
+    for (entry, message) in [
+        (
+            "repo = \"acme/web\"\nstate = \"done\"",
+            "acme/web: state must be registered, pr-open, green or merged",
+        ),
+        (
+            "repo = \"web\"\nstate = \"green\"",
+            "invalid rollout repo: 'web' (use owner/repo)",
+        ),
+        (
+            "repo = \"acme/web\"\nstate = \"green\"\nold_runners = [\"a b\"]",
+            "invalid acme/web old runner: 'a b'",
+        ),
+        (
+            "repo = \"acme/web\"\nstate = \"green\"\nsafe_to_retire = \"yes\"",
+            "safe_to_retire must be true or false",
+        ),
+    ] {
+        assert_eq!(load_err(&with(entry)), message);
+    }
+}

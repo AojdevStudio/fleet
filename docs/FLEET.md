@@ -351,3 +351,20 @@ file over the host's SSH path. On a Mac it also runs `tart list`. The overview s
 pool's places and how many are free, busy or unavailable, the waiting jobs and the running
 tart VMs. `GET /v1/pools` on the local API returns the same data. Nothing here changes the
 coordinator.
+
+## Rollout to the central pools
+
+The **Moving to central** and **Retiring** views follow each repository's move to the central
+pools. For now their data is a list you keep in the inventory:
+
+```toml
+[[rollout]]
+repo = "acme/web"
+state = "green"               # registered, pr-open, green or merged
+old_runners = ["linux-01"]    # long-lived runners the repository used before
+safe_to_retire = false        # set to true once nothing needs the old runners
+```
+
+**Moving to central** counts the repositories in each state and lists them. **Retiring**
+lists each repository's old runners with what GitHub reports for them, and whether they are
+safe to retire. `GET /v1/rollout` on the local API returns the same data. Both views only read.

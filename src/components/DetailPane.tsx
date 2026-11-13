@@ -8,6 +8,7 @@ import { IgnoredDetail } from "./details/IgnoredDetail";
 import { MachineDetail } from "./details/MachineDetail";
 import { Overview } from "./details/Overview";
 import { QueueDetail } from "./details/QueueDetail";
+import { MovingDetail, RetiringDetail } from "./details/Rollout";
 import { RunnerDetail } from "./details/RunnerDetail";
 import { Icon } from "./icons";
 import { Button, ErrorText, TimeAgo } from "./ui";
@@ -32,6 +33,8 @@ export function DetailPane({ view, selection }: { view: FleetView; selection: Se
   if (selection.kind === "overview") crumbs.push({ label: "Fleet overview" });
   if (selection.kind === "queue") crumbs.push({ label: "Queued jobs" });
   if (selection.kind === "ignored") crumbs.push({ label: "Ignored machines" });
+  if (selection.kind === "moving") crumbs.push({ label: "Moving to central" });
+  if (selection.kind === "retiring") crumbs.push({ label: "Retiring" });
   if (machine) crumbs.push({ label: machine.displayName, selection: { kind: "machine", id: machine.id } });
   if (runner) crumbs.push({ label: runner.name });
 
@@ -42,6 +45,8 @@ export function DetailPane({ view, selection }: { view: FleetView; selection: Se
     case "machine": body = machine ? <MachineDetail machine={machine} view={view} /> : null; break;
     case "runner": body = runner ? <RunnerDetail runner={runner} view={view} /> : null; break;
     case "ignored": body = <IgnoredDetail view={view} />; break;
+    case "moving": body = <MovingDetail view={view} />; break;
+    case "retiring": body = <RetiringDetail view={view} />; break;
   }
 
   return (
