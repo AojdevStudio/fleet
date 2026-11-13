@@ -39,6 +39,7 @@ pub struct Engine {
     desired_changed: tokio::sync::watch::Sender<u64>,
     desired_io: desired::DesiredIo,
     machine_source: Arc<dyn crate::machine::MachineSource>,
+    pool_source: Arc<dyn crate::runner_up::PoolSource>,
     machine_poll: tokio::sync::Mutex<()>,
     desired_refresh_gate: tokio::sync::Mutex<()>,
     doctor_gate: tokio::sync::Mutex<()>,
@@ -62,6 +63,8 @@ mod machines;
 mod monitoring;
 #[path = "engine_orgs.rs"]
 mod orgs;
+#[path = "engine_pools.rs"]
+mod pools;
 #[path = "engine_secrets.rs"]
 mod secrets;
 pub use secrets::{MemorySecrets, SecretStore};
@@ -87,6 +90,7 @@ impl Engine {
             desired_changed: tokio::sync::watch::channel(0).0,
             desired_io: desired::DesiredIo::default(),
             machine_source: Arc::new(crate::machine::remote_client()),
+            pool_source: Arc::new(crate::machine::remote_client()),
             machine_poll: tokio::sync::Mutex::new(()),
             desired_refresh_gate: tokio::sync::Mutex::new(()),
             doctor_gate: tokio::sync::Mutex::new(()),

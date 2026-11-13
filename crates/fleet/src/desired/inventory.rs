@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use toml::Value;
 
-use super::model::{Host, Inventory, LegacyRunner, Organization, Platform, Runner, ServiceMode, SshTransport};
+use super::model::{
+    Host, Inventory, LegacyRunner, Organization, Platform, Runner, RunnerUp, ServiceMode, SshTransport,
+};
 use super::py::{PurePath, repr};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -66,13 +68,34 @@ fn inventory_from_table(data: &toml::Table, environ: &HashMap<String, String>) -
         Some(_) => return err("hosts must be an array of tables"),
     };
     let repositories = strings(data, "repositories")?;
+    let runner_up = match data.get("runner_up") {
+        None => None,
+        Some(Value::Table(table)) => Some(parse_runner_up(table)?),
+        Some(_) => return err("runner_up must be a table"),
+    };
     let inventory = Inventory {
         organization,
         hosts,
         repositories,
+        runner_up,
     };
     validate_inventory(&inventory)?;
     Ok(inventory)
+}
+
+fn parse_runner_up(data: &toml::Table) -> Result<RunnerUp> {
+    let optional = |key: &str| match data.get(key) {
+        None => Ok(None),
+        Some(Value::String(s)) if !s.trim().is_empty() => Ok(Some(s.trim().to_string())),
+        Some(_) => err(format!("runner_up {key} must be a non-empty string")),
+    };
+    Ok(RunnerUp {
+        host: required_string(data, "host")?,
+        config: required_string(data, "config")?,
+        program: optional("program")?.unwrap_or_else(|| "runner-up".into()),
+        tart_host: optional("tart_host")?,
+        pools: strings(data, "pools")?,
+    })
 }
 
 fn required_string(data: &toml::Table, key: &str) -> Result<String> {
@@ -244,6 +267,9 @@ fn validate_inventory(inventory: &Inventory) -> Result<()> {
     if inventory.hosts.is_empty() {
         return err("inventory must define at least one host");
     }
+    if let Some(runner_up) = &inventory.runner_up {
+        validate_runner_up(inventory, runner_up)?;
+    }
     let mut repositories = HashSet::new();
     for repository in &inventory.repositories {
         if !safe_repository(repository) {
@@ -262,6 +288,32 @@ fn validate_inventory(inventory: &Inventory) -> Result<()> {
                 validate_legacy(host, legacy, org, &mut declared)?;
             }
         }
+    }
+    Ok(())
+}
+
+fn validate_runner_up(inventory: &Inventory, runner_up: &RunnerUp) -> Result<()> {
+    let posix_host = |id: &str, what: &str| match inventory.hosts.iter().find(|h| h.id == id) {
+        None => err(format!("runner_up {what} is not an inventory host: {}", repr(id))),
+        Some(host) if host.is_windows() => err(format!("runner_up {what} must be a macOS or Linux host")),
+        Some(host) => Ok(host),
+    };
+    posix_host(&runner_up.host, "host")?;
+    if let Some(tart_host) = &runner_up.tart_host
+        && posix_host(tart_host, "tart_host")?.platform != Platform::DarwinArm64
+    {
+        return err("runner_up tart_host must be a macOS host");
+    }
+    for (key, path) in [("config", &runner_up.config), ("program", &runner_up.program)] {
+        if has_control(path) {
+            return err(format!("runner_up {key} contains a control character"));
+        }
+    }
+    if !(runner_up.config.starts_with('/') || runner_up.config.starts_with("~/")) {
+        return err("runner_up config must be an absolute or ~/ path");
+    }
+    for pool in &runner_up.pools {
+        validate_name(pool, "runner_up pool")?;
     }
     Ok(())
 }

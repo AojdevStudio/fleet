@@ -321,3 +321,31 @@ service_mode = "systemd"
     ));
     assert_eq!(e, "invalid ci-linux label: 'bad label'");
 }
+
+#[test]
+fn runner_up_section_names_a_posix_coordinator() {
+    let with = |section: &str| format!("{section}\n{}", base());
+    let inventory = load(&with(
+        "[runner_up]\nhost = \"test\"\nconfig = \"~/.config/runner-up/config.json\"",
+    ))
+    .unwrap();
+    let runner_up = inventory.runner_up.unwrap();
+    assert_eq!((runner_up.program.as_str(), runner_up.pools.len()), ("runner-up", 0));
+    for (section, message) in [
+        (
+            "[runner_up]\nhost = \"nope\"\nconfig = \"/etc/ru.json\"",
+            "runner_up host is not an inventory host: 'nope'",
+        ),
+        (
+            "[runner_up]\nhost = \"test\"\nconfig = \"ru.json\"",
+            "runner_up config must be an absolute or ~/ path",
+        ),
+        ("[runner_up]\nhost = \"test\"", "invalid inventory structure: 'config'"),
+        (
+            "[runner_up]\nhost = \"test\"\nconfig = \"/etc/ru.json\"\npools = [\"bad pool\"]",
+            "invalid runner_up pool: 'bad pool'",
+        ),
+    ] {
+        assert_eq!(load_err(&with(section)), message);
+    }
+}

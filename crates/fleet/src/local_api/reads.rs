@@ -51,6 +51,11 @@ pub(super) async fn fleet(Extension(s): Extension<Snapshot>, Parameters(_): Para
         .map(Json)
         .map_err(|e| ApiError::internal(e.to_string()))
 }
+/// runner-up central pools; `null` when the inventory names no coordinator.
+pub(super) async fn pools(Extension(s): Extension<Snapshot>, Parameters(_): Parameters<NoQuery>) -> Json<Value> {
+    Json(json!({ "pools": s.view.pools }))
+}
+
 pub(super) async fn monitoring(
     Extension(s): Extension<Snapshot>,
     Parameters(q): Parameters<queries::MachineFilter>,

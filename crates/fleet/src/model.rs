@@ -169,6 +169,16 @@ pub struct Observations {
     pub github: BTreeMap<String, OrgObservation>,
     /// Keyed by [`inventory_machine_key`] or [`tailnet_machine_key`].
     pub machines: BTreeMap<String, MachineObservation>,
+    /// The runner-up coordinator, when the inventory names one.
+    pub pools: Option<PoolsObservation>,
+}
+
+/// The latest runner-up read, kept beside the newest error.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PoolsObservation {
+    pub runner_up: crate::desired::model::RunnerUp,
+    pub report: Option<Timed<crate::runner_up::PoolsReport>>,
+    pub error: Option<Timed<String>>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -316,6 +326,9 @@ pub struct FleetView {
     pub orgs: Vec<OrgStatusView>,
     pub tailnet: TailnetStatusView,
     pub monitoring: crate::monitoring::FleetMonitoring,
+    /// runner-up central pools, when the inventory names a coordinator.
+    #[serde(default)]
+    pub pools: Option<crate::runner_up::PoolsView>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]

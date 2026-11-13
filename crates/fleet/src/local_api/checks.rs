@@ -215,7 +215,8 @@ async fn run(engine: Arc<Engine>, request: CheckRequest, host: Option<String>) -
                 tokio::join!(
                     engine.poll_machines_wait(None),
                     engine.poll_github_runners(),
-                    engine.poll_github_jobs()
+                    engine.poll_github_jobs(),
+                    engine.poll_pools()
                 );
             }
         }

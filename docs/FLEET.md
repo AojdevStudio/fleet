@@ -337,3 +337,24 @@ There's no recursive cleanup. Remove old directories by explicit path, separatel
 | GUI E2E fails with focus or visibility errors on a Mac | A locked desktop fails every GUI test: check `IOConsoleUsers`' `CGSSessionScreenIsLocked`. |
 | "GitHub name exists but exact local directory is missing" | Resolve the collision by hand. Apply never uses `--replace`. |
 | Local `.runner` exists but GitHub has no runner | Inspect before re-registering. Apply won't tear it down. |
+
+## Central pools (runner-up)
+
+The app can show [runner-up](https://github.com/kunchenguid/runner-up) central pools beside
+the long-lived runners. Name the coordinator in the inventory:
+
+```toml
+[runner_up]
+host = "coordinator"                         # the inventory host that runs runner-up
+config = "~/.config/runner-up/config.json"   # its config file on that host
+pools = ["central-linux", "central-linux-kvm", "central-macos"]  # optional; all pools when left out
+# program = "runner-up"                      # optional
+# tart_host = "mac"                          # optional; the Mac whose tart VMs are listed
+```
+
+Write `[runner_up]` before the first `[[hosts]]` entry. The coordinator host can have no
+runners. Every minute the app runs `runner-up status --config <config>` and reads the config
+file over the host's SSH path. On a Mac it also runs `tart list`. The overview shows each
+pool's places and how many are free, busy or unavailable, the waiting jobs and the running
+tart VMs. `GET /v1/pools` on the local API returns the same data. Nothing here changes the
+coordinator.

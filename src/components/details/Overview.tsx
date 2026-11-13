@@ -15,6 +15,7 @@ import { MachineTable } from "./MachineTable";
 import { QueueList } from "./QueueDetail";
 import { ActiveAlerts, EventTimeline, MonitoringError } from "./Monitoring";
 import { RunnerChecks } from "./RunnerChecks";
+import { Pools } from "./Pools";
 import { Unlinked } from "./Unlinked";
 import { Welcome } from "./Welcome";
 
@@ -82,6 +83,7 @@ export function Overview({ view }: { view: FleetView }) {
         <MachineTable machines={machines} />
       </Section>
 
+      {view.pools && <Pools pools={view.pools} />}
       {view.unmatchedRunners.length > 0 && <Unlinked view={view} />}
       <EventTimeline key={view.source} view={view} latest={view.monitoring.events} />
       {(view.plan.organization || view.plan.controlChecks.length > 0) && (
