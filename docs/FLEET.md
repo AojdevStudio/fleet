@@ -372,4 +372,5 @@ safe_to_retire = false        # set to true once nothing needs the old runners
 
 **Moving to central** counts the repositories in each state and lists them. **Retiring**
 lists each repository's old runners with what GitHub reports for them, and whether they are
-safe to retire. `GET /v1/rollout` on the local API returns the same data. Both views only read.
+safe to retire. An old runner is linked only when exactly one runner of the repository's owner
+has that name. A runner of another account, or a name two runners share, stays unlinked. `GET /v1/rollout` on the local API returns the same data. Both views only read.
