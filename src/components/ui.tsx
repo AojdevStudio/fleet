@@ -141,6 +141,7 @@ export function Button({
   disabled,
   type = "button",
   small,
+  title,
   "aria-label": ariaLabel,
 }: {
   children: ReactNode;
@@ -149,6 +150,8 @@ export function Button({
   disabled?: boolean;
   type?: "button" | "submit";
   small?: boolean;
+  /** Tooltip, such as why the button is disabled. */
+  title?: string;
   "aria-label"?: string;
 }) {
   const base = `inline-flex shrink-0 items-center justify-center gap-1.5 rounded-[6px] font-medium whitespace-nowrap transition-colors disabled:opacity-50 ${
@@ -161,7 +164,7 @@ export function Button({
     ghost: "text-ink-2 hover:bg-hover hover:text-ink",
   };
   return (
-    <button type={type} className={`${base} ${styles[variant]}`} onClick={onClick} disabled={disabled} aria-label={ariaLabel}>
+    <button type={type} className={`${base} ${styles[variant]}`} onClick={onClick} disabled={disabled} title={title} aria-label={ariaLabel}>
       {children}
     </button>
   );

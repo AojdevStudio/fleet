@@ -61,6 +61,8 @@ pub(super) enum ErrorCode {
     InvalidRequest,
     MethodNotAllowed,
     Forbidden,
+    /// Apply, Retire and Decommission are turned off.
+    ActionDisabled,
     DemoMode,
     UnsupportedTarget,
     Busy,
@@ -167,11 +169,18 @@ pub(super) async fn request(State(state): State<ApiState>, mut req: Request<Body
         )
         .into_response();
     }
-    if req.method() != Method::GET
-        && req.method() != Method::HEAD
-        && !(req.method() == Method::POST && req.uri().path() == "/v1/checks")
-    {
-        return ApiError::method_not_allowed().into_response();
+    if req.method() != Method::GET && req.method() != Method::HEAD {
+        if let Some(action) = disabled_action(req.uri().path()) {
+            return ApiError::new(
+                StatusCode::FORBIDDEN,
+                ErrorCode::ActionDisabled,
+                crate::engine::desired::disabled_message(action),
+            )
+            .into_response();
+        }
+        if !(req.method() == Method::POST && req.uri().path() == "/v1/checks") {
+            return ApiError::method_not_allowed().into_response();
+        }
     }
     let snapshot = match Snapshot::read(state.engine).await {
         Ok(s) => s,
@@ -256,4 +265,15 @@ fn loopback_host(headers: &HeaderMap) -> bool {
         return false;
     };
     matches!(authority.host(), "127.0.0.1" | "localhost" | "[::1]")
+}
+
+/// A request to apply, retire or decommission names the action in its path,
+/// such as `POST /v1/apply` or `POST /v1/runners/{key}/retire`.
+fn disabled_action(path: &str) -> Option<&'static str> {
+    path.split('/').find_map(|segment| match segment {
+        "apply" => Some("Apply"),
+        "retire" => Some("Retire"),
+        "decommission" => Some("Decommission"),
+        _ => None,
+    })
 }

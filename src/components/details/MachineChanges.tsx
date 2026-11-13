@@ -1,11 +1,11 @@
 import type { FleetPlanItem } from "../../bindings/FleetPlanItem";
 import type { MachineDesired } from "../../bindings/MachineDesired";
-import { changes } from "../../lib/desired";
+import { changeOffReason, changes } from "../../lib/desired";
 import { Button, Callout, Card, Section } from "../ui";
 import { PlanItems, type Change } from "./changes";
 
 /** What differs from the inventory, each with the action that fixes it. */
-export function MachineChanges({ d, change, live }: { d: MachineDesired; change: Change; live: boolean }) {
+export function MachineChanges({ d, change }: { d: MachineDesired; change: Change; live: boolean }) {
   const items = changes(d.plan);
   if (d.error) {
     return (
@@ -24,7 +24,7 @@ export function MachineChanges({ d, change, live }: { d: MachineDesired; change:
       const runner = replacement(i.runner);
       return (
         runner && (
-          <Button small variant="danger" disabled={!live} onClick={() => change.open({ kind: "retire", host: d.host.id, runner })}>
+          <Button small variant="danger" disabled title={changeOffReason("retire")} onClick={() => change.open({ kind: "retire", host: d.host.id, runner })}>
             Retire…
           </Button>
         )
@@ -32,7 +32,7 @@ export function MachineChanges({ d, change, live }: { d: MachineDesired; change:
     }
     if (i.action === "decommission") {
       return (
-        <Button small variant="danger" disabled={!live} onClick={() => change.open({ kind: "decommission", host: d.host.id, runner: i.runner })}>
+        <Button small variant="danger" disabled title={changeOffReason("decommission")} onClick={() => change.open({ kind: "decommission", host: d.host.id, runner: i.runner })}>
           Decommission…
         </Button>
       );
@@ -45,7 +45,7 @@ export function MachineChanges({ d, change, live }: { d: MachineDesired; change:
       count={items.length}
       action={
         applies && (
-          <Button small variant="primary" disabled={!live} onClick={() => change.open({ kind: "apply", host: d.host.id, runner: null })}>
+          <Button small variant="primary" disabled title={changeOffReason("apply")} onClick={() => change.open({ kind: "apply", host: d.host.id, runner: null })}>
             Review apply…
           </Button>
         )
@@ -54,6 +54,9 @@ export function MachineChanges({ d, change, live }: { d: MachineDesired; change:
       <Card className="px-4 py-3">
         <PlanItems items={items} action={action} />
       </Card>
+      <p className="mt-2 text-[12px] text-ink-2">
+        Apply, Retire and Decommission are turned off until the desired-state rewrite. The dashboard only reads runners for now.
+      </p>
     </Section>
   );
 }

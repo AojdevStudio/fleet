@@ -73,6 +73,23 @@ impl Default for DesiredIo {
 
 const CHANGE_RUNNING: &str = "Another change is running; wait for it to finish.";
 
+/// Apply, Retire and Decommission are off until the desired-state rewrite.
+/// The app, the local API and this engine all refuse them; Restart still works.
+pub fn change_disabled(request: &ChangeRequest) -> Option<String> {
+    let action = match request {
+        ChangeRequest::Apply { .. } => "Apply",
+        ChangeRequest::Retire { .. } => "Retire",
+        ChangeRequest::Decommission { .. } => "Decommission",
+        ChangeRequest::Restart { .. } => return None,
+    };
+    Some(disabled_message(action))
+}
+
+/// Why a change kind is turned off, as shown to the user.
+pub fn disabled_message(action: &str) -> String {
+    format!("{action} is turned off until the desired-state rewrite. The dashboard only reads runners for now.")
+}
+
 /// Releases the change slot `take_review` reserved, however the execute ends.
 struct Starting<'a>(&'a Engine);
 
@@ -97,6 +114,21 @@ impl Engine {
     pub fn with_desired_io(mut self, io: DesiredIo) -> Self {
         self.desired_io = io;
         self
+    }
+
+    /// Lets tests exercise the guarded Apply, Retire and Decommission paths
+    /// against fakes. The app is built without `test-support`, so it can't call this.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn allow_disabled_changes_for_tests(mut self) -> Self {
+        self.disabled_changes_allowed = true;
+        self
+    }
+
+    fn refuse_disabled(&self, request: &ChangeRequest) -> Result<(), EngineError> {
+        match change_disabled(request) {
+            Some(message) if !self.disabled_changes_allowed => Err(EngineError::Disabled(message)),
+            _ => Ok(()),
+        }
     }
 
     pub fn inventory_path(&self) -> PathBuf {
@@ -284,6 +316,7 @@ impl Engine {
 
     /// Read-only: re-reads the host and builds the review for one change.
     pub async fn desired_review(self: &Arc<Self>, request: ChangeRequest) -> Result<ReviewView, EngineError> {
+        self.refuse_disabled(&request)?;
         self.ensure_live_desired()?;
         let inventory = self.read_inventory().await?;
         let host_id = request_host(&request, &inventory)?;
@@ -369,6 +402,7 @@ impl Engine {
         let review = store.take_review(review_id).ok_or_else(|| {
             EngineError::NotFound("That review expired or was already used; review the change again.".into())
         })?;
+        self.refuse_disabled(&review.view.request)?;
         if !review.view.ready {
             return Err(EngineError::Invalid("This change has blockers and can't run.".into()));
         }

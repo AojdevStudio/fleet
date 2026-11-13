@@ -103,6 +103,17 @@ interface RowAction {
   label: string;
   request: ChangeRequest;
   danger?: boolean;
+  /** Why the action is turned off; the button shows disabled with this reason. */
+  disabled?: string;
+}
+
+/**
+ * Apply, Retire and Decommission stay off until the desired-state rewrite. The engine and the
+ * local API refuse them too, with the same words. Restart still works.
+ */
+export function changeOffReason(kind: ChangeRequest["kind"]): string | undefined {
+  const action = { apply: "Apply", retire: "Retire", decommission: "Decommission", restart: null }[kind];
+  return action ? `${action} is turned off until the desired-state rewrite. The dashboard only reads runners for now.` : undefined;
 }
 
 /** Changes offered for one runner, each opening a review first. */
@@ -113,13 +124,13 @@ export function runnerActions(r: RunnerView): RowAction[] {
   const items = d.plan;
   const apply = items.find((i) => !i.blocked && i.apply);
   if (d.role.kind === "declared" && apply) {
-    out.push({ label: actionLabel(apply.action), request: { kind: "apply", host: d.hostId, runner: r.name } });
+    out.push({ label: actionLabel(apply.action), request: { kind: "apply", host: d.hostId, runner: r.name }, disabled: changeOffReason("apply") });
   }
   if (d.role.kind === "legacy" && items.some((i) => i.action === "retire-legacy" && !i.blocked)) {
-    out.push({ label: "Retire", request: { kind: "retire", host: d.hostId, runner: d.role.replacedBy }, danger: true });
+    out.push({ label: "Retire", request: { kind: "retire", host: d.hostId, runner: d.role.replacedBy }, danger: true, disabled: changeOffReason("retire") });
   }
   if (d.role.kind === "decommission" && items.some((i) => i.action === "decommission" && !i.blocked)) {
-    out.push({ label: "Decommission", request: { kind: "decommission", host: d.hostId, runner: r.name }, danger: true });
+    out.push({ label: "Decommission", request: { kind: "decommission", host: d.hostId, runner: r.name }, danger: true, disabled: changeOffReason("decommission") });
   }
   // Idle both at the last check and now: a review re-checks, but don't offer it for a busy runner.
   const idle = d.status?.busy === false && r.activity.kind !== "busy";

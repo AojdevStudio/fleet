@@ -25,6 +25,9 @@ pub enum EngineError {
     Github(#[from] GithubError),
     #[error("Couldn't save: {0}")]
     Storage(String),
+    /// A change kind that is turned off: see [`desired::change_disabled`].
+    #[error("{0}")]
+    Disabled(String),
 }
 
 pub struct Engine {
@@ -44,6 +47,8 @@ pub struct Engine {
     desired_refresh_gate: tokio::sync::Mutex<()>,
     doctor_gate: tokio::sync::Mutex<()>,
     monitoring: Mutex<crate::monitoring::MonitorStore>,
+    /// Lets tests drive Apply, Retire and Decommission. Only test builds can set it.
+    disabled_changes_allowed: bool,
 }
 
 impl std::fmt::Debug for Engine {
@@ -95,6 +100,7 @@ impl Engine {
             desired_refresh_gate: tokio::sync::Mutex::new(()),
             doctor_gate: tokio::sync::Mutex::new(()),
             monitoring: Mutex::new(monitoring),
+            disabled_changes_allowed: false,
         })
     }
 

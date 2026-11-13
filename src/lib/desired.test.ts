@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { driftText, groupByStem, labelDiff, machineNeedsChanges, requestTargetsMachine, requestTargetsRunner, roleLabel, runnerActions } from "./desired";
+import { changeOffReason, driftText, groupByStem, labelDiff, machineNeedsChanges, requestTargetsMachine, requestTargetsRunner, roleLabel, runnerActions } from "./desired";
 import { previewFleet } from "./preview";
 
 const view = previewFleet();
@@ -7,16 +7,23 @@ const machine = (name: string) => view.machines.find((m) => m.displayName === na
 const runner = (name: string) => view.machines.flatMap((m) => m.runners).find((r) => r.name === name)!;
 
 describe("runnerActions", () => {
+  it("turns off apply, retire and decommission with a reason, but not restart", () => {
+    expect(changeOffReason("apply")).toBe("Apply is turned off until the desired-state rewrite. The dashboard only reads runners for now.");
+    expect(changeOffReason("decommission")).toContain("Decommission is turned off");
+    expect(changeOffReason("restart")).toBeUndefined();
+    expect(runnerActions(runner("Studio-Old-2")).find((a) => a.label === "Restart")?.disabled).toBeUndefined();
+  });
+
   it("offers retire on the legacy runner, naming its replacement", () => {
     expect(runnerActions(runner("Studio-Old-2"))).toEqual([
-      { label: "Retire", request: { kind: "retire", host: "studio", runner: "studio-2" }, danger: true },
+      { label: "Retire", request: { kind: "retire", host: "studio", runner: "studio-2" }, danger: true, disabled: changeOffReason("retire") },
       { label: "Restart", request: { kind: "restart", runner: "Studio-Old-2" } },
     ]);
   });
 
   it("offers the apply step for drift and never restarts a busy runner", () => {
     expect(runnerActions(runner("mini-02"))).toEqual([
-      { label: "Fix labels", request: { kind: "apply", host: "mac-mini-02", runner: "mini-02" } },
+      { label: "Fix labels", request: { kind: "apply", host: "mac-mini-02", runner: "mini-02" }, disabled: changeOffReason("apply") },
     ]);
     expect(runnerActions(runner("studio-1"))).toEqual([]);
   });
@@ -38,7 +45,7 @@ describe("runnerActions", () => {
     expect(runnerActions(checked)).toEqual([]);
     item.blocked = false;
     expect(runnerActions(checked)).toEqual([
-      { label: "Start service", request: { kind: "apply", host: "mac-mini-03", runner: "mini-03-01" } },
+      { label: "Start service", request: { kind: "apply", host: "mac-mini-03", runner: "mini-03-01" }, disabled: changeOffReason("apply") },
     ]);
     item.apply = false;
     expect(runnerActions(checked)).toEqual([]);
@@ -48,7 +55,7 @@ describe("runnerActions", () => {
     const checked = structuredClone(runner("mini-03-01"));
     checked.desired!.plan = [{ ...checked.desired!.plan[0], action: "install", apply: true, blocked: false }];
     expect(runnerActions(checked)).toEqual([
-      { label: "Install", request: { kind: "apply", host: "mac-mini-03", runner: "mini-03-01" } },
+      { label: "Install", request: { kind: "apply", host: "mac-mini-03", runner: "mini-03-01" }, disabled: changeOffReason("apply") },
     ]);
     // An SSH failure cannot establish that the runner is missing.
     expect(runnerActions(runner("mini-03-01"))).toEqual([]);

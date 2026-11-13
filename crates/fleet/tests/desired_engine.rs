@@ -64,6 +64,11 @@ struct Fixture {
 }
 
 fn fixture(inventory: &str) -> Fixture {
+    // These tests cover the guarded change paths that stay off in the app.
+    fixture_with(inventory, true)
+}
+
+fn fixture_with(inventory: &str, allow_disabled_changes: bool) -> Fixture {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("fleet.toml");
     std::fs::write(&path, inventory).unwrap();
@@ -71,28 +76,30 @@ fn fixture(inventory: &str) -> Fixture {
     let ssh: Arc<Mutex<SshConfig>> = Arc::default();
     let boundaries = fleet.clone();
     let resolver = ssh.clone();
-    let engine = Engine::load(tmp.path().join("config.json"), Arc::new(MemorySecrets::default()))
-        .unwrap()
-        .with_desired_io(DesiredIo {
-            boundaries: Arc::new(move |_| (Arc::new(boundaries.clone()) as _, Arc::new(boundaries.clone()) as _)),
-            sleep: no_sleep,
-            resolve_ssh_transport: Arc::new(move |target: &str| {
-                let ssh = resolver.locked();
-                if let Some(config) = ssh.configs.get(target) {
-                    return SshTransportIdentity::from_config(config);
+    let mut engine = Engine::load(tmp.path().join("config.json"), Arc::new(MemorySecrets::default())).unwrap();
+    if allow_disabled_changes {
+        engine = engine.allow_disabled_changes_for_tests();
+    }
+    let engine = engine.with_desired_io(DesiredIo {
+        boundaries: Arc::new(move |_| (Arc::new(boundaries.clone()) as _, Arc::new(boundaries.clone()) as _)),
+        sleep: no_sleep,
+        resolve_ssh_transport: Arc::new(move |target: &str| {
+            let ssh = resolver.locked();
+            if let Some(config) = ssh.configs.get(target) {
+                return SshTransportIdentity::from_config(config);
+            }
+            let hostname = ssh.hosts.get(target).map(String::as_str).unwrap_or_else(|| {
+                if target == "mini" {
+                    "mac-mini.example.ts.net"
+                } else {
+                    target
                 }
-                let hostname = ssh.hosts.get(target).map(String::as_str).unwrap_or_else(|| {
-                    if target == "mini" {
-                        "mac-mini.example.ts.net"
-                    } else {
-                        target
-                    }
-                });
-                SshTransportIdentity::from_config(&format!(
-                    "hostname {hostname}\nport 22\nuser fake-ci\nproxycommand none\nproxyjump none\n"
-                ))
-            }),
-        });
+            });
+            SshTransportIdentity::from_config(&format!(
+                "hostname {hostname}\nport 22\nuser fake-ci\nproxycommand none\nproxyjump none\n"
+            ))
+        }),
+    });
     engine.set_inventory_path(Some(path.display().to_string())).unwrap();
     Fixture {
         _tmp: tmp,
@@ -1018,4 +1025,72 @@ async fn http_inventory_doctor_and_logs_use_read_only_boundaries_and_report_fail
     assert_eq!(check["status"], "failed");
     assert_eq!(check["error"]["code"], "check_failed");
     assert!(check["result"].is_null());
+}
+
+#[tokio::test]
+async fn apply_retire_and_decommission_are_turned_off() {
+    let f = fixture_with(INVENTORY, false);
+    healthy(&f.fleet, "mini-01", &["fleet", "macos-build"]);
+    for (request, action) in [
+        (
+            ChangeRequest::Apply {
+                host: "mini".into(),
+                runner: None,
+            },
+            "Apply",
+        ),
+        (
+            ChangeRequest::Retire {
+                host: "mini".into(),
+                runner: "mini-01".into(),
+            },
+            "Retire",
+        ),
+        (
+            ChangeRequest::Decommission {
+                host: "mini".into(),
+                runner: "mini-01".into(),
+            },
+            "Decommission",
+        ),
+    ] {
+        let error = f.engine.desired_review(request).await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "{action} is turned off until the desired-state rewrite. The dashboard only reads runners for now."
+            )
+        );
+    }
+    assert_no_changes(&f);
+
+    let app = fleet::local_api::router(f.engine.clone());
+    for path in ["/v1/apply", "/v1/retire", "/v1/runners/mini-01/decommission"] {
+        let request = axum::http::Request::post(path)
+            .header("host", "localhost")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let (status, body) = api_call(&app, request).await;
+        assert_eq!(status, axum::http::StatusCode::FORBIDDEN, "{path}");
+        assert_eq!(body["code"], "action_disabled");
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap()
+                .contains("turned off until the desired-state rewrite")
+        );
+    }
+    let (status, _) = api_call(&app, api_get("/v1/runners/mini-01")).await;
+    assert_ne!(status, axum::http::StatusCode::FORBIDDEN, "reads stay open");
+    assert_no_changes(&f);
+
+    // Restart is not one of them.
+    assert!(
+        f.engine
+            .desired_review(ChangeRequest::Restart {
+                runner: "mini-01".into()
+            })
+            .await
+            .is_ok()
+    );
 }

@@ -9,6 +9,11 @@ rules and guards come from Runner Fleet's `bin/fleet` CLI.
 The fleet uses long-lived native services: no Docker, Kubernetes, ARC, Ansible or VMs.
 GitHub's runner auto-update stays on.
 
+> **Turned off for now:** Apply, Retire and Decommission are disabled until the desired-state
+> rewrite. The app shows them disabled with the reason, the engine refuses them, and the local
+> API answers any request for them with 403 and the code `action_disabled`. Restart still works.
+> The rest of this guide describes how they behave once they come back.
+
 > Checking (status, plan, runner checks, logs) only reads. **Apply** never retires an existing
 > runner. **Retire** needs an online, idle, active replacement and the phrase typed, and keeps
 > the old directory. **Decommission** needs `decommission = true` in the inventory first, and

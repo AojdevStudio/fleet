@@ -43,10 +43,11 @@ export function RunnerDetail({ runner: r, view }: { runner: RunnerView; view: Fl
           {machine ? <button className="underline-offset-2 hover:text-ink hover:underline" onClick={() => select({ kind: "machine", id: machine.id })}>{machine.displayName}</button> : "Not linked to a machine"}
           {r.org && <> · <CopyValue value={r.org} label="Organization" /></>}{gh && ` · ${gh.os}`}
         </>}
-        actions={actions.length > 0 && actions.map((a) => <Button key={a.label} small variant={a.danger ? "danger" : "default"} disabled={busy || change.preparing} onClick={() => change.open(a.request)}>
+        actions={actions.length > 0 && actions.map((a) => <Button key={a.label} small variant={a.danger ? "danger" : "default"} disabled={busy || change.preparing || !!a.disabled} title={a.disabled} onClick={() => change.open(a.request)}>
           {a.request.kind === "restart" && <Icon name="refresh" />}{a.label}…
         </Button>)}
       />
+      {actions.some((a) => a.disabled) && <p className="mt-2 text-[12px] text-ink-2">{actions.find((a) => a.disabled)?.disabled}</p>}
       {op && requestTargetsRunner(op.request, r) && <OperationCard op={op} />}
       <ChangePanel change={change} busy={busy} />
 
