@@ -59,6 +59,7 @@ function OrgRow({ org, status }: { org: OrgConfig; status?: OrgStatusView }) {
     <Card className="px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <CopyValue value={org.login} label="Organization" className="font-medium" truncate />
+        {org.kind === "user" && <Pill tone="muted">Personal account</Pill>}
         {status?.error ? <Pill tone="bad">Error</Pill> : status?.runnersAsOf ? <Pill tone="ok">Connected</Pill> : <Pill tone="muted">Pending</Pill>}
         <div className="ml-auto flex flex-wrap gap-1">
           {org.auth === "token" ? (
@@ -244,7 +245,7 @@ function AddOrg() {
           add.mutate();
         }}
       >
-        <Field label="Organization">
+        <Field label="Organization or personal account">
           <input className="input" placeholder="acme" value={login} onChange={(e) => setLogin(e.target.value)} autoFocus />
         </Field>
         <Field label="Sign in">
@@ -263,7 +264,9 @@ function AddOrg() {
                 <input className="input" type="password" placeholder="github_pat_…" value={token} onChange={(e) => setToken(e.target.value)} />
                 <p className="text-[11.5px] text-ink-2">
                   Fine-grained token with this organization as resource owner: organization permission{" "}
-                  <b>Self-hosted runners: Read</b> and repository permission <b>Actions: Read</b>. Stored in your Keychain.
+                  <b>Self-hosted runners: Read</b> and repository permission <b>Actions: Read</b>. For a personal account, use
+                  the repository permissions <b>Administration: Read</b> and <b>Actions: Read</b> instead. Stored in your
+                  Keychain.
                 </p>
               </>
             )}

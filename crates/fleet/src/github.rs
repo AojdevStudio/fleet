@@ -1,7 +1,9 @@
 //! Read-only GitHub REST client for org runners and in-flight jobs.
 //!
 //! - Runners: `GET /orgs/{org}/actions/runners` (fine-grained PAT: org
-//!   "Self-hosted runners: read"; classic: `admin:org`).
+//!   "Self-hosted runners: read"; classic: `admin:org`). A personal account has
+//!   no organization runners, so its runners are listed per repository with
+//!   `GET /repos/{o}/{r}/actions/runners` (repo "Administration: read"; classic: `repo`).
 //! - Jobs: there is no org-wide jobs endpoint, so we list
 //!   `GET /repos/{o}/{r}/actions/runs?status=queued|in_progress` per repo in scope,
 //!   then `GET .../runs/{id}/jobs` (repo "Actions: read").
@@ -18,7 +20,7 @@ use reqwest::header::{ACCEPT, ETAG, HeaderMap, IF_NONE_MATCH, LINK, USER_AGENT};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::model::{GhJob, GhRunner, JobScan, RateLimit, RepoScope};
+use crate::model::{AccountKind, GhJob, GhRunner, JobScan, RateLimit, RepoScope};
 use crate::sync::MutexExt;
 
 pub const API_VERSION: &str = "2026-03-10";
@@ -29,6 +31,8 @@ const CONCURRENCY: usize = 4;
 const MAX_RUN_PAGES: usize = 4;
 const MAX_JOB_PAGES: usize = 10;
 const MAX_RUNNER_PAGES: usize = 20;
+/// Repository runner lists are short; each repository is one or two pages.
+const MAX_REPO_RUNNER_PAGES: usize = 5;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 /// Conditional responses kept per client. Job pages are keyed by run, so old runs must age out.
 const MAX_CACHED_PAGES: usize = 512;
@@ -301,6 +305,137 @@ impl GithubClient {
             .collect())
     }
 
+    /// The personal account's own repositories, most recently pushed first.
+    /// `/users/{login}/repos` lists only public ones, so this reads the signed-in
+    /// user's repositories and keeps those `owner` owns.
+    pub async fn user_repos(&self, owner: &str, max: usize) -> Result<Vec<String>, GithubError> {
+        #[derive(Deserialize)]
+        struct Owner {
+            login: String,
+        }
+        #[derive(Deserialize)]
+        struct Repo {
+            name: String,
+            owner: Owner,
+            #[serde(default)]
+            archived: bool,
+        }
+        if max == 0 {
+            return Ok(Vec::new());
+        }
+        let per_page = max.clamp(1, 100);
+        let v = self
+            .get(&format!(
+                "/user/repos?affiliation=owner&sort=pushed&direction=desc&per_page={per_page}"
+            ))
+            .await?;
+        let repos: Vec<Repo> = decode(v.body)?;
+        Ok(repos
+            .into_iter()
+            .filter(|r| !r.archived && r.owner.login.eq_ignore_ascii_case(owner))
+            .map(|r| r.name)
+            .take(max)
+            .collect())
+    }
+
+    /// Recently pushed repositories of an organization or a personal account.
+    async fn account_repos(&self, owner: &str, kind: AccountKind, max: usize) -> Result<Vec<String>, GithubError> {
+        match kind {
+            AccountKind::Organization => self.recent_repos(owner, max).await,
+            AccountKind::User => self.user_repos(owner, max).await,
+        }
+    }
+
+    /// Whether `login` is an organization or a personal account. Anything but a
+    /// clear `User` answer keeps organization mode.
+    pub async fn account_kind(&self, login: &str) -> AccountKind {
+        match self.get(&format!("/users/{login}")).await {
+            Ok(page) if page.body["type"].as_str() == Some("User") => AccountKind::User,
+            _ => AccountKind::Organization,
+        }
+    }
+
+    /// Runners for an organization, or for each repository of a personal account in scope.
+    pub async fn runners(
+        &self,
+        owner: &str,
+        kind: AccountKind,
+        scope: &RepoScope,
+    ) -> Result<Vec<GhRunner>, GithubError> {
+        match kind {
+            AccountKind::Organization => self.org_runners(owner).await,
+            AccountKind::User => self.user_runners(owner, scope).await,
+        }
+    }
+
+    async fn repo_runners(&self, owner: &str, repo: &str) -> Result<Vec<GhRunner>, GithubError> {
+        let runners = self
+            .collection::<RawRunner>(
+                &format!("/repos/{owner}/{repo}/actions/runners"),
+                "runners",
+                100,
+                MAX_REPO_RUNNER_PAGES,
+            )
+            .await?;
+        if runners.truncated {
+            return Err(GithubError::Incomplete(format!(
+                "Couldn't read all of {owner}/{repo}'s runners within {MAX_REPO_RUNNER_PAGES} pages."
+            )));
+        }
+        Ok(runners.items.into_iter().map(RawRunner::into_model).collect())
+    }
+
+    /// A personal account's runners, read per repository. The scope's list is used
+    /// when it names repositories; otherwise the account's own repositories are read.
+    /// A repository that can't be read fails the whole refresh, so a partial list
+    /// never looks complete. The error names each repository that failed.
+    pub async fn user_runners(&self, owner: &str, scope: &RepoScope) -> Result<Vec<GhRunner>, GithubError> {
+        let repos = match scope {
+            RepoScope::Selected { repos } => repos.iter().take(MAX_REPOS).cloned().collect(),
+            RepoScope::Recent { max_repos } => self.user_repos(owner, (*max_repos as usize).min(MAX_REPOS)).await?,
+            RepoScope::None => self.user_repos(owner, MAX_REPOS).await?,
+        };
+        let results: Vec<(String, Result<Vec<GhRunner>, GithubError>)> = stream::iter(repos.iter().cloned())
+            .map(|repo| async move {
+                let result = self.repo_runners(owner, &repo).await;
+                (repo, result)
+            })
+            .buffer_unordered(CONCURRENCY)
+            .collect()
+            .await;
+        let mut runners: Vec<GhRunner> = Vec::new();
+        let mut failed: Vec<(String, GithubError)> = Vec::new();
+        for (repo, result) in results {
+            match result {
+                Ok(batch) => {
+                    for runner in batch {
+                        if !runners.iter().any(|r| r.id == runner.id) {
+                            runners.push(runner);
+                        }
+                    }
+                }
+                Err(e @ (GithubError::NotFound(_) | GithubError::Forbidden(_))) => failed.push((repo, e)),
+                Err(e) => return Err(e),
+            }
+        }
+        if !failed.is_empty() {
+            failed.sort_by(|a, b| a.0.cmp(&b.0));
+            if failed.len() == repos.len() {
+                let (_, e) = failed.swap_remove(0);
+                return Err(hint_repo_runner_permission(e, owner));
+            }
+            let reasons: Vec<String> = failed.iter().map(|(repo, e)| format!("{owner}/{repo}: {e}")).collect();
+            return Err(GithubError::Incomplete(format!(
+                "Read runners in {} of {} repositories. {}. Listing runners needs the repository permission \"Administration: read\" (classic tokens: repo) on each one.",
+                repos.len() - failed.len(),
+                repos.len(),
+                reasons.join("; ")
+            )));
+        }
+        runners.sort_by_key(|r| r.id);
+        Ok(runners)
+    }
+
     async fn runs(&self, org: &str, repo: &str, status: &str) -> Result<Collection<u64>, GithubError> {
         #[derive(Deserialize)]
         struct Run {
@@ -336,8 +471,18 @@ impl GithubClient {
         })
     }
 
-    /// Queued and in-progress jobs across the repos in scope.
+    /// Queued and in-progress jobs across an organization's repos in scope.
     pub async fn scan_jobs(&self, org: &str, scope: &RepoScope) -> Result<JobScan, GithubError> {
+        self.scan_account_jobs(org, AccountKind::Organization, scope).await
+    }
+
+    /// Queued and in-progress jobs across the repos in scope, for either kind of account.
+    pub async fn scan_account_jobs(
+        &self,
+        org: &str,
+        kind: AccountKind,
+        scope: &RepoScope,
+    ) -> Result<JobScan, GithubError> {
         let (repos, mut truncated) = match scope {
             RepoScope::None => return Ok(JobScan::default()),
             RepoScope::Selected { repos } => (
@@ -346,7 +491,10 @@ impl GithubClient {
             ),
             RepoScope::Recent { max_repos } => {
                 let max = (*max_repos as usize).min(MAX_REPOS);
-                (self.recent_repos(org, max).await?, (*max_repos as usize) > MAX_REPOS)
+                (
+                    self.account_repos(org, kind, max).await?,
+                    (*max_repos as usize) > MAX_REPOS,
+                )
             }
         };
 
@@ -406,6 +554,15 @@ fn hint_runner_permission(e: GithubError, org: &str) -> GithubError {
     match e {
         GithubError::Forbidden(msg) | GithubError::NotFound(msg) => GithubError::Forbidden(format!(
             "{msg}. Listing {org}'s runners needs a fine-grained token with the organization permission \"Self-hosted runners: read\" (classic tokens: admin:org), from an org owner."
+        )),
+        other => other,
+    }
+}
+
+fn hint_repo_runner_permission(e: GithubError, owner: &str) -> GithubError {
+    match e {
+        GithubError::Forbidden(msg) | GithubError::NotFound(msg) => GithubError::Forbidden(format!(
+            "{msg}. Listing runners in {owner}'s repositories needs a fine-grained token with the repository permission \"Administration: read\" (classic tokens: repo)."
         )),
         other => other,
     }
@@ -624,5 +781,110 @@ mod tests {
         assert_eq!(scan.jobs[0].repo, "acme/web");
         assert_eq!(scan.jobs[1].runner_id, None);
         assert!(!scan.truncated);
+    }
+
+    #[tokio::test]
+    async fn personal_account_reads_runners_and_jobs_per_repository() {
+        let router = Router::new()
+            .route("/users/{login}", get(|| async { Json(json!({"login": "solo", "type": "User"})) }))
+            .route(
+                "/user/repos",
+                get(|| async {
+                    Json(json!([
+                        {"name": "app", "owner": {"login": "solo"}},
+                        {"name": "site", "owner": {"login": "Solo"}},
+                        {"name": "old", "owner": {"login": "solo"}, "archived": true},
+                        {"name": "theirs", "owner": {"login": "someone-else"}}
+                    ]))
+                }),
+            )
+            .route(
+                "/repos/{owner}/{repo}/actions/runners",
+                get(|Path((_owner, repo)): Path<(String, String)>| async move {
+                    match repo.as_str() {
+                        "app" => (AxStatus::OK, Json(json!({"total_count": 2, "runners": [runner(1, "a", false), runner(2, "shared", true)]}))),
+                        "site" => (AxStatus::OK, Json(json!({"total_count": 1, "runners": [runner(2, "shared", true)]}))),
+                        _ => (AxStatus::NOT_FOUND, Json(json!({"message": "Not Found"}))),
+                    }
+                }),
+            )
+            .route(
+                "/repos/{owner}/{repo}/actions/runs",
+                get(|| async { Json(json!({"total_count": 0, "workflow_runs": []})) }),
+            )
+            .fallback(|| async { (AxStatus::IM_A_TEAPOT, "organization endpoints are not used") });
+        let base = serve(router).await;
+        let client = GithubClient::new(&base, "t");
+        assert_eq!(client.account_kind("solo").await, AccountKind::User);
+        let runners = client
+            .runners("solo", AccountKind::User, &RepoScope::Recent { max_repos: 10 })
+            .await
+            .unwrap();
+        assert_eq!(runners.iter().map(|r| r.id).collect::<Vec<_>>(), vec![1, 2]);
+        let scan = client
+            .scan_account_jobs("solo", AccountKind::User, &RepoScope::Recent { max_repos: 10 })
+            .await
+            .unwrap();
+        assert_eq!(scan.repos_scanned, vec!["app", "site"]);
+    }
+
+    #[tokio::test]
+    async fn personal_account_explains_repository_permission() {
+        let router = Router::new().route(
+            "/repos/{owner}/{repo}/actions/runners",
+            get(|| async { (AxStatus::FORBIDDEN, Json(json!({"message": "Must have admin rights"}))) }),
+        );
+        let base = serve(router).await;
+        let scope = RepoScope::Selected {
+            repos: vec!["app".into()],
+        };
+        let err = GithubClient::new(&base, "t")
+            .user_runners("solo", &scope)
+            .await
+            .unwrap_err();
+        let GithubError::Forbidden(msg) = err else {
+            panic!("{err:?}")
+        };
+        assert!(msg.contains("Administration: read"));
+    }
+
+    #[tokio::test]
+    async fn personal_account_partial_runner_read_is_an_error() {
+        let router = Router::new().route(
+            "/repos/{owner}/{repo}/actions/runners",
+            get(|Path((_owner, repo)): Path<(String, String)>| async move {
+                match repo.as_str() {
+                    "app" => (
+                        AxStatus::OK,
+                        Json(json!({"total_count": 1, "runners": [runner(1, "a", false)]})),
+                    ),
+                    "locked" => (AxStatus::FORBIDDEN, Json(json!({"message": "Must have admin rights"}))),
+                    _ => (AxStatus::NOT_FOUND, Json(json!({"message": "Not Found"}))),
+                }
+            }),
+        );
+        let base = serve(router).await;
+        let scope = RepoScope::Selected {
+            repos: vec!["app".into(), "locked".into(), "gone".into()],
+        };
+        let err = GithubClient::new(&base, "t")
+            .user_runners("solo", &scope)
+            .await
+            .unwrap_err();
+        let GithubError::Incomplete(msg) = err else {
+            panic!("{err:?}")
+        };
+        assert!(msg.contains("1 of 3 repositories"), "{msg}");
+        assert!(msg.contains("solo/locked: GitHub refused access (403)"), "{msg}");
+        assert!(msg.contains("solo/gone: Not found (404)"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn unknown_account_kind_keeps_organization_mode() {
+        let base = serve(Router::new()).await;
+        assert_eq!(
+            GithubClient::new(&base, "t").account_kind("acme").await,
+            AccountKind::Organization
+        );
     }
 }

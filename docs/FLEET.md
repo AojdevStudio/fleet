@@ -73,7 +73,12 @@ runners = [{ name = "linux-01", directory = "runner-01" }]
 ```
 
 `[organization]` names the organization, its URL (`https://github.com/NAME`) and the runner
-group every runner registers into. Each `[[hosts]]` entry is one machine:
+group every runner registers into. `runner_group` is optional for monitoring. A personal
+account has no runner groups, so without it the checks read runners one repository at a time
+through `/repos/{owner}/{repo}/actions/runners` and never call an organization endpoint.
+The repositories read are those named in legacy runners' `replaces` entries. With no runner
+group and no such repository, the checks report that there is nothing to read rather than show
+an empty fleet. Apply still needs it. Each `[[hosts]]` entry is one machine:
 
 | Key | Meaning |
 |---|---|

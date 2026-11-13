@@ -56,7 +56,7 @@ fn inventory_from_table(data: &toml::Table, environ: &HashMap<String, String>) -
         Some(Value::Table(org)) => Organization {
             name: required_string(org, "name")?,
             url: required_string(org, "url")?,
-            runner_group: required_string(org, "runner_group")?,
+            runner_group: optional_string(org, "runner_group")?,
         },
         Some(_) => return err("organization must be a table"),
     };
@@ -75,6 +75,14 @@ fn required_string(data: &toml::Table, key: &str) -> Result<String> {
         None => err(format!("invalid inventory structure: {}", repr(key))),
         Some(Value::String(s)) if !s.trim().is_empty() => Ok(s.trim().to_string()),
         Some(_) => err(format!("{key} must be a non-empty string")),
+    }
+}
+
+/// Absent is fine, but a present value must still be a non-empty string.
+fn optional_string(data: &toml::Table, key: &str) -> Result<Option<String>> {
+    match data.get(key) {
+        None => Ok(None),
+        Some(_) => required_string(data, key).map(Some),
     }
 }
 

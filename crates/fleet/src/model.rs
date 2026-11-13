@@ -93,6 +93,22 @@ pub struct OrgConfig {
     /// Where the API token comes from.
     #[serde(default)]
     pub auth: OrgAuth,
+    /// An organization, or a personal account whose runners are read per repository.
+    #[serde(default)]
+    pub kind: AccountKind,
+}
+
+/// What kind of GitHub account an added login is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub enum AccountKind {
+    /// Runners are listed for the whole organization (`admin:org`).
+    #[default]
+    Organization,
+    /// A personal account has no organization runners. Runners and jobs are
+    /// listed per repository, with no runner group and no `admin:org` scope.
+    User,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]

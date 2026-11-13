@@ -16,10 +16,18 @@ pub fn collect_snapshot(
 ) -> Result<FleetSnapshot, LookupError> {
     let hosts = inventory.selected_hosts(host_id)?;
     let mut snapshot = FleetSnapshot::default();
-    let group = &inventory.organization.runner_group;
-    match github_runners(github, group, &hosts) {
+    let group = inventory.organization.runner_group.as_deref();
+    let mut repositories: BTreeSet<String> = iter_runners(&hosts)
+        .filter_map(|(_, r)| r.replaces.as_ref()?.repository.clone())
+        .collect();
+    if group.is_none() {
+        repositories.extend(inventory.runner_repositories());
+    }
+    match read_github_runners(github, group, &repositories) {
         Ok(runners) => {
-            if let Err(e) = github.validate_runner_group_policy(group) {
+            if let Some(group) = group
+                && let Err(e) = github.validate_runner_group_policy(group)
+            {
                 snapshot.policy_errors.push(e.0);
             }
             snapshot.github = runners;
@@ -37,17 +45,25 @@ pub fn collect_snapshot(
     Ok(snapshot)
 }
 
-/// The organization's runners, plus those in the repositories that legacy
-/// runners on `hosts` were registered to.
-fn github_runners(
+/// Shown when an inventory without a runner group names no repository, so
+/// there is nothing to read runners from.
+pub const NO_REPOSITORIES: &str = "The inventory has no runner_group and names no repository, so there are no runners to read. \
+     Add a runner_group to [organization], or a repository to a legacy runner's replaces entry.";
+
+/// The organization's runners when there is a runner group, plus those in
+/// each of `repositories`. Without a group (a personal account) only the
+/// per-repository reads run, so no organization endpoint is called. Without
+/// a group or a repository, the read fails rather than report no runners.
+pub(crate) fn read_github_runners(
     github: &dyn FleetGithub,
-    group: &str,
-    hosts: &[&Host],
+    group: Option<&str>,
+    repositories: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, GithubRunner>, GithubError> {
-    let mut runners = github.list_runners(group)?;
-    let repositories: BTreeSet<&str> = iter_runners(hosts)
-        .filter_map(|(_, r)| r.replaces.as_ref()?.repository.as_deref())
-        .collect();
+    let mut runners = match group {
+        Some(group) => github.list_runners(group)?,
+        None if repositories.is_empty() => return Err(GithubError(NO_REPOSITORIES.into())),
+        None => BTreeMap::new(),
+    };
     for repository in repositories {
         runners.extend(github.list_repository_runners(repository)?);
     }
@@ -63,6 +79,7 @@ pub fn build_status_rows(
     let mut rows = Vec::new();
     let mut accounted: BTreeSet<&str> = BTreeSet::new();
     let error = snapshot.github_error.as_deref();
+    let group = inventory.organization.runner_group.as_deref();
 
     for (host, runner) in iter_runners(&hosts) {
         let github = snapshot.github.get(&runner.name);
@@ -77,7 +94,7 @@ pub fn build_status_rows(
             drift: if runner.decommission {
                 decommission_drift(github, local, host, snapshot)
             } else {
-                desired_drift(&host.labels_for(runner), github, local, host, snapshot)
+                desired_drift(&host.labels_for(runner), group, github, local, host, snapshot)
             },
             desired: !runner.decommission,
         });
@@ -169,8 +186,11 @@ fn decommission_drift(
     "decommission pending".into()
 }
 
+/// Without a runner group (a personal account) membership isn't drift: there
+/// is no group to be in, and repository reads report it as unknown.
 fn desired_drift(
     labels: &[String],
+    group: Option<&str>,
     github: Option<&GithubRunner>,
     local: Option<&LocalRunner>,
     host: &Host,
@@ -200,10 +220,10 @@ fn desired_drift(
     if !unexpected.is_empty() {
         issues.push(format!("labels: -{}", unexpected.join(",")));
     }
-    match github.in_desired_group {
-        Some(false) => issues.push("wrong group".into()),
-        None => issues.push("group unavailable".into()),
-        Some(true) => {}
+    match (group, github.in_desired_group) {
+        (Some(_), Some(false)) => issues.push("wrong group".into()),
+        (Some(_), None) => issues.push("group unavailable".into()),
+        (Some(_), Some(true)) | (None, _) => {}
     }
     if !local.service_active() {
         issues.push(format!("service {}", local.service_state));

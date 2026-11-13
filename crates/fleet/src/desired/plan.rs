@@ -17,9 +17,9 @@ pub fn generate_plan(
 ) -> Result<Vec<PlanItem>, LookupError> {
     let runner_name = runner_name.filter(|n| !n.is_empty());
     let hosts = inventory.selected_hosts(host_id)?;
-    let group = &inventory.organization.runner_group;
+    let group = inventory.organization.runner_group.as_deref();
     let mut items = Vec::new();
-    if !snapshot.policy_errors.is_empty() {
+    if let (Some(group), false) = (group, snapshot.policy_errors.is_empty()) {
         items.push(
             PlanItem::new(
                 FleetPlanAction::HardenGroup,
@@ -70,7 +70,7 @@ pub fn generate_plan(
 fn desired_runner_plan(
     host: &Host,
     runner: &Runner,
-    group: &str,
+    group: Option<&str>,
     github: Option<&GithubRunner>,
     local: Option<&LocalRunner>,
 ) -> Vec<PlanItem> {
@@ -117,18 +117,19 @@ fn desired_runner_plan(
         }
         items.push(item(FleetPlanAction::ReconcileLabels, changes.join("; ")).command(apply.clone()));
     }
-    match github.in_desired_group {
-        Some(false) => {
+    // Without a runner group there is no membership to check.
+    match group.map(|group| (group, github.in_desired_group)) {
+        Some((group, Some(false))) => {
             items.push(item(FleetPlanAction::AssignGroup, format!("move into {group}")).command(apply.clone()));
         }
-        None => items.push(
+        Some((group, None)) => items.push(
             item(
                 FleetPlanAction::InspectGroup,
                 format!("desired group {} was not found", repr(group)),
             )
             .blocked(),
         ),
-        Some(true) => {}
+        Some((_, Some(true))) | None => {}
     }
     if !is_active(&local.service_state) {
         if github.busy {

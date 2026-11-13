@@ -7,7 +7,7 @@
 //! with `--replace`, no configured runner directory is moved or deleted, and
 //! secrets supplied for one operation are never stored.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use super::github::{FleetGithub, GithubError, ReleaseAsset};
@@ -17,7 +17,7 @@ use super::model::{
 };
 use super::py::repr;
 use super::remote::{FleetRemote, InstallRequest, RemoteError, Transient};
-use super::state::label_drift;
+use super::state::{NO_REPOSITORIES, label_drift, read_github_runners};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
@@ -103,17 +103,23 @@ impl std::fmt::Debug for Ops<'_> {
 }
 
 impl Ops<'_> {
-    fn group(&self) -> &str {
-        &self.inventory.organization.runner_group
+    /// Registering a runner needs the trusted group. Monitoring doesn't.
+    fn group(&self) -> Result<&str> {
+        match self.inventory.organization.runner_group.as_deref() {
+            Some(group) => Ok(group),
+            None => fail(NO_RUNNER_GROUP),
+        }
     }
 
     /// The organization's runners, plus those registered to `repository`.
+    /// Without a runner group, every runner is read per repository.
     fn github_runners(&self, repository: Option<&str>) -> std::result::Result<GithubRunners, GithubError> {
-        let mut runners = self.github.list_runners(self.group())?;
-        if let Some(repository) = repository {
-            runners.extend(self.github.list_repository_runners(repository)?);
+        let group = self.inventory.organization.runner_group.as_deref();
+        let mut repositories: BTreeSet<String> = repository.map(str::to_string).into_iter().collect();
+        if group.is_none() {
+            repositories.extend(self.inventory.runner_repositories());
         }
-        Ok(runners)
+        read_github_runners(self.github, group, &repositories)
     }
 
     /// GitHub's runners, then the host's exact runner directories.
@@ -181,7 +187,7 @@ impl Ops<'_> {
 
     /// The trusted group's id, GitHub's runners and the host's runner directories.
     fn apply_preflight(&self, host: &Host) -> Result<(i64, GithubRunners, LocalRunners)> {
-        let group_id = self.github.validate_runner_group_policy(self.group())?;
+        let group_id = self.github.validate_runner_group_policy(self.group()?)?;
         let (github_runners, local_runners) = self.read_host(host, None)?;
         Ok((group_id, github_runners, local_runners))
     }
@@ -193,7 +199,7 @@ impl Ops<'_> {
             asset,
             token: &token,
             organization_url: &self.inventory.organization.url,
-            runner_group: self.group(),
+            runner_group: self.group()?,
             service_password: self.secrets.service_password_for(host),
             sudo_password: self.secrets.sudo_password_for(host),
         };
@@ -227,7 +233,7 @@ impl Ops<'_> {
         }
         if current.in_desired_group != Some(true) {
             self.github.assign_group(group_id, current.id)?;
-            messages.push(format!("assigned {} to {}", runner.name, self.group()));
+            messages.push(format!("assigned {} to {}", runner.name, self.group()?));
         }
         if start {
             self.remote.start(host, runner, self.secrets.sudo_password_for(host))?;
@@ -252,7 +258,7 @@ impl Ops<'_> {
             return fail(format!("replacement {} must be online and idle", runner.name));
         };
         if replacement.in_desired_group != Some(true) {
-            return fail(format!("replacement {} must belong to {}", runner.name, self.group()));
+            return fail(format!("replacement {} must belong to {}", runner.name, self.group()?));
         }
         let (missing, unexpected) = label_drift(&host.labels_for(runner), replacement);
         if !missing.is_empty() || !unexpected.is_empty() {
@@ -389,7 +395,7 @@ impl Ops<'_> {
     fn wait_for_runner(&self, name: &str) -> Result<GithubRunner> {
         for attempt in 0..10 {
             // A failed re-read here propagates as-is, as in the original.
-            let runners = self.github.list_runners(self.group())?;
+            let runners = self.github_runners(None)?;
             if let Some(found) = runners.get(name) {
                 return Ok(found.clone());
             }
@@ -404,7 +410,7 @@ impl Ops<'_> {
 
     fn wait_for_removal(&self, name: &str) -> Result<()> {
         for attempt in 0..10 {
-            let runners = self.github.list_runners(self.group()).map_err(|e| {
+            let runners = self.github_runners(None).map_err(|e| {
                 OperationError(format!(
                     "{name} was deregistered but GitHub could not be re-read: {e}; inspect status"
                 ))
@@ -546,6 +552,22 @@ pub(crate) fn check_idle(name: &str, github: &GithubRunners) -> Result<()> {
     }
 }
 
+/// Shown when a change needs the runner group and the inventory has none.
+const NO_RUNNER_GROUP: &str =
+    "The inventory has no runner_group. Add one to [organization] before registering runners.";
+
+fn github_auth_check<T>(result: std::result::Result<T, GithubError>, pass: &str, scope: &str) -> DoctorCheck {
+    match result {
+        Ok(_) => DoctorCheck::new("control", "github-auth", CheckStatus::Pass, pass),
+        Err(e) => DoctorCheck::new(
+            "control",
+            "github-auth",
+            CheckStatus::Fail,
+            format!("{e}; run: gh auth refresh -h github.com -s {scope}"),
+        ),
+    }
+}
+
 /// Read-only health checks for the control machine and each selected host.
 pub fn doctor(
     inventory: &Inventory,
@@ -554,29 +576,33 @@ pub fn doctor(
     host_id: Option<&str>,
 ) -> Result<Vec<DoctorCheck>> {
     let hosts = inventory.selected_hosts(host_id)?;
-    let group = &inventory.organization.runner_group;
+    let group = inventory.organization.runner_group.as_deref();
     let mut checks = vec![DoctorCheck::new(
         "control",
         "inventory",
         CheckStatus::Pass,
         "schema valid; runner names and exact paths are unique",
     )];
-    let auth = github
-        .auth_status()
-        .and_then(|_| github.validate_runner_group_policy(group))
-        .and_then(|_| github.list_runners(group));
-    checks.push(match auth {
-        Ok(_) => DoctorCheck::new(
-            "control",
-            "github-auth",
-            CheckStatus::Pass,
+    checks.push(match group {
+        Some(group) => github_auth_check(
+            github
+                .auth_status()
+                .and_then(|_| github.validate_runner_group_policy(group))
+                .and_then(|_| github.list_runners(group)),
             "authenticated with organization self-hosted runners access",
+            "admin:org",
         ),
-        Err(e) => DoctorCheck::new(
-            "control",
-            "github-auth",
-            CheckStatus::Fail,
-            format!("{e}; run: gh auth refresh -h github.com -s admin:org"),
+        // A personal account: read runners per repository, with no org scope.
+        // No repository to read is an inventory problem, not a token scope.
+        None if inventory.runner_repositories().is_empty() => {
+            DoctorCheck::new("control", "github-auth", CheckStatus::Fail, NO_REPOSITORIES)
+        }
+        None => github_auth_check(
+            github
+                .auth_status()
+                .and_then(|_| read_github_runners(github, None, &inventory.runner_repositories())),
+            "authenticated with repository self-hosted runners access",
+            "repo",
         ),
     });
     for host in hosts {

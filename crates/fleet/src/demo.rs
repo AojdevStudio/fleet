@@ -23,6 +23,7 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
             repo_scope: RepoScope::Recent { max_repos: 20 },
             added_at: added,
             auth: OrgAuth::GhCli,
+            kind: Default::default(),
         }],
         ignored_peers: vec![IgnoredPeer {
             tailscale_node_id: "nNas".into(),

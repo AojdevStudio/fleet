@@ -28,6 +28,7 @@ impl Fixture {
                     repo_scope: RepoScope::Recent { max_repos: 10 },
                     added_at: ago(9999),
                     auth: OrgAuth::GhCli,
+                    kind: Default::default(),
                 }],
                 ..Default::default()
             },
