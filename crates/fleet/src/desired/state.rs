@@ -79,6 +79,7 @@ pub fn build_status_rows(
     let mut rows = Vec::new();
     let mut accounted: BTreeSet<&str> = BTreeSet::new();
     let error = snapshot.github_error.as_deref();
+    let group = inventory.organization.runner_group.as_deref();
 
     for (host, runner) in iter_runners(&hosts) {
         let github = snapshot.github.get(&runner.name);
@@ -93,7 +94,7 @@ pub fn build_status_rows(
             drift: if runner.decommission {
                 decommission_drift(github, local, host, snapshot)
             } else {
-                desired_drift(&host.labels_for(runner), github, local, host, snapshot)
+                desired_drift(&host.labels_for(runner), group, github, local, host, snapshot)
             },
             desired: !runner.decommission,
         });
@@ -185,8 +186,11 @@ fn decommission_drift(
     "decommission pending".into()
 }
 
+/// Without a runner group (a personal account) membership isn't drift: there
+/// is no group to be in, and repository reads report it as unknown.
 fn desired_drift(
     labels: &[String],
+    group: Option<&str>,
     github: Option<&GithubRunner>,
     local: Option<&LocalRunner>,
     host: &Host,
@@ -216,10 +220,10 @@ fn desired_drift(
     if !unexpected.is_empty() {
         issues.push(format!("labels: -{}", unexpected.join(",")));
     }
-    match github.in_desired_group {
-        Some(false) => issues.push("wrong group".into()),
-        None => issues.push("group unavailable".into()),
-        Some(true) => {}
+    match (group, github.in_desired_group) {
+        (Some(_), Some(false)) => issues.push("wrong group".into()),
+        (Some(_), None) => issues.push("group unavailable".into()),
+        (Some(_), Some(true)) | (None, _) => {}
     }
     if !local.service_active() {
         issues.push(format!("service {}", local.service_state));

@@ -161,3 +161,23 @@ fn no_runner_group_and_no_repository_is_an_empty_scope_error() {
     assert_eq!(auth.detail, NO_REPOSITORIES);
     assert!(github.reads().is_empty(), "{:?}", github.reads());
 }
+
+#[test]
+fn status_rows_without_a_runner_group_show_no_group_drift() {
+    let inventory = personal();
+    let (host, runner) = (&inventory.hosts[0], &inventory.hosts[0].runners[0]);
+    let labels = host.labels_for(runner);
+    let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+    let local = LocalRunner::new("test-01", "~/gh-runners/acme/runner-01", true, "active", None);
+    // A repository read can't tell group membership, so it is `None`.
+    let snap = snapshot(vec![gr("test-01", "online", false, &labels, None)], vec![local.clone()]);
+    let rows = build_status_rows(&inventory, &snap, None).unwrap();
+    let row = rows.iter().find(|r| r.runner == "test-01").unwrap();
+    assert_eq!(row.drift, "in sync");
+
+    // With a runner group, unknown membership is still drift.
+    let grouped = load(&base()).unwrap();
+    let snap = snapshot(vec![gr("test-01", "online", false, &labels, None)], vec![local]);
+    let rows = build_status_rows(&grouped, &snap, None).unwrap();
+    assert_eq!(rows[0].drift, "group unavailable");
+}
