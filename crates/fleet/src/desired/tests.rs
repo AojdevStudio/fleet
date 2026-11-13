@@ -4,6 +4,7 @@
 mod decommission;
 mod inventory;
 mod operations;
+mod personal;
 mod plan;
 mod remote;
 mod windows_logon;
