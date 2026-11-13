@@ -9,7 +9,9 @@ use super::{Engine, EngineError, SecretStore};
 use crate::desired::model::Inventory;
 use crate::gh;
 use crate::github::{GithubClient, GithubError};
-use crate::model::{AccountKind, GhRunner, OrgAuth, OrgConfig, OrgObservation, RepoScope, Timed, default_api_base};
+use crate::model::{
+    AccountKind, AppConfig, GhRunner, OrgAuth, OrgConfig, OrgObservation, RepoScope, Timed, default_api_base,
+};
 use crate::sync::{MutexExt, RwLockExt};
 
 #[derive(Debug, thiserror::Error)]
@@ -363,6 +365,23 @@ impl PolledOrg {
             },
             None => PolledOrg { config, listed: None },
         }
+    }
+}
+
+/// The config as polls and views see it: each account with repositories listed
+/// in the inventory has them as its scope. The saved config keeps its own scope.
+pub(super) fn with_inventory_scopes(config: &AppConfig, inventory: Option<&Inventory>) -> AppConfig {
+    AppConfig {
+        orgs: config
+            .orgs
+            .iter()
+            .cloned()
+            .map(|org| {
+                let listed = listed_repos(inventory, &org.login);
+                PolledOrg::new(org, listed).config
+            })
+            .collect(),
+        ..config.clone()
     }
 }
 
