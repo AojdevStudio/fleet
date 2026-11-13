@@ -78,8 +78,9 @@ export function RetiringDetail({ view }: { view: FleetView }) {
 
 function oldRunnerStatus(o: OldRunnerView): { label: string; tone: Tone } {
   switch (o.activity?.kind) {
+    // No single listed runner matches: GitHub may not list it, or two runners share its name.
     case undefined:
-      return { label: "Not listed by GitHub", tone: "muted" };
+      return { label: "Not linked", tone: "muted" };
     case "busy":
       return { label: "Working", tone: "busy" };
     case "idle":

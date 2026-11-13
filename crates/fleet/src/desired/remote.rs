@@ -299,11 +299,7 @@ impl RemoteClient {
 impl FleetRemote for RemoteClient {
     fn probe(&self, host: &Host) -> Result<BTreeMap<String, LocalRunner>> {
         let output = self.run_script(host, &probe_script(host), None)?;
-        if host.is_windows() {
-            parse_windows_probe(&output)
-        } else {
-            parse_posix_probe(&output)
-        }
+        parse_runner_probe(host, &output)
     }
 
     fn install(&self, host: &Host, runner: &Runner, request: &InstallRequest) -> Result<String> {
@@ -387,6 +383,26 @@ impl FleetRemote for RemoteClient {
             Ok(checks) => checks,
             Err(e) => vec![DoctorCheck::new(&host.id, "ssh", CheckStatus::Fail, e.0)],
         }
+    }
+}
+
+/// A runner probe's output from `host`. A host that declares no runners has
+/// nothing to report, so its empty answer is accepted: no runner rows on POSIX
+/// (a login banner may still print), or `""` or `[]` on Windows. A host that
+/// declares runners must still report them.
+pub fn parse_runner_probe(host: &Host, output: &str) -> Result<BTreeMap<String, LocalRunner>> {
+    let runnerless = host.runner_names().next().is_none();
+    let empty = if host.is_windows() {
+        matches!(output.trim(), "" | "[]")
+    } else {
+        !splitlines(output).iter().any(|line| line.starts_with("RF1\t"))
+    };
+    if runnerless && empty {
+        Ok(BTreeMap::new())
+    } else if host.is_windows() {
+        parse_windows_probe(output)
+    } else {
+        parse_posix_probe(output)
     }
 }
 

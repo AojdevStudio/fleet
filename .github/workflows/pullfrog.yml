@@ -30,6 +30,8 @@ jobs:
         uses: pullfrog/pullfrog@v0
         with:
           prompt: ${{ inputs.prompt }}
+          # Publish the pullfrog-approval check that main's ruleset requires.
+          status_checks: enabled
         env:
           # add at least one provider API key
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
