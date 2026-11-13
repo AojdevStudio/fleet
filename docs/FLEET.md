@@ -91,7 +91,7 @@ group every runner registers into. Each `[[hosts]]` entry is one machine:
 | `service_account` | Windows only, and required for `windows-logon`. |
 | `labels` | Labels on every runner of the host: `fleet`, one platform capability label (`macos-build`, `windows-build`, `linux-build` or `linux-experimental`) and, by convention, `host-<id>`. |
 | `enabled` | `false` leaves the host out of checks and changes. Defaults to `true`. |
-| `runners` | At least one runner. |
+| `runners` | The host's runners. Leave it out for a machine watched only for SSH health, such as a central pool's VM or its coordinator. A host without runners needs no labels. |
 
 A runner takes `name`, unique across the inventory, and `directory`, one path component below
 `root`. Optional keys: `labels` (added to the host's), `exclude_labels` (host labels this runner

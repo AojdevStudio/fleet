@@ -1,5 +1,6 @@
 use super::super::inventory::load_inventory;
 use super::super::model::{Platform, ServiceMode};
+use super::super::remote::probe_script;
 use super::*;
 
 #[test]
@@ -169,10 +170,6 @@ fn more_inventory_rules_match_runner_fleet() {
             "invalid inventory structure: 'organization'",
         ),
         (
-            base.replace("{ name = \"test-01\", directory = \"runner-01\" },", ""),
-            "test: define at least one runner",
-        ),
-        (
             replaces("name = \"old\", directory = \"/\""),
             "test: legacy path is too broad",
         ),
@@ -297,4 +294,28 @@ fn explicit_repositories_are_parsed_and_checked() {
     assert_eq!(e, "invalid repository: 'web' (use owner/repo)");
     let e = load_err(&format!("repositories = [\"acme/web\", \"ACME/web\"]\n{}", base()));
     assert_eq!(e, "duplicate repository: ACME/web");
+}
+
+#[test]
+fn host_without_runners_is_valid_for_health_only() {
+    let text = inventory_toml(
+        r#"
+[[hosts]]
+id = "ci-linux"
+platform = "linux-x64"
+ssh = "ci@192.0.2.10"
+root = "~/gh-runners"
+service_mode = "systemd"
+"#,
+    );
+    let inventory = load(&text).unwrap();
+    let host = inventory.find_host("ci-linux").unwrap();
+    assert!(host.runners.is_empty());
+    assert_eq!(probe_script(host), "set -u");
+    // Labels given on a host without runners are still checked.
+    let e = load_err(&text.replace(
+        "service_mode = \"systemd\"",
+        "service_mode = \"systemd\"\nlabels = [\"bad label\"]",
+    ));
+    assert_eq!(e, "invalid ci-linux label: 'bad label'");
 }

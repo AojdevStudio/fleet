@@ -281,11 +281,13 @@ fn validate_host<'a>(host: &'a Host, declared: &mut Declared<'a>) -> Result<()> 
     {
         return err(format!("{}: invalid service_account: {}", host.id, repr(account)));
     }
-    if host.runners.is_empty() {
-        return err(format!("{}: define at least one runner", host.id));
-    }
     for label in &host.labels {
         validate_name(label, &format!("{} label", host.id))?;
+    }
+    // A host with no runners is watched for SSH health only, such as a central
+    // pool's VM or coordinator, so it needs no runner labels.
+    if host.runners.is_empty() {
+        return Ok(());
     }
     if !host.labels.iter().any(|l| l == "fleet") {
         return err(format!("{}: missing required labels: fleet", host.id));
