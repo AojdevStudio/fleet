@@ -67,6 +67,7 @@ pub(crate) fn derive_without_issues(
         .collect();
     let queue = queue_view(config, obs, &gh, &all_runners, now);
     let summary = summarize(&fleet, &all_runners, &queue);
+    let rollout = crate::rollout::view(plan.inventory.as_ref().and_then(|i| i.as_ref().ok()), &all_runners);
 
     let mut view = FleetView {
         generated_at: now,
@@ -89,6 +90,7 @@ pub(crate) fn derive_without_issues(
         plan: plan_status(plan, checked.as_ref()),
         monitoring: crate::monitoring::FleetMonitoring::default(),
         pools: crate::runner_up::view(obs),
+        rollout,
     };
     if source == DataSource::Demo {
         crate::monitoring::demo::attach(&mut view, now);

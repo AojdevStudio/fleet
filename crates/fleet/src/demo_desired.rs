@@ -68,6 +68,26 @@ root = "~/gh-runners/acme-demo"
 service_mode = "launchagent"
 labels = ["fleet", "macos-build"]
 runners = [{ name = "mini-03-01", directory = "runner-01" }]
+
+[[rollout]]
+repo = "acme-demo/web"
+state = "merged"
+old_runners = ["Studio-Old-2"]
+safe_to_retire = true
+
+[[rollout]]
+repo = "acme-demo/ios-app"
+state = "green"
+old_runners = ["mini-02"]
+
+[[rollout]]
+repo = "acme-demo/infra"
+state = "pr-open"
+old_runners = ["linux-01-b"]
+
+[[rollout]]
+repo = "acme-demo/ml"
+state = "registered"
 "#;
 
 pub fn inventory() -> Inventory {

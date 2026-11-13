@@ -276,6 +276,53 @@ pub struct Inventory {
     pub repositories: Vec<String>,
     /// The runner-up coordinator whose central pools the app reads.
     pub runner_up: Option<RunnerUp>,
+    /// `[[rollout]]`: each repository's move to the central pools, as written by hand.
+    pub rollout: Vec<RolloutRepo>,
+}
+
+/// Where a repository is in its move to the central pools.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(rename_all = "kebab-case")]
+pub enum RolloutState {
+    /// The repository is registered with the central pools.
+    Registered,
+    /// A pull request moves its workflows to the central pool labels.
+    PrOpen,
+    /// That pull request's checks pass on the central pools.
+    Green,
+    /// The pull request is merged.
+    Merged,
+}
+
+impl RolloutState {
+    const ALL: [Self; 4] = [Self::Registered, Self::PrOpen, Self::Green, Self::Merged];
+
+    /// The inventory spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Registered => "registered",
+            Self::PrOpen => "pr-open",
+            Self::Green => "green",
+            Self::Merged => "merged",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.as_str() == value)
+    }
+}
+
+/// One `[[rollout]]` entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RolloutRepo {
+    /// `owner/repo`.
+    pub repo: String,
+    pub state: RolloutState,
+    /// The long-lived runners this repository used before the move.
+    pub old_runners: Vec<String>,
+    /// Set by hand once nothing needs the old runners any more.
+    pub safe_to_retire: bool,
 }
 
 /// `[runner_up]`: where the runner-up coordinator runs and how to read it.

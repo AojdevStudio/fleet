@@ -56,6 +56,20 @@ pub(super) async fn pools(Extension(s): Extension<Snapshot>, Parameters(_): Para
     Json(json!({ "pools": s.view.pools }))
 }
 
+/// Repositories moving to the central pools and the old runners they leave behind.
+/// `moving` lists repositories not merged yet; `retiring` lists those with old runners.
+pub(super) async fn rollout(Extension(s): Extension<Snapshot>, Parameters(_): Parameters<NoQuery>) -> Json<Value> {
+    use crate::desired::model::RolloutState;
+    let moving: Vec<_> = s
+        .view
+        .rollout
+        .iter()
+        .filter(|r| r.state != RolloutState::Merged)
+        .collect();
+    let retiring: Vec<_> = s.view.rollout.iter().filter(|r| !r.old_runners.is_empty()).collect();
+    Json(json!({ "repos": s.view.rollout, "moving": moving, "retiring": retiring }))
+}
+
 pub(super) async fn monitoring(
     Extension(s): Extension<Snapshot>,
     Parameters(q): Parameters<queries::MachineFilter>,

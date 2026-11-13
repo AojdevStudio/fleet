@@ -6,6 +6,7 @@ import { formatClock } from "../lib/format";
 import { allMachines, selectionId, type Selection } from "../lib/nav";
 import { machineNeedsChanges, runnerNeedsChanges } from "../lib/desired";
 import { busySince, hasWarning, machineDot, machineStatus, machineSummary, machineTooltip, runnerStatus, tailnetState } from "../lib/status";
+import { movingRepos, retiringRepos } from "../lib/rollout";
 import { emitEvent } from "../lib/tauri";
 import { useUi } from "../store";
 import { Icon } from "./icons";
@@ -40,6 +41,10 @@ export function Sidebar({ view, filtered, selection }: { view: FleetView; filter
       <nav className="space-y-0.5 p-2" aria-label="Overview">
         <Row sel={{ kind: "overview" }} selected={isSelected({ kind: "overview" })} icon={<Icon name="grid" size={16} />} label="Fleet overview" trailing={allMachines(view).length} />
         <Row sel={{ kind: "queue" }} selected={isSelected({ kind: "queue" })} icon={<Icon name="queue" size={16} />} label="Queued jobs" trailing={view.queue.jobs.length} />
+        {view.rollout.length > 0 && <>
+          <Row sel={{ kind: "moving" }} selected={isSelected({ kind: "moving" })} icon={<Icon name="plan" size={16} />} label="Moving to central" trailing={movingRepos(view.rollout).length} />
+          <Row sel={{ kind: "retiring" }} selected={isSelected({ kind: "retiring" })} icon={<Icon name="runner" size={16} />} label="Retiring" trailing={retiringRepos(view.rollout).length} />
+        </>}
       </nav>
       <div className="px-2 pb-2">
         <label className="relative block">

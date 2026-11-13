@@ -7,6 +7,7 @@
 //! - `monitoring`: local machine history, alerts and notification requests
 //! - `desired`, `fleet_plan`: the inventory, its checks and reviewed changes
 //! - `runner_up`: runner-up central pools, read over SSH
+//! - `rollout`: repositories moving to the central pools, and their old runners
 //! - `local_api`: the read-only loopback HTTP API
 //! - `demo`, `demo_desired`: a fictional dataset run through the same `derive`
 
@@ -27,6 +28,7 @@ pub mod machine;
 pub mod machine_diagnostics;
 pub mod model;
 pub mod monitoring;
+pub mod rollout;
 pub mod runner_up;
 pub mod sync;
 pub mod tailscale;

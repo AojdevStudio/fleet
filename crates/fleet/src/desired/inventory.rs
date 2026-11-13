@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use toml::Value;
 
 use super::model::{
-    Host, Inventory, LegacyRunner, Organization, Platform, Runner, RunnerUp, ServiceMode, SshTransport,
+    Host, Inventory, LegacyRunner, Organization, Platform, RolloutRepo, RolloutState, Runner, RunnerUp, ServiceMode,
+    SshTransport,
 };
 use super::py::{PurePath, repr};
 
@@ -73,11 +74,17 @@ fn inventory_from_table(data: &toml::Table, environ: &HashMap<String, String>) -
         Some(Value::Table(table)) => Some(parse_runner_up(table)?),
         Some(_) => return err("runner_up must be a table"),
     };
+    let rollout = match data.get("rollout") {
+        None => Vec::new(),
+        Some(Value::Array(raw)) => raw.iter().map(parse_rollout).collect::<Result<Vec<_>>>()?,
+        Some(_) => return err("rollout must be an array of tables"),
+    };
     let inventory = Inventory {
         organization,
         hosts,
         repositories,
         runner_up,
+        rollout,
     };
     validate_inventory(&inventory)?;
     Ok(inventory)
@@ -95,6 +102,22 @@ fn parse_runner_up(data: &toml::Table) -> Result<RunnerUp> {
         program: optional("program")?.unwrap_or_else(|| "runner-up".into()),
         tart_host: optional("tart_host")?,
         pools: strings(data, "pools")?,
+    })
+}
+
+fn parse_rollout(raw: &Value) -> Result<RolloutRepo> {
+    let Value::Table(data) = raw else {
+        return err("each rollout entry must be a table");
+    };
+    let repo = required_string(data, "repo")?;
+    let state = required_string(data, "state")?;
+    let state = RolloutState::parse(&state)
+        .ok_or_else(|| InventoryError(format!("{repo}: state must be registered, pr-open, green or merged")))?;
+    Ok(RolloutRepo {
+        state,
+        old_runners: strings(data, "old_runners")?,
+        safe_to_retire: optional_bool(data, "safe_to_retire", false, "safe_to_retire must be true or false")?,
+        repo,
     })
 }
 
@@ -269,6 +292,18 @@ fn validate_inventory(inventory: &Inventory) -> Result<()> {
     }
     if let Some(runner_up) = &inventory.runner_up {
         validate_runner_up(inventory, runner_up)?;
+    }
+    let mut rollout = HashSet::new();
+    for entry in &inventory.rollout {
+        if !safe_repository(&entry.repo) {
+            return err(format!("invalid rollout repo: {} (use owner/repo)", repr(&entry.repo)));
+        }
+        if !rollout.insert(entry.repo.to_lowercase()) {
+            return err(format!("duplicate rollout repo: {}", entry.repo));
+        }
+        for runner in &entry.old_runners {
+            validate_name(runner, &format!("{} old runner", entry.repo))?;
+        }
     }
     let mut repositories = HashSet::new();
     for repository in &inventory.repositories {

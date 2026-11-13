@@ -2156,5 +2156,56 @@
         "place": null
       }
     ]
-  }
+  },
+  "rollout": [
+    {
+      "repo": "acme-demo/web",
+      "state": "merged",
+      "safeToRetire": true,
+      "oldRunners": [
+        {
+          "name": "Studio-Old-2",
+          "runnerKey": "gh:acme-demo:90",
+          "activity": {
+            "kind": "unknown"
+          }
+        }
+      ]
+    },
+    {
+      "repo": "acme-demo/ios-app",
+      "state": "green",
+      "safeToRetire": false,
+      "oldRunners": [
+        {
+          "name": "mini-02",
+          "runnerKey": "gh:acme-demo:201",
+          "activity": {
+            "kind": "busy",
+            "since": "2026-10-03T11:56:55Z"
+          }
+        }
+      ]
+    },
+    {
+      "repo": "acme-demo/infra",
+      "state": "pr-open",
+      "safeToRetire": false,
+      "oldRunners": [
+        {
+          "name": "linux-01-b",
+          "runnerKey": "gh:acme-demo:302",
+          "activity": {
+            "kind": "idle"
+          }
+        }
+      ]
+    },
+    {
+      "repo": "acme-demo/ml",
+      "state": "registered",
+      "safeToRetire": false,
+      "oldRunners": []
+    }
+  ]
 }
