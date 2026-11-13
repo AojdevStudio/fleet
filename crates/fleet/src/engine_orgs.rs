@@ -6,6 +6,7 @@ use chrono::Utc;
 use futures::future::join_all;
 
 use super::{Engine, EngineError, SecretStore};
+use crate::desired::model::Inventory;
 use crate::gh;
 use crate::github::{GithubClient, GithubError};
 use crate::model::{AccountKind, OrgAuth, OrgConfig, OrgObservation, RepoScope, Timed, default_api_base};
@@ -94,6 +95,22 @@ impl Engine {
         self.github.locked().remove(&org.login.to_lowercase());
     }
 
+    /// The orgs to poll. An account with repositories listed in the inventory
+    /// reads exactly those, so its repositories are never listed.
+    async fn polled_orgs(&self) -> Vec<OrgConfig> {
+        let mut orgs = self.config().orgs;
+        if orgs.is_empty() {
+            return orgs;
+        }
+        // No inventory, or one that doesn't parse, leaves each org's own scope.
+        if let Ok(inventory) = self.read_inventory().await {
+            for org in &mut orgs {
+                org.repo_scope = explicit_scope(&inventory, org);
+            }
+        }
+        orgs
+    }
+
     /// Fetch one kind of GitHub data for every org, keeping the last good value beside the newest error.
     async fn poll_github<T>(
         &self,
@@ -101,7 +118,7 @@ impl Engine {
         refetch_token_on: fn(&GithubError) -> bool,
         slot: ObservationSlot<T>,
     ) {
-        let orgs = self.config().orgs;
+        let orgs = self.polled_orgs().await;
         join_all(orgs.iter().map(|org| async {
             let key = org.login.to_lowercase();
             let client = match self.github_client(org).await {
@@ -295,5 +312,15 @@ impl Engine {
         if let Err(e) = self.secrets_call(move |secrets| secrets.delete(&account)).await {
             tracing::warn!("couldn't delete the stored GitHub token for {key}: {e}");
         }
+    }
+}
+
+/// The inventory's repositories for this org, or the org's own scope when it lists none.
+fn explicit_scope(inventory: &Inventory, org: &OrgConfig) -> RepoScope {
+    let repos = inventory.repositories_of(&org.login);
+    if repos.is_empty() {
+        org.repo_scope.clone()
+    } else {
+        RepoScope::Selected { repos }
     }
 }

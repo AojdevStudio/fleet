@@ -24,8 +24,8 @@ use crate::model::{AccountKind, GhJob, GhRunner, JobScan, RateLimit, RepoScope};
 use crate::sync::MutexExt;
 
 pub const API_VERSION: &str = "2026-03-10";
-/// Hard cap on repos scanned per org per cycle, whatever the scope says.
-pub const MAX_REPOS: usize = 50;
+/// Bounds a repository list read, at 100 repositories a page.
+const MAX_REPO_LIST_PAGES: usize = 50;
 const CONCURRENCY: usize = 4;
 // Bound each collection so a busy repository cannot monopolize a poll cycle.
 const MAX_RUN_PAGES: usize = 4;
@@ -280,35 +280,26 @@ impl GithubClient {
         Ok(runners.items.into_iter().map(RawRunner::into_model).collect())
     }
 
+    /// An organization's repositories, most recently pushed first.
     pub async fn recent_repos(&self, org: &str, max: usize) -> Result<Vec<String>, GithubError> {
-        #[derive(Deserialize)]
-        struct Repo {
-            name: String,
-            #[serde(default)]
-            archived: bool,
-        }
-        if max == 0 {
-            return Ok(Vec::new());
-        }
-        let per_page = max.clamp(1, 100);
-        let v = self
-            .get(&format!(
-                "/orgs/{org}/repos?sort=pushed&direction=desc&per_page={per_page}"
-            ))
-            .await?;
-        let repos: Vec<Repo> = decode(v.body)?;
-        Ok(repos
-            .into_iter()
-            .filter(|r| !r.archived)
-            .map(|r| r.name)
-            .take(max)
-            .collect())
+        self.repo_names(&format!("/orgs/{org}/repos?sort=pushed&direction=desc"), None, max)
+            .await
     }
 
     /// The personal account's own repositories, most recently pushed first.
     /// `/users/{login}/repos` lists only public ones, so this reads the signed-in
     /// user's repositories and keeps those `owner` owns.
     pub async fn user_repos(&self, owner: &str, max: usize) -> Result<Vec<String>, GithubError> {
+        self.repo_names(
+            "/user/repos?affiliation=owner&sort=pushed&direction=desc",
+            Some(owner),
+            max,
+        )
+        .await
+    }
+
+    /// Up to `max` unarchived repository names from a repository list, page by page.
+    async fn repo_names(&self, path: &str, owner: Option<&str>, max: usize) -> Result<Vec<String>, GithubError> {
         #[derive(Deserialize)]
         struct Owner {
             login: String,
@@ -316,26 +307,34 @@ impl GithubClient {
         #[derive(Deserialize)]
         struct Repo {
             name: String,
-            owner: Owner,
+            owner: Option<Owner>,
             #[serde(default)]
             archived: bool,
         }
-        if max == 0 {
-            return Ok(Vec::new());
-        }
         let per_page = max.clamp(1, 100);
-        let v = self
-            .get(&format!(
-                "/user/repos?affiliation=owner&sort=pushed&direction=desc&per_page={per_page}"
-            ))
-            .await?;
-        let repos: Vec<Repo> = decode(v.body)?;
-        Ok(repos
-            .into_iter()
-            .filter(|r| !r.archived && r.owner.login.eq_ignore_ascii_case(owner))
-            .map(|r| r.name)
-            .take(max)
-            .collect())
+        let mut names = Vec::new();
+        for page in 1..=MAX_REPO_LIST_PAGES {
+            if names.len() >= max {
+                break;
+            }
+            let v = self.get(&format!("{path}&per_page={per_page}&page={page}")).await?;
+            let repos: Vec<Repo> = decode(v.body)?;
+            let count = repos.len();
+            names.extend(
+                repos
+                    .into_iter()
+                    .filter(|r| !r.archived)
+                    .filter(|r| {
+                        owner.is_none_or(|owner| r.owner.as_ref().is_some_and(|o| o.login.eq_ignore_ascii_case(owner)))
+                    })
+                    .map(|r| r.name),
+            );
+            if !v.has_next && count < per_page {
+                break;
+            }
+        }
+        names.truncate(max);
+        Ok(names)
     }
 
     /// Recently pushed repositories of an organization or a personal account.
@@ -390,9 +389,9 @@ impl GithubClient {
     /// Repositories the token can't read are skipped unless none can be read.
     pub async fn user_runners(&self, owner: &str, scope: &RepoScope) -> Result<Vec<GhRunner>, GithubError> {
         let repos = match scope {
-            RepoScope::Selected { repos } => repos.iter().take(MAX_REPOS).cloned().collect(),
-            RepoScope::Recent { max_repos } => self.user_repos(owner, (*max_repos as usize).min(MAX_REPOS)).await?,
-            RepoScope::None => self.user_repos(owner, MAX_REPOS).await?,
+            RepoScope::Selected { repos } => repos.clone(),
+            RepoScope::Recent { max_repos } => self.user_repos(owner, *max_repos as usize).await?,
+            RepoScope::None => self.user_repos(owner, usize::MAX).await?,
         };
         let results: Vec<Result<Vec<GhRunner>, GithubError>> = stream::iter(repos.iter().cloned())
             .map(|repo| async move { self.repo_runners(owner, &repo).await })
@@ -470,19 +469,11 @@ impl GithubClient {
         kind: AccountKind,
         scope: &RepoScope,
     ) -> Result<JobScan, GithubError> {
-        let (repos, mut truncated) = match scope {
+        let mut truncated = false;
+        let repos = match scope {
             RepoScope::None => return Ok(JobScan::default()),
-            RepoScope::Selected { repos } => (
-                repos.iter().take(MAX_REPOS).cloned().collect::<Vec<_>>(),
-                repos.len() > MAX_REPOS,
-            ),
-            RepoScope::Recent { max_repos } => {
-                let max = (*max_repos as usize).min(MAX_REPOS);
-                (
-                    self.account_repos(org, kind, max).await?,
-                    (*max_repos as usize) > MAX_REPOS,
-                )
-            }
+            RepoScope::Selected { repos } => repos.clone(),
+            RepoScope::Recent { max_repos } => self.account_repos(org, kind, *max_repos as usize).await?,
         };
 
         let results: Vec<Result<Collection<GhJob>, GithubError>> = stream::iter(repos.iter().cloned())

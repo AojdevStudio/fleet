@@ -85,7 +85,7 @@ function OrgRow({ org, status }: { org: OrgConfig; status?: OrgStatusView }) {
       </div>
       {status?.error && <div className="mt-1 break-words text-[11.5px] text-bad selectable">{status.error}</div>}
       {status?.jobsTruncated && (
-        <div className="mt-1 text-[11.5px] text-warn">Some repositories couldn't be scanned for jobs (no access, or over the 50 repo cap).</div>
+        <div className="mt-1 text-[11.5px] text-warn">Some repositories couldn't be scanned for jobs (no access, or too many runs or jobs).</div>
       )}
 
       {mode === "token" && (
@@ -145,10 +145,10 @@ function ScopePicker({ value, onChange }: { value: RepoScope; onChange: (s: Repo
           className="input w-[56px]"
           type="number"
           min={1}
-          max={50}
+          max={1000}
           value={max}
           onChange={(e) => {
-            const n = Math.max(1, Math.min(50, Number(e.target.value) || 1));
+            const n = Math.max(1, Math.min(1000, Number(e.target.value) || 1));
             setMax(n);
             onChange({ kind: "recent", maxRepos: n });
           }}
