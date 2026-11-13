@@ -142,6 +142,9 @@ impl Engine {
             );
         }
         let plan = self.plan_inputs();
+        // Polls read an account's inventory-listed repositories, so the view must count them too.
+        let inventory = plan.inventory.as_ref().and_then(|i| i.as_ref().ok());
+        let config = orgs::with_inventory_scopes(&config, inventory);
         let mut view = derive_without_issues(&config, &self.obs.read_locked(), &plan, now, DataSource::Live);
         self.monitoring
             .locked()

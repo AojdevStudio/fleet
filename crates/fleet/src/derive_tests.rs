@@ -166,6 +166,23 @@ fn queue_incomplete_without_fresh_job_data() {
     assert!(f.view().queue.complete);
 }
 
+#[test]
+fn queue_incomplete_until_every_selected_repo_is_scanned() {
+    let mut f = Fixture::new();
+    f.gh_runners(ago(10), vec![]).jobs(ago(10), vec![]);
+    f.config.orgs[0].repo_scope = RepoScope::Selected {
+        repos: vec!["Web".into()],
+    };
+    assert!(f.view().queue.complete, "a scan of the selected repo is complete");
+    f.config.orgs[0].repo_scope = RepoScope::Selected {
+        repos: vec!["web".into(), "api".into()],
+    };
+    assert!(
+        !f.view().queue.complete,
+        "a repository added since the last scan was never read"
+    );
+}
+
 const JOIN_INVENTORY: &str = r#"
 [organization]
 name = "acme"

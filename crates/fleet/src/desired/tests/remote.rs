@@ -269,3 +269,91 @@ fn legacy_restart_and_logs_target_the_legacy_directory() {
     remote.logs(host, runner, RunnerRole::Declared, 20).unwrap();
     assert!(sent(&commands).contains("\nroot=\"$HOME\"/gh-runners/acme/runner-01\n"));
 }
+
+#[test]
+fn runnerless_host_probe_accepts_its_empty_answer() {
+    for (id, answer) in [
+        ("linux", ""),
+        ("linux", "Welcome to the build box\n"),
+        ("windows", "[]"),
+    ] {
+        let mut host = example_inventory().find_host(id).unwrap().clone();
+        host.runners.clear();
+        let remote = RemoteClient::new(
+            RecordingRunner::new(move |_| answer.to_string()),
+            Duration::from_secs(20),
+            Programs::default(),
+        );
+        assert!(remote.probe(&host).unwrap().is_empty(), "{id} with no runners");
+    }
+}
+
+#[test]
+fn host_with_runners_still_rejects_an_empty_probe() {
+    for (id, answer) in [("linux", ""), ("windows", "[]")] {
+        let host = example_inventory().find_host(id).unwrap().clone();
+        assert!(!host.runners.is_empty());
+        let remote = RemoteClient::new(
+            RecordingRunner::new(move |_| answer.to_string()),
+            Duration::from_secs(20),
+            Programs::default(),
+        );
+        assert!(
+            remote.probe(&host).is_err(),
+            "{id} declares runners, so an empty probe is an error"
+        );
+    }
+}
+
+/// Runs only the installer's RF_ROOT guard, taken from the real script, with a fake `uname`.
+#[cfg(unix)]
+fn install_root_guard(home: &str, root: &str, os: &str) -> i32 {
+    use std::os::unix::fs::PermissionsExt;
+
+    let script = include_str!("../../../scripts/worker-install.sh");
+    let start = script.find("case \"/$RF_ROOT/\" in").unwrap();
+    let guard = script.find("case \"$RF_ROOT\" in").unwrap();
+    let end = guard + script[guard..].find("\nesac\n").unwrap() + "\nesac\n".len();
+    let bin = tempfile::tempdir().unwrap();
+    let uname = bin.path().join("uname");
+    std::fs::write(&uname, format!("#!/bin/sh\necho {os}\n")).unwrap();
+    std::fs::set_permissions(&uname, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!("{}:{}", bin.path().display(), std::env::var("PATH").unwrap_or_default());
+    std::process::Command::new("/bin/bash")
+        .arg("-c")
+        .arg(&script[start..end])
+        .env("HOME", home)
+        .env("RF_ROOT", root)
+        .env("PATH", path)
+        .output()
+        .unwrap()
+        .status
+        .code()
+        .unwrap()
+}
+
+#[cfg(unix)]
+#[test]
+fn installer_accepts_the_macos_lane_layout_and_nothing_wider() {
+    let home = "/Users/builder";
+    assert_eq!(
+        install_root_guard(home, "/Users/builder/actions-runners/ios/actions-runner", "Darwin"),
+        0
+    );
+    assert_eq!(
+        install_root_guard(home, "/Users/builder/gh-runners/acme/runner-01", "Darwin"),
+        0
+    );
+    for (root, os) in [
+        ("/Users/builder/actions-runners/ios/actions-runner", "Linux"),
+        ("/Users/builder/actions-runners/a/b/actions-runner", "Darwin"),
+        ("/Users/builder/actions-runners/../actions-runner", "Darwin"),
+        ("/Users/builder/actions-runners/ios/other", "Darwin"),
+        ("/Users/other/actions-runners/ios/actions-runner", "Darwin"),
+        ("/Users/builder/elsewhere/runner", "Darwin"),
+        ("/Users/builder/gh-runners/../../../tmp/pwn", "Darwin"),
+        ("/Users/builder/gh-runners/./acme", "Linux"),
+    ] {
+        assert_eq!(install_root_guard(home, root, os), 2, "{root} on {os}");
+    }
+}
