@@ -393,6 +393,13 @@ impl GithubClient {
             RepoScope::Recent { max_repos } => self.user_repos(owner, *max_repos as usize).await?,
             RepoScope::None => self.user_repos(owner, usize::MAX).await?,
         };
+        self.listed_repo_runners(owner, &repos).await
+    }
+
+    /// The runners registered to each of `owner`'s `repos`, read one repository at a
+    /// time. This works for an organization too, and never calls an `/orgs` endpoint.
+    /// Repositories the token can't read are skipped unless none can be read.
+    pub async fn listed_repo_runners(&self, owner: &str, repos: &[String]) -> Result<Vec<GhRunner>, GithubError> {
         let results: Vec<Result<Vec<GhRunner>, GithubError>> = stream::iter(repos.iter().cloned())
             .map(|repo| async move { self.repo_runners(owner, &repo).await })
             .buffer_unordered(CONCURRENCY)

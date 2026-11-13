@@ -6,7 +6,6 @@ use chrono::Utc;
 use futures::future::join_all;
 
 use super::{Engine, EngineError, SecretStore};
-use crate::desired::model::Inventory;
 use crate::gh;
 use crate::github::{GithubClient, GithubError};
 use crate::model::{AccountKind, OrgAuth, OrgConfig, OrgObservation, RepoScope, Timed, default_api_base};
@@ -97,29 +96,39 @@ impl Engine {
 
     /// The orgs to poll. An account with repositories listed in the inventory
     /// reads exactly those, so its repositories are never listed.
-    async fn polled_orgs(&self) -> Vec<OrgConfig> {
-        let mut orgs = self.config().orgs;
+    async fn polled_orgs(&self) -> Vec<PolledOrg> {
+        let orgs = self.config().orgs;
         if orgs.is_empty() {
-            return orgs;
+            return Vec::new();
         }
         // No inventory, or one that doesn't parse, leaves each org's own scope.
-        if let Ok(inventory) = self.read_inventory().await {
-            for org in &mut orgs {
-                org.repo_scope = explicit_scope(&inventory, org);
-            }
-        }
-        orgs
+        let inventory = self.read_inventory().await.ok();
+        orgs.into_iter()
+            .map(
+                |config| match inventory.as_ref().map(|i| i.repositories_of(&config.login)) {
+                    Some(repos) if !repos.is_empty() => PolledOrg {
+                        config: OrgConfig {
+                            repo_scope: RepoScope::Selected { repos: repos.clone() },
+                            ..config
+                        },
+                        listed: Some(repos),
+                    },
+                    _ => PolledOrg { config, listed: None },
+                },
+            )
+            .collect()
     }
 
     /// Fetch one kind of GitHub data for every org, keeping the last good value beside the newest error.
     async fn poll_github<T>(
         &self,
-        fetch: impl AsyncFn(&GithubClient, &OrgConfig) -> Result<T, GithubError>,
+        fetch: impl AsyncFn(&GithubClient, &PolledOrg) -> Result<T, GithubError>,
         refetch_token_on: fn(&GithubError) -> bool,
         slot: ObservationSlot<T>,
     ) {
         let orgs = self.polled_orgs().await;
-        join_all(orgs.iter().map(|org| async {
+        join_all(orgs.iter().map(|polled| async {
+            let org = &polled.config;
             let key = org.login.to_lowercase();
             let client = match self.github_client(org).await {
                 Ok(client) => client,
@@ -131,7 +140,7 @@ impl Engine {
                     return;
                 }
             };
-            let result = fetch(&client, org).await;
+            let result = fetch(&client, polled).await;
             if result.as_ref().is_err_and(refetch_token_on) {
                 self.drop_github_client(org);
             }
@@ -153,7 +162,15 @@ impl Engine {
 
     pub async fn poll_github_runners(&self) {
         self.poll_github(
-            async |client, org| client.runners(&org.login, org.kind, &org.repo_scope).await,
+            async |client, polled| {
+                let org = &polled.config;
+                match &polled.listed {
+                    // The inventory names the repositories, so their runners are read
+                    // one repository at a time, for an organization too.
+                    Some(repos) => client.listed_repo_runners(&org.login, repos).await,
+                    None => client.runners(&org.login, org.kind, &org.repo_scope).await,
+                }
+            },
             // A 403 here means the credential can't list runners. Fetching the token
             // again picks up a fix such as `gh auth refresh --scopes admin:org`.
             |e| matches!(e, GithubError::Unauthorized | GithubError::Forbidden(_)),
@@ -164,7 +181,10 @@ impl Engine {
 
     pub async fn poll_github_jobs(&self) {
         self.poll_github(
-            async |client, org| client.scan_account_jobs(&org.login, org.kind, &org.repo_scope).await,
+            async |client, polled| {
+                let org = &polled.config;
+                client.scan_account_jobs(&org.login, org.kind, &org.repo_scope).await
+            },
             // Repositories the token can't read only mark the scan incomplete, so a 403
             // says nothing about the credential. Keeping the client keeps its ETag cache.
             |e| matches!(e, GithubError::Unauthorized),
@@ -315,12 +335,10 @@ impl Engine {
     }
 }
 
-/// The inventory's repositories for this org, or the org's own scope when it lists none.
-fn explicit_scope(inventory: &Inventory, org: &OrgConfig) -> RepoScope {
-    let repos = inventory.repositories_of(&org.login);
-    if repos.is_empty() {
-        org.repo_scope.clone()
-    } else {
-        RepoScope::Selected { repos }
-    }
+/// An added account as one poll sees it.
+struct PolledOrg {
+    /// The saved config, its scope replaced by the inventory's repositories when it lists some.
+    config: OrgConfig,
+    /// The account's repositories listed in the inventory, if any.
+    listed: Option<Vec<String>>,
 }

@@ -292,6 +292,8 @@ fn explicit_repositories_are_parsed_and_checked() {
     let inventory = load(&format!("repositories = [\"acme/web\", \"Solo/app\"]\n{}", base())).unwrap();
     assert_eq!(inventory.repositories_of("acme"), vec!["web"]);
     assert_eq!(inventory.repositories_of("solo"), vec!["app"]);
+    let repositories: Vec<String> = inventory.runner_repositories().into_iter().collect();
+    assert_eq!(repositories, vec!["Solo/app", "acme/web"]);
     assert!(load(&base()).unwrap().repositories.is_empty());
     let e = load_err(&format!("repositories = [\"web\"]\n{}", base()));
     assert_eq!(e, "invalid repository: 'web' (use owner/repo)");

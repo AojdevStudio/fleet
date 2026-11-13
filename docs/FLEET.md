@@ -75,7 +75,9 @@ runners = [{ name = "linux-01", directory = "runner-01" }]
 An optional top-level `repositories = ["owner/repo", ...]` key, written before
 `[organization]`, lists the repositories to watch. When an added GitHub account owns entries
 there, the app reads runners and jobs from exactly those repositories. It never lists the
-account's repositories to find them, and there is no cap on how many you list.
+account's repositories to find them, and there is no cap on how many you list. Runners are
+read one repository at a time, for an organization too, so the organization runner list is
+not called. Without a `runner_group`, the fleet checks read these repositories the same way.
 
 `[organization]` names the organization, its URL (`https://github.com/NAME`) and the runner
 group every runner registers into. `runner_group` is optional for monitoring. A personal

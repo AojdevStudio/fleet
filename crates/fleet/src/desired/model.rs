@@ -286,18 +286,17 @@ impl Inventory {
             .map(|(_, name)| name.to_string())
             .collect()
     }
-}
 
-impl Inventory {
     /// `owner/repo` names whose runners are read one repository at a time
-    /// when the inventory has no runner group: the repositories legacy
-    /// runners on any host were registered to.
+    /// when the inventory has no runner group: the listed repositories, plus
+    /// those legacy runners on any host were registered to.
     pub fn runner_repositories(&self) -> BTreeSet<String> {
-        self.hosts
+        let legacy = self
+            .hosts
             .iter()
             .flat_map(|h| &h.runners)
-            .filter_map(|r| r.replaces.as_ref()?.repository.clone())
-            .collect()
+            .filter_map(|r| r.replaces.as_ref()?.repository.clone());
+        self.repositories.iter().cloned().chain(legacy).collect()
     }
 }
 
