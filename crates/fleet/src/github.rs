@@ -386,7 +386,6 @@ impl GithubClient {
 
     /// A personal account's runners, read per repository. The scope's list is used
     /// when it names repositories; otherwise the account's own repositories are read.
-    /// Repositories the token can't read are skipped unless none can be read.
     pub async fn user_runners(&self, owner: &str, scope: &RepoScope) -> Result<Vec<GhRunner>, GithubError> {
         let repos = match scope {
             RepoScope::Selected { repos } => repos.clone(),
@@ -398,32 +397,45 @@ impl GithubClient {
 
     /// The runners registered to each of `owner`'s `repos`, read one repository at a
     /// time. This works for an organization too, and never calls an `/orgs` endpoint.
-    /// Repositories the token can't read are skipped unless none can be read.
+    /// A repository that can't be read fails the whole refresh, so a partial list
+    /// never looks complete. The error names each repository that failed.
     pub async fn listed_repo_runners(&self, owner: &str, repos: &[String]) -> Result<Vec<GhRunner>, GithubError> {
-        let results: Vec<Result<Vec<GhRunner>, GithubError>> = stream::iter(repos.iter().cloned())
-            .map(|repo| async move { self.repo_runners(owner, &repo).await })
+        let results: Vec<(String, Result<Vec<GhRunner>, GithubError>)> = stream::iter(repos.iter().cloned())
+            .map(|repo| async move {
+                let result = self.repo_runners(owner, &repo).await;
+                (repo, result)
+            })
             .buffer_unordered(CONCURRENCY)
             .collect()
             .await;
         let mut runners: Vec<GhRunner> = Vec::new();
-        let mut denied = None;
-        let mut read_any = repos.is_empty();
-        for result in results {
+        let mut failed: Vec<(String, GithubError)> = Vec::new();
+        for (repo, result) in results {
             match result {
                 Ok(batch) => {
-                    read_any = true;
                     for runner in batch {
                         if !runners.iter().any(|r| r.id == runner.id) {
                             runners.push(runner);
                         }
                     }
                 }
-                Err(e @ (GithubError::NotFound(_) | GithubError::Forbidden(_))) => denied = denied.or(Some(e)),
+                Err(e @ (GithubError::NotFound(_) | GithubError::Forbidden(_))) => failed.push((repo, e)),
                 Err(e) => return Err(e),
             }
         }
-        if !read_any && let Some(e) = denied {
-            return Err(hint_repo_runner_permission(e, owner));
+        if !failed.is_empty() {
+            failed.sort_by(|a, b| a.0.cmp(&b.0));
+            if failed.len() == repos.len() {
+                let (_, e) = failed.swap_remove(0);
+                return Err(hint_repo_runner_permission(e, owner));
+            }
+            let reasons: Vec<String> = failed.iter().map(|(repo, e)| format!("{owner}/{repo}: {e}")).collect();
+            return Err(GithubError::Incomplete(format!(
+                "Read runners in {} of {} repositories. {}. Listing runners needs the repository permission \"Administration: read\" (classic tokens: repo) on each one.",
+                repos.len() - failed.len(),
+                repos.len(),
+                reasons.join("; ")
+            )));
         }
         runners.sort_by_key(|r| r.id);
         Ok(runners)
@@ -831,6 +843,37 @@ mod tests {
             panic!("{err:?}")
         };
         assert!(msg.contains("Administration: read"));
+    }
+
+    #[tokio::test]
+    async fn personal_account_partial_runner_read_is_an_error() {
+        let router = Router::new().route(
+            "/repos/{owner}/{repo}/actions/runners",
+            get(|Path((_owner, repo)): Path<(String, String)>| async move {
+                match repo.as_str() {
+                    "app" => (
+                        AxStatus::OK,
+                        Json(json!({"total_count": 1, "runners": [runner(1, "a", false)]})),
+                    ),
+                    "locked" => (AxStatus::FORBIDDEN, Json(json!({"message": "Must have admin rights"}))),
+                    _ => (AxStatus::NOT_FOUND, Json(json!({"message": "Not Found"}))),
+                }
+            }),
+        );
+        let base = serve(router).await;
+        let scope = RepoScope::Selected {
+            repos: vec!["app".into(), "locked".into(), "gone".into()],
+        };
+        let err = GithubClient::new(&base, "t")
+            .user_runners("solo", &scope)
+            .await
+            .unwrap_err();
+        let GithubError::Incomplete(msg) = err else {
+            panic!("{err:?}")
+        };
+        assert!(msg.contains("1 of 3 repositories"), "{msg}");
+        assert!(msg.contains("solo/locked: GitHub refused access (403)"), "{msg}");
+        assert!(msg.contains("solo/gone: Not found (404)"), "{msg}");
     }
 
     #[tokio::test]
