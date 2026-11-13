@@ -417,6 +417,14 @@ fn queue_view(
         if now - jobs.at > JOBS_STALE_AFTER || jobs.value.truncated {
             view.complete = false;
         }
+        // A scope that gained repositories since the last scan has not been read yet.
+        if let RepoScope::Selected { repos } = &org_cfg.repo_scope
+            && !repos
+                .iter()
+                .all(|r| jobs.value.repos_scanned.iter().any(|s| s.eq_ignore_ascii_case(r)))
+        {
+            view.complete = false;
+        }
         view.as_of = Some(view.as_of.map_or(jobs.at, |a: DateTime<Utc>| a.min(jobs.at)));
 
         for job in jobs.value.jobs.iter().filter(|j| j.status == "queued") {
