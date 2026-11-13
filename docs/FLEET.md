@@ -78,7 +78,10 @@ there, the app reads runners and jobs from exactly those repositories. It never 
 account's repositories to find them, and there is no cap on how many you list.
 
 `[organization]` names the organization, its URL (`https://github.com/NAME`) and the runner
-group every runner registers into. Each `[[hosts]]` entry is one machine:
+group every runner registers into. `runner_group` is optional for monitoring. A personal
+account has no runner groups, so without it the checks read runners one repository at a time
+through `/repos/{owner}/{repo}/actions/runners` and never call an organization endpoint.
+Apply still needs it. Each `[[hosts]]` entry is one machine:
 
 | Key | Meaning |
 |---|---|
