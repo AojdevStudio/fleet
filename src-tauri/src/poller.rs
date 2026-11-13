@@ -32,7 +32,8 @@ pub fn start(app: AppHandle, engine: Arc<Engine>) -> Poller {
         if !e.tailnet_available() {
             e.poll_tailscale().await;
         }
-        e.poll_machines().await
+        e.poll_machines().await;
+        e.poll_pools().await
     });
     spawn_loop(&app, &engine, &refresh, Duration::from_secs(20), |e| async move {
         e.poll_github_runners().await

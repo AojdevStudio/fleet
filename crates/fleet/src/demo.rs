@@ -126,6 +126,19 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
                 peers,
             },
         )),
+        pools: Some(crate::model::PoolsObservation {
+            runner_up: crate::desired::model::RunnerUp {
+                host: "mac-mini-03".into(),
+                config: "~/.config/runner-up/config.json".into(),
+                program: "runner-up".into(),
+                tart_host: None,
+                pools: Vec::new(),
+            },
+            report: crate::runner_up::parse_read(&crate::runner_up::fixture::output(), None)
+                .ok()
+                .map(|report| Timed::new(ago(30), report)),
+            error: None,
+        }),
         ..Default::default()
     };
     obs.github.insert(

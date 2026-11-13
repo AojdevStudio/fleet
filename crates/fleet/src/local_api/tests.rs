@@ -158,6 +158,7 @@ async fn views_carry_no_secrets() {
             "/v1/discovered",
             "/v1/desired",
             "/v1/monitoring",
+            "/v1/pools",
         ] {
             let (status, body) = call(&e, get(path)).await;
             assert_eq!(status, StatusCode::OK);

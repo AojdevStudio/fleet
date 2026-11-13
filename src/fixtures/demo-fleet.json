@@ -2055,5 +2055,106 @@
         "detail": "Started observing this machine. Earlier events are not known."
       }
     ]
+  },
+  "pools": {
+    "coordinator": "mac-mini-03",
+    "checkedAt": "2026-10-03T11:59:30Z",
+    "error": null,
+    "pools": [
+      {
+        "name": "central-linux",
+        "places": 2,
+        "free": 1,
+        "busy": 1,
+        "unavailable": 0,
+        "waitingJobs": 1,
+        "startingJobs": 0,
+        "runningVms": 0
+      },
+      {
+        "name": "central-linux-kvm",
+        "places": 1,
+        "free": 1,
+        "busy": 0,
+        "unavailable": 0,
+        "waitingJobs": 0,
+        "startingJobs": 1,
+        "runningVms": 0
+      },
+      {
+        "name": "central-macos",
+        "places": 2,
+        "free": 0,
+        "busy": 1,
+        "unavailable": 1,
+        "waitingJobs": 1,
+        "startingJobs": 0,
+        "runningVms": 1
+      }
+    ],
+    "places": [
+      {
+        "id": "ci-kvm-1",
+        "machine": "ci-linux",
+        "provider": "kvm",
+        "pools": [
+          "central-linux-kvm"
+        ],
+        "state": "free",
+        "detail": "free"
+      },
+      {
+        "id": "ci-linux-1",
+        "machine": "ci-linux",
+        "provider": "docker",
+        "pools": [
+          "central-linux"
+        ],
+        "state": "busy",
+        "detail": "busy (job): example/app \"test / linux\" running"
+      },
+      {
+        "id": "ci-linux-2",
+        "machine": "ci-linux",
+        "provider": "docker",
+        "pools": [
+          "central-linux"
+        ],
+        "state": "free",
+        "detail": "free"
+      },
+      {
+        "id": "mac-1",
+        "machine": "mac-coordinator",
+        "provider": "tart",
+        "pools": [
+          "central-macos"
+        ],
+        "state": "busy",
+        "detail": "busy (job): example/ios \"build\" running"
+      },
+      {
+        "id": "mac-2",
+        "machine": "mac-coordinator",
+        "provider": "tart",
+        "pools": [
+          "central-macos"
+        ],
+        "state": "resting",
+        "detail": "resting (agent unreachable since 2026-11-01T10:00:00Z)"
+      }
+    ],
+    "tartVms": [
+      {
+        "name": "runner-up-mac-1",
+        "running": true,
+        "place": "mac-1"
+      },
+      {
+        "name": "macos-sequoia-base",
+        "running": false,
+        "place": null
+      }
+    ]
   }
 }

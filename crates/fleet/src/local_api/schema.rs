@@ -25,6 +25,7 @@ pub(super) fn endpoint_descriptions() -> Value {
         "GET /v1/discovered": "Other machines and ignored tailnet peers",
         "GET /v1/desired": "Global plan plus per-host plans, runner status, blocked reasons and doctor checks; optional machine",
         "GET /v1/monitoring": format!("Current alerts and latest {EVENT_PAGE_SIZE} events; optional machine"),
+        "GET /v1/pools": "runner-up central pools: place counts per pool, places and tart VMs; null without a coordinator",
         "GET /v1/events": "Retained history, newest first; machine or machineKey, before, limit",
         "GET /v1/issues": "Shared attention findings; machine, category, stale, muted, after, limit",
         "GET /v1/changes": "Compare the current revision with since",
@@ -213,6 +214,13 @@ fn document() -> Value {
                 json!({ "monitoring": { "oneOf": [reference("FleetMonitoring"), reference("FleetMachineMonitoring")] } }),
             )),
             parameters::<queries::MachineFilter>(&mut components),
+        ),
+        (
+            "/v1/pools",
+            envelope(object(
+                json!({ "pools": { "anyOf": [reference("PoolsView"), { "type": "null" }] } }),
+            )),
+            parameters::<NoQuery>(&mut components),
         ),
         (
             "/v1/events",

@@ -88,6 +88,7 @@ pub(crate) fn derive_without_issues(
         },
         plan: plan_status(plan, checked.as_ref()),
         monitoring: crate::monitoring::FleetMonitoring::default(),
+        pools: crate::runner_up::view(obs),
     };
     if source == DataSource::Demo {
         crate::monitoring::demo::attach(&mut view, now);

@@ -47,6 +47,7 @@ pub fn router(engine: Arc<Engine>) -> Router {
         .route("/v1/discovered", get(reads::discovered))
         .route("/v1/desired", get(reads::desired))
         .route("/v1/monitoring", get(reads::monitoring))
+        .route("/v1/pools", get(reads::pools))
         .route("/v1/events", get(reads::events))
         .route("/v1/issues", get(reads::issues))
         .route("/v1/changes", get(reads::changes))

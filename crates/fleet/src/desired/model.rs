@@ -271,6 +271,23 @@ pub struct Inventory {
     /// `owner/repo` names to read runners and jobs from. When an account has
     /// entries here, the app reads exactly these and never lists the account's repositories.
     pub repositories: Vec<String>,
+    /// The runner-up coordinator whose central pools the app reads.
+    pub runner_up: Option<RunnerUp>,
+}
+
+/// `[runner_up]`: where the runner-up coordinator runs and how to read it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunnerUp {
+    /// The inventory host that runs the coordinator.
+    pub host: String,
+    /// The coordinator's config file on that host.
+    pub config: String,
+    /// The runner-up program; `runner-up` on the PATH by default.
+    pub program: String,
+    /// The inventory host whose tart VMs are listed; the coordinator host by default.
+    pub tart_host: Option<String>,
+    /// The pools to show; every configured pool when empty.
+    pub pools: Vec<String>,
 }
 
 impl Inventory {
