@@ -269,3 +269,38 @@ fn legacy_restart_and_logs_target_the_legacy_directory() {
     remote.logs(host, runner, RunnerRole::Declared, 20).unwrap();
     assert!(sent(&commands).contains("\nroot=\"$HOME\"/gh-runners/acme/runner-01\n"));
 }
+
+#[test]
+fn runnerless_host_probe_accepts_its_empty_answer() {
+    for (id, answer) in [
+        ("linux", ""),
+        ("linux", "Welcome to the build box\n"),
+        ("windows", "[]"),
+    ] {
+        let mut host = example_inventory().find_host(id).unwrap().clone();
+        host.runners.clear();
+        let remote = RemoteClient::new(
+            RecordingRunner::new(move |_| answer.to_string()),
+            Duration::from_secs(20),
+            Programs::default(),
+        );
+        assert!(remote.probe(&host).unwrap().is_empty(), "{id} with no runners");
+    }
+}
+
+#[test]
+fn host_with_runners_still_rejects_an_empty_probe() {
+    for (id, answer) in [("linux", ""), ("windows", "[]")] {
+        let host = example_inventory().find_host(id).unwrap().clone();
+        assert!(!host.runners.is_empty());
+        let remote = RemoteClient::new(
+            RecordingRunner::new(move |_| answer.to_string()),
+            Duration::from_secs(20),
+            Programs::default(),
+        );
+        assert!(
+            remote.probe(&host).is_err(),
+            "{id} declares runners, so an empty probe is an error"
+        );
+    }
+}
