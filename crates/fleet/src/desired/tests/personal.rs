@@ -8,7 +8,7 @@ use super::super::github::{FleetGithub, GithubError, ReleaseAsset};
 use super::super::model::{CheckStatus, FleetPlanAction};
 use super::super::operations::doctor;
 use super::super::plan::generate_plan;
-use super::super::state::collect_snapshot;
+use super::super::state::{NO_REPOSITORIES, build_status_rows, collect_snapshot};
 use super::*;
 use crate::sync::MutexExt;
 
@@ -141,4 +141,62 @@ fn apply_still_needs_a_runner_group() {
     );
     assert!(fleet.world().tokens.is_empty());
     assert!(fleet.world().calls.is_empty());
+}
+
+#[test]
+fn no_runner_group_and_no_repository_is_an_empty_scope_error() {
+    let inventory = load(&base().replace("runner_group = \"trusted\"\n", "")).unwrap();
+    assert!(inventory.runner_repositories().is_empty());
+    let github = PersonalGithub::default();
+    let fleet = FakeFleet::default();
+
+    let snapshot = collect_snapshot(&inventory, &github, &fleet, None).unwrap();
+    assert_eq!(snapshot.github_error.as_deref(), Some(NO_REPOSITORIES));
+    let rows = build_status_rows(&inventory, &snapshot, None).unwrap();
+    assert!(rows.iter().all(|r| r.drift == "GitHub unavailable"), "{rows:?}");
+
+    let checks = doctor(&inventory, &github, &fleet, None).unwrap();
+    let auth = checks.iter().find(|c| c.check == "github-auth").unwrap();
+    assert_eq!(auth.status, CheckStatus::Fail);
+    assert_eq!(auth.detail, NO_REPOSITORIES);
+    assert!(github.reads().is_empty(), "{:?}", github.reads());
+}
+
+#[test]
+fn status_rows_without_a_runner_group_show_no_group_drift() {
+    let inventory = personal();
+    let (host, runner) = (&inventory.hosts[0], &inventory.hosts[0].runners[0]);
+    let labels = host.labels_for(runner);
+    let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+    let local = LocalRunner::new("test-01", "~/gh-runners/acme/runner-01", true, "active", None);
+    // A repository read can't tell group membership, so it is `None`.
+    let snap = snapshot(vec![gr("test-01", "online", false, &labels, None)], vec![local.clone()]);
+    let rows = build_status_rows(&inventory, &snap, None).unwrap();
+    let row = rows.iter().find(|r| r.runner == "test-01").unwrap();
+    assert_eq!(row.drift, "in sync");
+
+    // With a runner group, unknown membership is still drift.
+    let grouped = load(&base()).unwrap();
+    let snap = snapshot(vec![gr("test-01", "online", false, &labels, None)], vec![local]);
+    let rows = build_status_rows(&grouped, &snap, None).unwrap();
+    assert_eq!(rows[0].drift, "group unavailable");
+}
+
+#[test]
+fn no_runner_group_reads_the_listed_repositories_without_legacy_runners() {
+    let inventory = load(&format!(
+        "repositories = [\"acme/web\", \"acme/app\"]\n{}",
+        base().replace("runner_group = \"trusted\"\n", "")
+    ))
+    .unwrap();
+    let github = PersonalGithub::default();
+    let fleet = FakeFleet::default();
+
+    let snapshot = collect_snapshot(&inventory, &github, &fleet, None).unwrap();
+    assert_eq!(snapshot.github_error, None);
+    assert_eq!(github.reads(), vec!["repo runners acme/app", "repo runners acme/web"]);
+
+    let checks = doctor(&inventory, &github, &fleet, None).unwrap();
+    let auth = checks.iter().find(|c| c.check == "github-auth").unwrap();
+    assert_eq!(auth.status, CheckStatus::Pass, "{}", auth.detail);
 }
