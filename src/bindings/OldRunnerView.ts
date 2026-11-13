@@ -6,10 +6,11 @@ import type { RunnerActivity } from "./RunnerActivity";
  */
 export type OldRunnerView = { name: string, 
 /**
- * The runner's key in this view, when the dashboard lists it.
+ * The runner's key in this view, when exactly one listed runner of the
+ * repository's owner has this name.
  */
 runnerKey: string | null, 
 /**
- * `None` when no listed runner has this name.
+ * `None` when the runner isn't linked.
  */
 activity: RunnerActivity | null, };

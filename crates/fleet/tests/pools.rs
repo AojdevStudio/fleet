@@ -89,3 +89,35 @@ async fn pools_come_from_the_coordinator_and_survive_a_failed_read() {
     assert_eq!(failed.pools, pools.pools, "the last good read stays");
     assert_eq!(failed.checked_at, pools.checked_at);
 }
+
+#[tokio::test]
+async fn disabled_hosts_are_never_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = Arc::new(FakeCoordinator::default());
+    let engine = engine(dir.path(), source.clone());
+    let disabled = INVENTORY.replace("id = \"coordinator\"\n", "id = \"coordinator\"\nenabled = false\n");
+    std::fs::write(dir.path().join("fleet.toml"), disabled).unwrap();
+    engine.poll_pools().await;
+    assert!(
+        source.reads.lock().unwrap().is_empty(),
+        "a disabled coordinator gets no SSH read"
+    );
+    let pools = engine.view().pools.unwrap();
+    assert!(pools.error.unwrap().contains("is disabled"));
+
+    // tart on another Mac that is disabled: the coordinator is read, the Mac is not.
+    let tart_disabled = INVENTORY
+        .replace("pools = [", "tart_host = \"mac\"\npools = [")
+        .replace(
+            "[[hosts]]\nid = \"ci-linux\"",
+            "[[hosts]]\nid = \"mac\"\nplatform = \"darwin-arm64\"\nssh = \"ci@192.0.2.30\"\n\
+             root = \"~/gh-runners\"\nservice_mode = \"launchagent\"\nenabled = false\n\n\
+             [[hosts]]\nid = \"ci-linux\"",
+        );
+    std::fs::write(dir.path().join("fleet.toml"), tart_disabled).unwrap();
+    engine.poll_pools().await;
+    let reads = source.reads.lock().unwrap().clone();
+    let hosts: Vec<&str> = reads.iter().map(|(h, _)| h.as_str()).collect();
+    assert_eq!(hosts, vec!["coordinator"]);
+    assert!(!reads[0].1.contains("tart list"), "tart lives on the disabled Mac");
+}
