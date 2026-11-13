@@ -6,9 +6,10 @@ use chrono::Utc;
 use futures::future::join_all;
 
 use super::{Engine, EngineError, SecretStore};
+use crate::desired::model::Inventory;
 use crate::gh;
 use crate::github::{GithubClient, GithubError};
-use crate::model::{AccountKind, OrgAuth, OrgConfig, OrgObservation, RepoScope, Timed, default_api_base};
+use crate::model::{AccountKind, GhRunner, OrgAuth, OrgConfig, OrgObservation, RepoScope, Timed, default_api_base};
 use crate::sync::{MutexExt, RwLockExt};
 
 #[derive(Debug, thiserror::Error)]
@@ -104,19 +105,26 @@ impl Engine {
         // No inventory, or one that doesn't parse, leaves each org's own scope.
         let inventory = self.read_inventory().await.ok();
         orgs.into_iter()
-            .map(
-                |config| match inventory.as_ref().map(|i| i.repositories_of(&config.login)) {
-                    Some(repos) if !repos.is_empty() => PolledOrg {
-                        config: OrgConfig {
-                            repo_scope: RepoScope::Selected { repos: repos.clone() },
-                            ..config
-                        },
-                        listed: Some(repos),
-                    },
-                    _ => PolledOrg { config, listed: None },
-                },
-            )
+            .map(|config| {
+                let listed = listed_repos(inventory.as_ref(), &config.login);
+                PolledOrg::new(config, listed)
+            })
             .collect()
+    }
+
+    /// The account's repositories listed in the inventory, if it lists any.
+    async fn inventory_repos_of(&self, login: &str) -> Option<Vec<String>> {
+        listed_repos(self.read_inventory().await.ok().as_ref(), login)
+    }
+
+    /// Checks a credential the way polls will use it. With repositories listed in the
+    /// inventory, it reads exactly their runners and never calls an `/orgs` endpoint
+    /// or lists the account's repositories.
+    async fn check_runners(&self, client: &GithubClient, org: &OrgConfig) -> Result<Vec<GhRunner>, GithubError> {
+        match self.inventory_repos_of(&org.login).await {
+            Some(repos) => client.listed_repo_runners(&org.login, &repos).await,
+            None => client.runners(&org.login, org.kind, &org.repo_scope).await,
+        }
     }
 
     /// Fetch one kind of GitHub data for every org, keeping the last good value beside the newest error.
@@ -235,8 +243,8 @@ impl Engine {
         };
         let client = GithubClient::new(&api_base, &token);
         org.kind = client.account_kind(&login).await;
-        let runners = client
-            .runners(&login, org.kind, &org.repo_scope)
+        let runners = self
+            .check_runners(&client, &org)
             .await
             .map_err(|e| EngineError::Invalid(self.github_error_text(&org, &e)))?;
 
@@ -266,8 +274,7 @@ impl Engine {
             .await
             .map_err(|e| EngineError::Invalid(e.to_string()))?;
         let client = GithubClient::new(&org.api_base, &token);
-        client
-            .runners(&org.login, org.kind, &org.repo_scope)
+        self.check_runners(&client, &org)
             .await
             .map_err(|e| EngineError::Invalid(self.github_error_text(&org, &e)))?;
         self.update_config(|c| {
@@ -294,7 +301,7 @@ impl Engine {
         let org = self.find_org(login)?;
         let token = token.trim().to_string();
         let client = GithubClient::new(&org.api_base, &token);
-        client.runners(&org.login, org.kind, &org.repo_scope).await?;
+        self.check_runners(&client, &org).await?;
         let account = key.clone();
         self.secrets_call(move |secrets| secrets.set(&account, &token))
             .await
@@ -341,4 +348,149 @@ struct PolledOrg {
     config: OrgConfig,
     /// The account's repositories listed in the inventory, if any.
     listed: Option<Vec<String>>,
+}
+
+impl PolledOrg {
+    /// Listed repositories replace the saved scope.
+    fn new(config: OrgConfig, listed: Option<Vec<String>>) -> Self {
+        match listed {
+            Some(repos) => PolledOrg {
+                config: OrgConfig {
+                    repo_scope: RepoScope::Selected { repos: repos.clone() },
+                    ..config
+                },
+                listed: Some(repos),
+            },
+            None => PolledOrg { config, listed: None },
+        }
+    }
+}
+
+/// `login`'s repositories in the inventory, or `None` when there is no inventory or it lists none.
+fn listed_repos(inventory: Option<&Inventory>, login: &str) -> Option<Vec<String>> {
+    inventory
+        .map(|i| i.repositories_of(login))
+        .filter(|repos| !repos.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use axum::Router;
+    use axum::extract::Path;
+    use axum::http::StatusCode;
+    use axum::routing::get;
+    use serde_json::json;
+
+    use super::*;
+    use crate::engine::MemorySecrets;
+
+    /// A personal account whose `/orgs` and repository-list endpoints refuse with 403.
+    /// Every request path is recorded.
+    async fn personal_account(seen: Arc<Mutex<Vec<String>>>) -> String {
+        let forbidden = || async {
+            (
+                StatusCode::FORBIDDEN,
+                axum::Json(json!({"message": "Must have admin rights to Repository."})),
+            )
+        };
+        let log = |seen: Arc<Mutex<Vec<String>>>| {
+            move |req: axum::extract::Request, next: axum::middleware::Next| {
+                let seen = seen.clone();
+                async move {
+                    seen.lock().unwrap().push(req.uri().path().to_string());
+                    next.run(req).await
+                }
+            }
+        };
+        let app = Router::new()
+            .route(
+                "/users/{login}",
+                get(|Path(login): Path<String>| async move { axum::Json(json!({"login": login, "type": "User"})) }),
+            )
+            .route("/orgs/{org}/actions/runners", get(forbidden))
+            .route("/orgs/{org}/repos", get(forbidden))
+            .route("/user/repos", get(forbidden))
+            .route(
+                "/repos/{owner}/{repo}/actions/runners",
+                get(|Path((_owner, repo)): Path<(String, String)>| async move {
+                    axum::Json(json!({"total_count": 1, "runners": [{
+                        "id": if repo == "web" { 1 } else { 2 },
+                        "name": format!("{repo}-runner"),
+                        "os": "macOS",
+                        "status": "online",
+                        "busy": false,
+                        "labels": [{"name": "self-hosted"}],
+                    }]}))
+                }),
+            )
+            .layer(axum::middleware::from_fn(log(seen)));
+        crate::test_server::serve(app).await
+    }
+
+    fn engine_with_listed_repos(dir: &tempfile::TempDir) -> Engine {
+        let inventory = dir.path().join("fleet.toml");
+        let example = include_str!("../../../inventory/fleet.example.toml");
+        std::fs::write(
+            &inventory,
+            format!("repositories = [\"solo/web\", \"solo/api\", \"elsewhere/tool\"]\n{example}"),
+        )
+        .unwrap();
+        let engine = Engine::load(dir.path().join("config.json"), Arc::new(MemorySecrets::default())).unwrap();
+        engine
+            .set_inventory_path(Some(inventory.display().to_string()))
+            .unwrap();
+        engine
+    }
+
+    fn assert_only_listed_repos_read(seen: &Mutex<Vec<String>>) {
+        let mut seen = seen.lock().unwrap().clone();
+        assert!(
+            !seen.iter().any(|p| p.starts_with("/orgs/") || p == "/user/repos"),
+            "an explicit repository list makes no org call or account scan: {seen:?}"
+        );
+        seen.retain(|p| p.ends_with("/actions/runners"));
+        seen.sort();
+        assert_eq!(
+            seen,
+            vec!["/repos/solo/api/actions/runners", "/repos/solo/web/actions/runners"]
+        );
+    }
+
+    #[tokio::test]
+    async fn setup_with_listed_repositories_reads_only_their_runners() {
+        let dir = tempfile::tempdir().unwrap();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let base = personal_account(seen.clone()).await;
+        let engine = engine_with_listed_repos(&dir);
+
+        engine
+            .add_org("solo", OrgAuth::Token, Some("fake"), RepoScope::None, Some(base))
+            .await
+            .unwrap();
+        assert_eq!(engine.config().orgs[0].kind, AccountKind::User);
+        let runners = engine.obs.read_locked().github["solo"]
+            .runners
+            .as_ref()
+            .map(|r| r.value.len());
+        assert_eq!(runners, Some(2));
+        assert_only_listed_repos_read(&seen);
+    }
+
+    #[tokio::test]
+    async fn token_update_with_listed_repositories_reads_only_their_runners() {
+        let dir = tempfile::tempdir().unwrap();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let base = personal_account(seen.clone()).await;
+        let engine = engine_with_listed_repos(&dir);
+        engine
+            .add_org("solo", OrgAuth::Token, Some("fake"), RepoScope::None, Some(base))
+            .await
+            .unwrap();
+        seen.lock().unwrap().clear();
+
+        engine.update_org_token("solo", "replacement").await.unwrap();
+        assert_only_listed_repos_read(&seen);
+    }
 }
