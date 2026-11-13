@@ -8,10 +8,10 @@ export function Pools({ pools }: { pools: RunnerUpPoolsView }) {
   return (
     <Section title="Central pools" count={pools.pools.length}>
       <Card className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-[13px]">
+        <table className="w-full min-w-[620px] text-[13px]">
           <thead className="border-b border-line bg-sunken/40 text-left text-[12px] text-ink-2">
             <tr>
-              {["Pool", "Places", "Free", "Busy", "Unavailable", "Waiting", "Tart VMs"].map((label, i) => (
+              {["Pool", "Places", "Free", "Busy", "Unavailable", "Waiting", "Starting", "Tart VMs"].map((label, i) => (
                 <th key={label} scope="col" className={`py-2 font-medium ${i === 0 ? "px-4" : "px-3"}`}>{label}</th>
               ))}
             </tr>
@@ -24,7 +24,8 @@ export function Pools({ pools }: { pools: RunnerUpPoolsView }) {
                 <td className="px-3 tabular-nums">{p.free}</td>
                 <td className="px-3 tabular-nums">{p.busy}</td>
                 <td className="px-3 tabular-nums">{p.unavailable}</td>
-                <td className="px-3 tabular-nums">{p.waitingJobs + p.startingJobs}</td>
+                <td className="px-3 tabular-nums">{p.waitingJobs}</td>
+                <td className="px-3 tabular-nums">{p.startingJobs}</td>
                 <td className="px-3 tabular-nums">{p.runningVms}</td>
               </tr>
             ))}
