@@ -69,11 +69,21 @@ fn read_coordinator(inventory: &Inventory, source: &dyn PoolSource) -> Result<ru
         return Err("The inventory has no [runner_up] section.".into());
     };
     let host = inventory.find_host(&config.host).map_err(|e| e.0)?;
+    // A disabled host is never contacted, not even for a read.
+    if !host.enabled {
+        return Err(format!(
+            "The coordinator host {} is disabled in the inventory, so it isn't read.",
+            host.id
+        ));
+    }
     let tart_host = match &config.tart_host {
         Some(id) if id != &config.host => Some(inventory.find_host(id).map_err(|e| e.0)?),
         _ => None,
     };
-    let with_tart = tart_host.is_none() && host.platform == crate::desired::model::Platform::DarwinArm64;
+    let tart_disabled = tart_host.is_some_and(|mac| !mac.enabled);
+    let tart_host = tart_host.filter(|mac| mac.enabled);
+    let with_tart =
+        tart_host.is_none() && !tart_disabled && host.platform == crate::desired::model::Platform::DarwinArm64;
     let output = source
         .read(host, &runner_up::read_script(config, with_tart))
         .map_err(|e| e.to_string())?;

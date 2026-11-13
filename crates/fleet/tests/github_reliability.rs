@@ -13,7 +13,7 @@ use axum::{Json, Router};
 use chrono::Utc;
 use fleet::engine::{Engine, MemorySecrets, SecretStore};
 use fleet::github::{GithubClient, GithubError};
-use fleet::model::{AppConfig, OrgAuth, OrgConfig, RepoScope};
+use fleet::model::{AccountKind, AppConfig, OrgAuth, OrgConfig, RepoScope};
 use serde_json::{Value, json};
 
 mod common;
@@ -424,4 +424,61 @@ async fn inventory_repositories_replace_the_organization_repository_scan() {
     scanned.sort();
     scanned.dedup();
     assert_eq!(scanned, vec!["acme/api", "acme/web"]);
+}
+
+#[tokio::test]
+async fn inventory_repositories_replace_the_organization_runner_list() {
+    let org_hits = Arc::new(AtomicUsize::new(0));
+    let read = Arc::new(Mutex::new(Vec::new()));
+    let (org_runner_hits, repo_reads) = (org_hits.clone(), read.clone());
+    let app = Router::new()
+        .route(
+            "/orgs/{org}/actions/runners",
+            get(move || {
+                org_runner_hits.fetch_add(1, Ordering::SeqCst);
+                async { Json(json!({"total_count": 0, "runners": []})) }
+            }),
+        )
+        .route(
+            "/repos/{org}/{repo}/actions/runners",
+            get(move |Path((org, repo)): Path<(String, String)>| {
+                repo_reads.lock().unwrap().push(format!("{org}/{repo}"));
+                async { Json(json!({"total_count": 0, "runners": []})) }
+            }),
+        );
+    let base = serve(app).await;
+    let dir = tempfile::tempdir().unwrap();
+    let inventory = dir.path().join("fleet.toml");
+    let example = include_str!("../../../inventory/fleet.example.toml");
+    std::fs::write(
+        &inventory,
+        format!("repositories = [\"acme/web\", \"acme/api\", \"elsewhere/tool\"]\n{example}"),
+    )
+    .unwrap();
+    let config = AppConfig {
+        orgs: vec![OrgConfig {
+            login: "acme".into(),
+            api_base: base,
+            repo_scope: RepoScope::Recent { max_repos: 10 },
+            added_at: Utc::now(),
+            auth: OrgAuth::Token,
+            kind: AccountKind::Organization,
+        }],
+        inventory_path: Some(inventory.display().to_string()),
+        ..Default::default()
+    };
+    let path = dir.path().join("config.json");
+    std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let secrets = Arc::new(MemorySecrets::default());
+    secrets.set("acme", "fake").unwrap();
+    let engine = Engine::load(path, secrets).unwrap();
+    engine.poll_github_runners().await;
+    assert_eq!(
+        org_hits.load(Ordering::SeqCst),
+        0,
+        "an explicit repository list skips the organization runner list"
+    );
+    let mut read = read.lock().unwrap().clone();
+    read.sort();
+    assert_eq!(read, vec!["acme/api", "acme/web"]);
 }

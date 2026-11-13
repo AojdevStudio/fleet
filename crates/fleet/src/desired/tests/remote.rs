@@ -199,7 +199,7 @@ fn windows_transport_uses_line_framed_stdin_without_exposing_token() {
                 asset: &asset("win-arm64", "2.999.0", "zip"),
                 token: "short-lived-secret",
                 organization_url: &inventory.organization.url,
-                runner_group: &inventory.organization.runner_group,
+                runner_group: inventory.organization.runner_group.as_deref().unwrap_or_default(),
                 service_password: &secret("transient-password"),
                 sudo_password: &Transient::NONE,
             },
