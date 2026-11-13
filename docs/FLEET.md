@@ -83,7 +83,9 @@ not called. Without a `runner_group`, the fleet checks read these repositories t
 group every runner registers into. `runner_group` is optional for monitoring. A personal
 account has no runner groups, so without it the checks read runners one repository at a time
 through `/repos/{owner}/{repo}/actions/runners` and never call an organization endpoint.
-Apply still needs it. Each `[[hosts]]` entry is one machine:
+The repositories read are the top-level `repositories` list plus those named in legacy
+runners' `replaces` entries. With no runner group and no repository from either, the checks
+report that there is nothing to read rather than show an empty fleet. Apply still needs it. Each `[[hosts]]` entry is one machine:
 
 | Key | Meaning |
 |---|---|
