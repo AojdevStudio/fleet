@@ -72,13 +72,20 @@ labels = ["fleet", "linux-build", "host-linux"]
 runners = [{ name = "linux-01", directory = "runner-01" }]
 ```
 
+An optional top-level `repositories = ["owner/repo", ...]` key, written before
+`[organization]`, lists the repositories to watch. When an added GitHub account owns entries
+there, the app reads runners and jobs from exactly those repositories. It never lists the
+account's repositories to find them, and there is no cap on how many you list. Runners are
+read one repository at a time, for an organization too, so the organization runner list is
+not called. Without a `runner_group`, the fleet checks read these repositories the same way.
+
 `[organization]` names the organization, its URL (`https://github.com/NAME`) and the runner
 group every runner registers into. `runner_group` is optional for monitoring. A personal
 account has no runner groups, so without it the checks read runners one repository at a time
 through `/repos/{owner}/{repo}/actions/runners` and never call an organization endpoint.
-The repositories read are those named in legacy runners' `replaces` entries. With no runner
-group and no such repository, the checks report that there is nothing to read rather than show
-an empty fleet. Apply still needs it. Each `[[hosts]]` entry is one machine:
+The repositories read are the top-level `repositories` list plus those named in legacy
+runners' `replaces` entries. With no runner group and no repository from either, the checks
+report that there is nothing to read rather than show an empty fleet. Apply still needs it. Each `[[hosts]]` entry is one machine:
 
 | Key | Meaning |
 |---|---|

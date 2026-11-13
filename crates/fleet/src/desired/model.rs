@@ -271,18 +271,32 @@ pub struct Organization {
 pub struct Inventory {
     pub organization: Organization,
     pub hosts: Vec<Host>,
+    /// `owner/repo` names to read runners and jobs from. When an account has
+    /// entries here, the app reads exactly these and never lists the account's repositories.
+    pub repositories: Vec<String>,
 }
 
 impl Inventory {
+    /// The listed repositories `owner` owns, without the owner prefix.
+    pub fn repositories_of(&self, owner: &str) -> Vec<String> {
+        self.repositories
+            .iter()
+            .filter_map(|r| r.split_once('/'))
+            .filter(|(o, _)| o.eq_ignore_ascii_case(owner))
+            .map(|(_, name)| name.to_string())
+            .collect()
+    }
+
     /// `owner/repo` names whose runners are read one repository at a time
-    /// when the inventory has no runner group: the repositories legacy
-    /// runners on any host were registered to.
+    /// when the inventory has no runner group: the listed repositories, plus
+    /// those legacy runners on any host were registered to.
     pub fn runner_repositories(&self) -> BTreeSet<String> {
-        self.hosts
+        let legacy = self
+            .hosts
             .iter()
             .flat_map(|h| &h.runners)
-            .filter_map(|r| r.replaces.as_ref()?.repository.clone())
-            .collect()
+            .filter_map(|r| r.replaces.as_ref()?.repository.clone());
+        self.repositories.iter().cloned().chain(legacy).collect()
     }
 }
 

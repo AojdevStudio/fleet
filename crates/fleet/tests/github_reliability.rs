@@ -13,7 +13,7 @@ use axum::{Json, Router};
 use chrono::Utc;
 use fleet::engine::{Engine, MemorySecrets, SecretStore};
 use fleet::github::{GithubClient, GithubError};
-use fleet::model::{AppConfig, OrgAuth, OrgConfig, RepoScope};
+use fleet::model::{AccountKind, AppConfig, OrgAuth, OrgConfig, RepoScope};
 use serde_json::{Value, json};
 
 mod common;
@@ -109,12 +109,13 @@ async fn link_pagination_survives_conditional_cached_responses() {
 }
 
 #[tokio::test]
-async fn repository_scope_limits_remain_intentional_and_hard_cap_is_visible() {
+async fn repository_scopes_are_read_whole_without_a_cap() {
     let app = Router::new()
         .route(
             "/orgs/{org}/repos",
             get(|Query(q): Query<HashMap<String, String>>| async move {
                 assert_eq!(q["per_page"], "2");
+                assert_eq!(q["page"], "1");
                 Json(json!([{"name": "web"}, {"name": "api"}]))
             }),
         )
@@ -130,11 +131,10 @@ async fn repository_scope_limits_remain_intentional_and_hard_cap_is_visible() {
         .unwrap();
     assert_eq!(recent.repos_scanned, vec!["web", "api"]);
     assert!(!recent.truncated, "configured recent scope is not an incomplete scan");
-    let repos = (0..=fleet::github::MAX_REPOS).map(|id| format!("repo{id}")).collect();
-    let capped = client.scan_jobs("acme", &RepoScope::Selected { repos }).await.unwrap();
-    assert!(capped.truncated);
-    assert_eq!(capped.repos_scanned.len(), fleet::github::MAX_REPOS);
-    assert!(!capped.repos_scanned.contains(&"repo50".to_string()));
+    let repos = (0..120).map(|id| format!("repo{id}")).collect();
+    let all = client.scan_jobs("acme", &RepoScope::Selected { repos }).await.unwrap();
+    assert!(!all.truncated);
+    assert_eq!(all.repos_scanned.len(), 120);
     // A disabled or zero repository scope should not make any HTTP requests.
     let offline = GithubClient::new("http://127.0.0.1:1", "fake");
     assert_eq!(
@@ -366,4 +366,178 @@ async fn absent_secret_is_reported_from_either_poll() {
             Some("No token in the Keychain for this organization.")
         );
     }
+}
+
+#[tokio::test]
+async fn inventory_repositories_replace_the_organization_repository_scan() {
+    let listed = Arc::new(AtomicUsize::new(0));
+    let scanned = Arc::new(Mutex::new(Vec::new()));
+    let (list_hits, runs) = (listed.clone(), scanned.clone());
+    let app = Router::new()
+        .route(
+            "/orgs/{org}/repos",
+            get(move || {
+                list_hits.fetch_add(1, Ordering::SeqCst);
+                async { Json(json!([{"name": "other"}])) }
+            }),
+        )
+        .route(
+            "/repos/{org}/{repo}/actions/runs",
+            get(move |Path((org, repo)): Path<(String, String)>| {
+                runs.lock().unwrap().push(format!("{org}/{repo}"));
+                async { Json(json!({"total_count": 0, "workflow_runs": []})) }
+            }),
+        );
+    let base = serve(app).await;
+    let dir = tempfile::tempdir().unwrap();
+    let inventory = dir.path().join("fleet.toml");
+    let example = include_str!("../../../inventory/fleet.example.toml");
+    std::fs::write(
+        &inventory,
+        format!("repositories = [\"acme/web\", \"acme/api\", \"elsewhere/tool\"]\n{example}"),
+    )
+    .unwrap();
+    let config = AppConfig {
+        orgs: vec![OrgConfig {
+            login: "acme".into(),
+            api_base: base,
+            repo_scope: RepoScope::Recent { max_repos: 10 },
+            added_at: Utc::now(),
+            auth: OrgAuth::Token,
+            kind: Default::default(),
+        }],
+        inventory_path: Some(inventory.display().to_string()),
+        ..Default::default()
+    };
+    let path = dir.path().join("config.json");
+    std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let secrets = Arc::new(MemorySecrets::default());
+    secrets.set("acme", "fake").unwrap();
+    let engine = Engine::load(path, secrets).unwrap();
+    engine.poll_github_jobs().await;
+    assert_eq!(
+        listed.load(Ordering::SeqCst),
+        0,
+        "listed repositories are never scanned for"
+    );
+    let mut scanned = scanned.lock().unwrap().clone();
+    scanned.sort();
+    scanned.dedup();
+    assert_eq!(scanned, vec!["acme/api", "acme/web"]);
+}
+
+#[tokio::test]
+async fn inventory_repositories_replace_the_organization_runner_list() {
+    let org_hits = Arc::new(AtomicUsize::new(0));
+    let read = Arc::new(Mutex::new(Vec::new()));
+    let (org_runner_hits, repo_reads) = (org_hits.clone(), read.clone());
+    let app = Router::new()
+        .route(
+            "/orgs/{org}/actions/runners",
+            get(move || {
+                org_runner_hits.fetch_add(1, Ordering::SeqCst);
+                async { Json(json!({"total_count": 0, "runners": []})) }
+            }),
+        )
+        .route(
+            "/repos/{org}/{repo}/actions/runners",
+            get(move |Path((org, repo)): Path<(String, String)>| {
+                repo_reads.lock().unwrap().push(format!("{org}/{repo}"));
+                async { Json(json!({"total_count": 0, "runners": []})) }
+            }),
+        );
+    let base = serve(app).await;
+    let dir = tempfile::tempdir().unwrap();
+    let inventory = dir.path().join("fleet.toml");
+    let example = include_str!("../../../inventory/fleet.example.toml");
+    std::fs::write(
+        &inventory,
+        format!("repositories = [\"acme/web\", \"acme/api\", \"elsewhere/tool\"]\n{example}"),
+    )
+    .unwrap();
+    let config = AppConfig {
+        orgs: vec![OrgConfig {
+            login: "acme".into(),
+            api_base: base,
+            repo_scope: RepoScope::Recent { max_repos: 10 },
+            added_at: Utc::now(),
+            auth: OrgAuth::Token,
+            kind: AccountKind::Organization,
+        }],
+        inventory_path: Some(inventory.display().to_string()),
+        ..Default::default()
+    };
+    let path = dir.path().join("config.json");
+    std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let secrets = Arc::new(MemorySecrets::default());
+    secrets.set("acme", "fake").unwrap();
+    let engine = Engine::load(path, secrets).unwrap();
+    engine.poll_github_runners().await;
+    assert_eq!(
+        org_hits.load(Ordering::SeqCst),
+        0,
+        "an explicit repository list skips the organization runner list"
+    );
+    let mut read = read.lock().unwrap().clone();
+    read.sort();
+    assert_eq!(read, vec!["acme/api", "acme/web"]);
+}
+
+#[tokio::test]
+async fn inventory_listed_jobs_reach_the_queue_when_the_saved_scope_is_none() {
+    let app = Router::new()
+        .route(
+            "/repos/{org}/{repo}/actions/runs",
+            get(|Query(q): Query<HashMap<String, String>>| async move {
+                let ids = if q["status"] == "queued" {
+                    json!([{"id": 1}])
+                } else {
+                    json!([])
+                };
+                Json(json!({"total_count": ids.as_array().unwrap().len(), "workflow_runs": ids}))
+            }),
+        )
+        .route(
+            "/repos/{org}/{repo}/actions/runs/{run}/jobs",
+            get(|| async { Json(json!({"total_count": 1, "jobs": [job(1, 1, "queued")]})) }),
+        );
+    let base = serve(app).await;
+    let dir = tempfile::tempdir().unwrap();
+    let secrets = Arc::new(MemorySecrets::default());
+    secrets.set("acme", "fake").unwrap();
+    let config = AppConfig {
+        orgs: vec![OrgConfig {
+            login: "acme".into(),
+            api_base: base,
+            repo_scope: RepoScope::None,
+            added_at: Utc::now(),
+            auth: OrgAuth::Token,
+            kind: Default::default(),
+        }],
+        ..Default::default()
+    };
+    let path = dir.path().join("config.json");
+    std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let engine = Engine::load(path, secrets).unwrap();
+    let inventory = dir.path().join("fleet.toml");
+    let example = include_str!("../../../inventory/fleet.example.toml");
+    std::fs::write(&inventory, format!("repositories = [\"acme/web\"]\n{example}")).unwrap();
+    engine
+        .set_inventory_path(Some(inventory.display().to_string()))
+        .unwrap();
+
+    engine.poll_github_jobs().await;
+    let view = engine.view();
+    assert_eq!(view.orgs[0].repos_scanned, 1);
+    assert_eq!(
+        view.queue.jobs.len(),
+        1,
+        "the inventory-listed job must reach the queue"
+    );
+    assert!(view.queue.complete);
+    assert_eq!(
+        engine.config().orgs[0].repo_scope,
+        RepoScope::None,
+        "the saved scope is kept"
+    );
 }

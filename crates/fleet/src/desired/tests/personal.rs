@@ -181,3 +181,22 @@ fn status_rows_without_a_runner_group_show_no_group_drift() {
     let rows = build_status_rows(&grouped, &snap, None).unwrap();
     assert_eq!(rows[0].drift, "group unavailable");
 }
+
+#[test]
+fn no_runner_group_reads_the_listed_repositories_without_legacy_runners() {
+    let inventory = load(&format!(
+        "repositories = [\"acme/web\", \"acme/app\"]\n{}",
+        base().replace("runner_group = \"trusted\"\n", "")
+    ))
+    .unwrap();
+    let github = PersonalGithub::default();
+    let fleet = FakeFleet::default();
+
+    let snapshot = collect_snapshot(&inventory, &github, &fleet, None).unwrap();
+    assert_eq!(snapshot.github_error, None);
+    assert_eq!(github.reads(), vec!["repo runners acme/app", "repo runners acme/web"]);
+
+    let checks = doctor(&inventory, &github, &fleet, None).unwrap();
+    let auth = checks.iter().find(|c| c.check == "github-auth").unwrap();
+    assert_eq!(auth.status, CheckStatus::Pass, "{}", auth.detail);
+}

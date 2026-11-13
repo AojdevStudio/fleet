@@ -48,7 +48,7 @@ pub fn collect_snapshot(
 /// Shown when an inventory without a runner group names no repository, so
 /// there is nothing to read runners from.
 pub const NO_REPOSITORIES: &str = "The inventory has no runner_group and names no repository, so there are no runners to read. \
-     Add a runner_group to [organization], or a repository to a legacy runner's replaces entry.";
+     Add a runner_group to [organization], or list repositories in the top-level repositories key.";
 
 /// The organization's runners when there is a runner group, plus those in
 /// each of `repositories`. Without a group (a personal account) only the

@@ -65,7 +65,12 @@ fn inventory_from_table(data: &toml::Table, environ: &HashMap<String, String>) -
         Some(Value::Array(raw)) => raw.iter().map(|h| parse_host(h, environ)).collect::<Result<Vec<_>>>()?,
         Some(_) => return err("hosts must be an array of tables"),
     };
-    let inventory = Inventory { organization, hosts };
+    let repositories = strings(data, "repositories")?;
+    let inventory = Inventory {
+        organization,
+        hosts,
+        repositories,
+    };
     validate_inventory(&inventory)?;
     Ok(inventory)
 }
@@ -238,6 +243,15 @@ fn validate_inventory(inventory: &Inventory) -> Result<()> {
     }
     if inventory.hosts.is_empty() {
         return err("inventory must define at least one host");
+    }
+    let mut repositories = HashSet::new();
+    for repository in &inventory.repositories {
+        if !safe_repository(repository) {
+            return err(format!("invalid repository: {} (use owner/repo)", repr(repository)));
+        }
+        if !repositories.insert(repository.to_lowercase()) {
+            return err(format!("duplicate repository: {repository}"));
+        }
     }
     let mut declared = Declared::default();
     for host in &inventory.hosts {
