@@ -225,6 +225,7 @@ fn configured_engine(dir: &std::path::Path, base: String, secrets: Arc<dyn Secre
             repo_scope: scope(),
             added_at: Utc::now(),
             auth: OrgAuth::Token,
+            kind: Default::default(),
         }],
         ..Default::default()
     };

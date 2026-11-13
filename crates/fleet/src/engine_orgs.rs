@@ -8,7 +8,7 @@ use futures::future::join_all;
 use super::{Engine, EngineError, SecretStore};
 use crate::gh;
 use crate::github::{GithubClient, GithubError};
-use crate::model::{OrgAuth, OrgConfig, OrgObservation, RepoScope, Timed, default_api_base};
+use crate::model::{AccountKind, OrgAuth, OrgConfig, OrgObservation, RepoScope, Timed, default_api_base};
 use crate::sync::{MutexExt, RwLockExt};
 
 #[derive(Debug, thiserror::Error)]
@@ -74,6 +74,8 @@ impl Engine {
     /// GitHub errors, reworded for how this org signs in.
     fn github_error_text(&self, org: &OrgConfig, e: &GithubError) -> String {
         match (org.auth, e) {
+            // A personal account's error already names the repository permission it needs.
+            (_, GithubError::Forbidden(_)) if org.kind == AccountKind::User => e.to_string(),
             (OrgAuth::GhCli, GithubError::Forbidden(_)) => format!(
                 "Your gh login can't list {}'s runners. GitHub requires the {} scope (and org owner rights) for that. Run `{}` in Terminal.",
                 org.login,
@@ -134,7 +136,7 @@ impl Engine {
 
     pub async fn poll_github_runners(&self) {
         self.poll_github(
-            async |client, org| client.org_runners(&org.login).await,
+            async |client, org| client.runners(&org.login, org.kind, &org.repo_scope).await,
             // A 403 here means the credential can't list runners. Fetching the token
             // again picks up a fix such as `gh auth refresh --scopes admin:org`.
             |e| matches!(e, GithubError::Unauthorized | GithubError::Forbidden(_)),
@@ -145,7 +147,7 @@ impl Engine {
 
     pub async fn poll_github_jobs(&self) {
         self.poll_github(
-            async |client, org| client.scan_jobs(&org.login, &org.repo_scope).await,
+            async |client, org| client.scan_account_jobs(&org.login, org.kind, &org.repo_scope).await,
             // Repositories the token can't read only mark the scan incomplete, so a 403
             // says nothing about the credential. Keeping the client keeps its ETag cache.
             |e| matches!(e, GithubError::Unauthorized),
@@ -154,8 +156,9 @@ impl Engine {
         .await;
     }
 
-    /// Adds an org after checking the credential can list its runners.
+    /// Adds an org or a personal account after checking the credential can list its runners.
     /// `GhCli` uses the GitHub CLI's login; `Token` stores `token` in the Keychain.
+    /// A personal account is detected from GitHub and read per repository.
     pub async fn add_org(
         &self,
         login: &str,
@@ -173,12 +176,13 @@ impl Engine {
             return Err(EngineError::Invalid(format!("{login} is already added.")));
         }
         let api_base = api_base.unwrap_or_else(default_api_base);
-        let org = OrgConfig {
+        let mut org = OrgConfig {
             login: login.clone(),
             api_base: api_base.clone(),
             repo_scope,
             added_at: Utc::now(),
             auth,
+            kind: AccountKind::Organization,
         };
         let token = match auth {
             OrgAuth::GhCli => gh::token(&gh::host_for_api_base(&api_base))
@@ -193,8 +197,9 @@ impl Engine {
             }
         };
         let client = GithubClient::new(&api_base, &token);
+        org.kind = client.account_kind(&login).await;
         let runners = client
-            .org_runners(&login)
+            .runners(&login, org.kind, &org.repo_scope)
             .await
             .map_err(|e| EngineError::Invalid(self.github_error_text(&org, &e)))?;
 
@@ -225,7 +230,7 @@ impl Engine {
             .map_err(|e| EngineError::Invalid(e.to_string()))?;
         let client = GithubClient::new(&org.api_base, &token);
         client
-            .org_runners(&org.login)
+            .runners(&org.login, org.kind, &org.repo_scope)
             .await
             .map_err(|e| EngineError::Invalid(self.github_error_text(&org, &e)))?;
         self.update_config(|c| {
@@ -252,7 +257,7 @@ impl Engine {
         let org = self.find_org(login)?;
         let token = token.trim().to_string();
         let client = GithubClient::new(&org.api_base, &token);
-        client.org_runners(&org.login).await?;
+        client.runners(&org.login, org.kind, &org.repo_scope).await?;
         let account = key.clone();
         self.secrets_call(move |secrets| secrets.set(&account, &token))
             .await

@@ -61,6 +61,11 @@ always uses demo data.
    fine-grained token instead (organization permission **Self-hosted runners: Read**,
    repository permission **Actions: Read**), which is stored in your Keychain. Access is checked
    before anything is saved.
+
+   A personal account works too. Enter its login in the same field. The app asks GitHub what
+   kind of account it is. For a personal account it lists runners and jobs per repository, with
+   no runner group and no `admin:org` scope. The `repo` scope (or the repository permissions
+   **Administration: Read** and **Actions: Read**) is enough.
 3. Machines come from your tailnet; there's no Add step. Machines in the inventory or with
    runners on GitHub are listed under **Machines**. Other desktop and server machines sit in a
    collapsed **Other machines** group, where you can **Ignore** them (reversible under
