@@ -21,7 +21,16 @@ esac
 
 case "$RF_ROOT" in
   "$HOME/gh-runners"/*) ;;
-  *) echo "refusing root outside $HOME/gh-runners: $RF_ROOT" >&2; exit 2 ;;
+  "$HOME/actions-runners"/*/actions-runner)
+    # The macOS lane layout: exactly one lane directory beneath ~/actions-runners.
+    lane="${RF_ROOT#"$HOME/actions-runners/"}"
+    lane="${lane%/actions-runner}"
+    case "$lane" in
+      '' | . | .. | */* | -*) echo "refusing lane root: $RF_ROOT" >&2; exit 2 ;;
+    esac
+    [ "$(uname -s)" = Darwin ] || { echo "refusing lane root on a non-macOS worker: $RF_ROOT" >&2; exit 2; }
+    ;;
+  *) echo "refusing root outside $HOME/gh-runners or the macOS lane layout: $RF_ROOT" >&2; exit 2 ;;
 esac
 
 if [ "$RF_SERVICE_MODE" != launchagent ] && [ "$RF_SERVICE_MODE" != systemd ]; then
