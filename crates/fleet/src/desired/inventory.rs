@@ -509,6 +509,8 @@ fn validate_root(host: &Host) -> Result<()> {
         for part in &parts[expected.len()..] {
             validate_name(part, &format!("{} root component", host.id))?;
         }
+    } else if is_lane_root(host) {
+        // Checked whole by is_lane_root: `~/actions-runners` or `/Users/<user>/actions-runners`.
     } else {
         if !(host.root == "~/gh-runners" || host.root.starts_with("~/gh-runners/")) {
             return err(format!("{}: root must be beneath ~/gh-runners", host.id));
@@ -524,7 +526,38 @@ fn validate_root(host: &Host) -> Result<()> {
     Ok(())
 }
 
+/// The macOS lane layout, `/Users/<user>/actions-runners/<lane>/actions-runner`:
+/// a root of exactly `~/actions-runners` or `/Users/<user>/actions-runners`.
+fn is_lane_root(host: &Host) -> bool {
+    if host.platform != Platform::DarwinArm64 || has_control(&host.root) {
+        return false;
+    }
+    if host.root == format!("~/{LANE_ROOT}") {
+        return true;
+    }
+    let parts = PurePath::posix(&host.root).all_parts();
+    matches!(parts.as_slice(), [anchor, users, user, root]
+        if anchor == "/" && users == "Users" && safe_name(user) && root == LANE_ROOT)
+}
+
+/// The lane layout's root directory, beneath the user's home.
+const LANE_ROOT: &str = "actions-runners";
+/// Each lane's runner directory, beneath `<root>/<lane>`.
+const LANE_RUNNER: &str = "actions-runner";
+
 fn validate_relative_directory(host: &Host, directory: &str) -> Result<()> {
+    if is_lane_root(host) {
+        // A lane runner lives at `<lane>/actions-runner`, one lane per runner.
+        return match directory.split('/').collect::<Vec<_>>().as_slice() {
+            [lane, runner] if *runner == LANE_RUNNER && safe_name(lane) => Ok(()),
+            _ => err(format!(
+                "{}: runner directory must be <lane>/{LANE_RUNNER} under {}: {}",
+                host.id,
+                host.root,
+                repr(directory)
+            )),
+        };
+    }
     let path = PurePath::new(directory, host.path_style());
     let parts = path.all_parts();
     if path.is_absolute() || parts.len() != 1 || parts[0] == "." || parts[0] == ".." {

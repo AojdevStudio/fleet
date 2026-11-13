@@ -114,7 +114,11 @@ Linux systemd, Windows services and Windows logon tasks. It includes a legacy mi
 decommissioned runner, a GUI lane separated from build work and a Linux canary.
 
 Keep actual hardware, capacity and unattended-setup notes in your private inventory's comments.
-Runners live in one dedicated root per host, for example:
+A Mac can also use the lane layout, with one runner per lane. Set `root` to
+`/Users/<user>/actions-runners` (or `~/actions-runners`) and give each runner
+`directory = "<lane>/actions-runner"`. The app accepts no other directory under that root.
+
+Otherwise runners live in one dedicated root per host, for example:
 
 ```text
 macOS/Linux: ~/gh-runners/acme/runner-01
