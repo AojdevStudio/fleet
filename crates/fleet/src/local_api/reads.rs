@@ -17,7 +17,8 @@ pub(super) async fn index(Extension(s): Extension<Snapshot>, Parameters(_): Para
     Json(json!({
         "name": "Runner Dashboard local API", "version": env!("CARGO_PKG_VERSION"), "readOnly": true,
         "capabilities": { "schema": "/v1/openapi.json", "conditionalGet": true, "events": true, "issues": true,
-            "checks": ["refresh", "inventory", "doctor"], "logs": true, "runnerMutations": false },
+            "checks": ["refresh", "inventory", "doctor"], "logs": true, "runnerMutations": false,
+            "disabledActions": ["apply", "retire", "decommission"] },
         "limits": { "defaultPageSize": DEFAULT_PAGE_SIZE, "maxPageSize": MAX_PAGE_SIZE, "defaultEventPageSize": EVENT_PAGE_SIZE,
             "eventRetentionDays": EVENT_RETENTION.num_days(), "maxEvents": MAX_EVENTS, "maxLogLines": MAX_LOG_LINES,
             "maxLogBytes": MAX_LOG_BYTES, "concurrentChecks": 1, "retainedChecks": MAX_RETAINED_CHECKS,
