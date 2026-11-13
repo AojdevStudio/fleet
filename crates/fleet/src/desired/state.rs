@@ -45,9 +45,15 @@ pub fn collect_snapshot(
     Ok(snapshot)
 }
 
+/// Shown when an inventory without a runner group names no repository, so
+/// there is nothing to read runners from.
+pub const NO_REPOSITORIES: &str = "The inventory has no runner_group and names no repository, so there are no runners to read. \
+     Add a runner_group to [organization], or a repository to a legacy runner's replaces entry.";
+
 /// The organization's runners when there is a runner group, plus those in
 /// each of `repositories`. Without a group (a personal account) only the
-/// per-repository reads run, so no organization endpoint is called.
+/// per-repository reads run, so no organization endpoint is called. Without
+/// a group or a repository, the read fails rather than report no runners.
 pub(crate) fn read_github_runners(
     github: &dyn FleetGithub,
     group: Option<&str>,
@@ -55,6 +61,7 @@ pub(crate) fn read_github_runners(
 ) -> Result<BTreeMap<String, GithubRunner>, GithubError> {
     let mut runners = match group {
         Some(group) => github.list_runners(group)?,
+        None if repositories.is_empty() => return Err(GithubError(NO_REPOSITORIES.into())),
         None => BTreeMap::new(),
     };
     for repository in repositories {

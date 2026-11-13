@@ -17,7 +17,7 @@ use super::model::{
 };
 use super::py::repr;
 use super::remote::{FleetRemote, InstallRequest, RemoteError, Transient};
-use super::state::{label_drift, read_github_runners};
+use super::state::{NO_REPOSITORIES, label_drift, read_github_runners};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
@@ -593,6 +593,10 @@ pub fn doctor(
             "admin:org",
         ),
         // A personal account: read runners per repository, with no org scope.
+        // No repository to read is an inventory problem, not a token scope.
+        None if inventory.runner_repositories().is_empty() => {
+            DoctorCheck::new("control", "github-auth", CheckStatus::Fail, NO_REPOSITORIES)
+        }
         None => github_auth_check(
             github
                 .auth_status()

@@ -8,7 +8,7 @@ use super::super::github::{FleetGithub, GithubError, ReleaseAsset};
 use super::super::model::{CheckStatus, FleetPlanAction};
 use super::super::operations::doctor;
 use super::super::plan::generate_plan;
-use super::super::state::collect_snapshot;
+use super::super::state::{NO_REPOSITORIES, build_status_rows, collect_snapshot};
 use super::*;
 use crate::sync::MutexExt;
 
@@ -141,4 +141,23 @@ fn apply_still_needs_a_runner_group() {
     );
     assert!(fleet.world().tokens.is_empty());
     assert!(fleet.world().calls.is_empty());
+}
+
+#[test]
+fn no_runner_group_and_no_repository_is_an_empty_scope_error() {
+    let inventory = load(&base().replace("runner_group = \"trusted\"\n", "")).unwrap();
+    assert!(inventory.runner_repositories().is_empty());
+    let github = PersonalGithub::default();
+    let fleet = FakeFleet::default();
+
+    let snapshot = collect_snapshot(&inventory, &github, &fleet, None).unwrap();
+    assert_eq!(snapshot.github_error.as_deref(), Some(NO_REPOSITORIES));
+    let rows = build_status_rows(&inventory, &snapshot, None).unwrap();
+    assert!(rows.iter().all(|r| r.drift == "GitHub unavailable"), "{rows:?}");
+
+    let checks = doctor(&inventory, &github, &fleet, None).unwrap();
+    let auth = checks.iter().find(|c| c.check == "github-auth").unwrap();
+    assert_eq!(auth.status, CheckStatus::Fail);
+    assert_eq!(auth.detail, NO_REPOSITORIES);
+    assert!(github.reads().is_empty(), "{:?}", github.reads());
 }
