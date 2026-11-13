@@ -19,6 +19,11 @@ case "$RF_ASSET_URL" in
   *) echo "refusing unexpected runner asset URL: $RF_ASSET_URL" >&2; exit 2 ;;
 esac
 
+# A case pattern's * crosses '/', so refuse '.' and '..' segments before matching.
+case "/$RF_ROOT/" in
+  */../* | */./*) echo "refusing root with a '.' or '..' segment: $RF_ROOT" >&2; exit 2 ;;
+esac
+
 case "$RF_ROOT" in
   "$HOME/gh-runners"/*) ;;
   "$HOME/actions-runners"/*/actions-runner)

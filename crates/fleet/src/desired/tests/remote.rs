@@ -311,8 +311,9 @@ fn install_root_guard(home: &str, root: &str, os: &str) -> i32 {
     use std::os::unix::fs::PermissionsExt;
 
     let script = include_str!("../../../scripts/worker-install.sh");
-    let start = script.find("case \"$RF_ROOT\" in").unwrap();
-    let end = start + script[start..].find("\nesac\n").unwrap() + "\nesac\n".len();
+    let start = script.find("case \"/$RF_ROOT/\" in").unwrap();
+    let guard = script.find("case \"$RF_ROOT\" in").unwrap();
+    let end = guard + script[guard..].find("\nesac\n").unwrap() + "\nesac\n".len();
     let bin = tempfile::tempdir().unwrap();
     let uname = bin.path().join("uname");
     std::fs::write(&uname, format!("#!/bin/sh\necho {os}\n")).unwrap();
@@ -350,6 +351,8 @@ fn installer_accepts_the_macos_lane_layout_and_nothing_wider() {
         ("/Users/builder/actions-runners/ios/other", "Darwin"),
         ("/Users/other/actions-runners/ios/actions-runner", "Darwin"),
         ("/Users/builder/elsewhere/runner", "Darwin"),
+        ("/Users/builder/gh-runners/../../../tmp/pwn", "Darwin"),
+        ("/Users/builder/gh-runners/./acme", "Linux"),
     ] {
         assert_eq!(install_root_guard(home, root, os), 2, "{root} on {os}");
     }
