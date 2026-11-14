@@ -409,12 +409,7 @@ impl GithubClient {
     /// never looks complete. The error names each repository that failed. A
     /// repository listed twice (names are case-insensitive) is read once.
     pub async fn listed_repo_runners(&self, owner: &str, repos: &[String]) -> Result<Vec<GhRunner>, GithubError> {
-        let mut seen = HashSet::new();
-        let repos: Vec<String> = repos
-            .iter()
-            .filter(|repo| seen.insert(repo.to_lowercase()))
-            .cloned()
-            .collect();
+        let repos = unique_repos(repos);
         let results: Vec<(String, Result<Vec<GhRunner>, GithubError>)> = stream::iter(repos.iter().cloned())
             .map(|repo| async move {
                 let result = self.repo_runners(owner, &repo).await;
@@ -502,7 +497,7 @@ impl GithubClient {
         let mut truncated = false;
         let repos = match scope {
             RepoScope::None => return Ok(JobScan::default()),
-            RepoScope::Selected { repos } => repos.clone(),
+            RepoScope::Selected { repos } => unique_repos(repos),
             RepoScope::Recent { max_repos } => self.account_repos(org, kind, *max_repos as usize).await?,
         };
 
@@ -565,6 +560,17 @@ fn hint_runner_permission(e: GithubError, org: &str) -> GithubError {
         )),
         other => other,
     }
+}
+
+/// `repos` with repeats removed. GitHub repository names are case-insensitive,
+/// and a saved scope can list one twice, which would read it twice.
+fn unique_repos(repos: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    repos
+        .iter()
+        .filter(|repo| seen.insert(repo.to_lowercase()))
+        .cloned()
+        .collect()
 }
 
 fn hint_repo_runner_permission(e: GithubError, owner: &str) -> GithubError {
@@ -869,24 +875,49 @@ mod tests {
 
     #[tokio::test]
     async fn a_repository_listed_twice_is_read_once() {
-        let router = Router::new().route(
-            "/repos/{owner}/{repo}/actions/runners",
-            get(|Path((_owner, repo)): Path<(String, String)>| async move {
-                Json(json!({"total_count": 1, "runners": [runner(7, &format!("{repo}-7"), false)]}))
-            }),
-        );
+        let router = Router::new()
+            .route(
+                "/repos/{owner}/{repo}/actions/runners",
+                get(|Path((_owner, repo)): Path<(String, String)>| async move {
+                    Json(json!({"total_count": 1, "runners": [runner(7, &format!("{repo}-7"), false)]}))
+                }),
+            )
+            .route(
+                "/repos/{owner}/{repo}/actions/runs",
+                get(|Query(q): Query<HashMap<String, String>>| async move {
+                    let runs = if q["status"] == "in_progress" {
+                        json!([{"id": 1}])
+                    } else {
+                        json!([])
+                    };
+                    Json(json!({"total_count": 0, "workflow_runs": runs}))
+                }),
+            )
+            .route(
+                "/repos/{owner}/{repo}/actions/runs/{run}/jobs",
+                get(|| async {
+                    Json(
+                        json!({"total_count": 1, "jobs": [{"id": 1, "run_id": 1, "name": "build",
+                        "status": "in_progress", "labels": ["self-hosted"], "runner_id": 7}]}),
+                    )
+                }),
+            );
         let base = serve(router).await;
+        let client = GithubClient::new(&base, "t");
         let scope = RepoScope::Selected {
             repos: vec!["app".into(), "App".into(), "site".into()],
         };
-        let runners = GithubClient::new(&base, "t")
-            .user_runners("solo", &scope)
-            .await
-            .unwrap();
+        let runners = client.user_runners("solo", &scope).await.unwrap();
         assert_eq!(
             runners.iter().map(|r| r.repository.as_deref()).collect::<Vec<_>>(),
             vec![Some("solo/app"), Some("solo/site")]
         );
+        let scan = client
+            .scan_account_jobs("solo", AccountKind::User, &scope)
+            .await
+            .unwrap();
+        assert_eq!(scan.repos_scanned, vec!["app", "site"]);
+        assert_eq!(scan.jobs.len(), 2, "one in-progress job per repository, read once");
     }
 
     #[tokio::test]
