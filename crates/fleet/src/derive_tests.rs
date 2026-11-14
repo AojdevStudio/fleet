@@ -394,18 +394,25 @@ fn repository_runners_sharing_an_id_stay_separate_and_keep_their_own_jobs() {
         repository: Some(repository.into()),
         ..gh(7, name, "online", true, MAC)
     };
+    let org_runner = gh(7, "org-7", "online", true, MAC);
     f.gh_runners(
         ago(10),
-        vec![in_repo("web-7", "Acme/web"), in_repo("api-7", "Acme/api")],
+        vec![in_repo("web-7", "Acme/web"), in_repo("api-7", "Acme/api"), org_runner],
     );
-    f.jobs(ago(10), vec![job(1, Some(7), "in_progress", MAC, Some(ago(60)))]);
+    let web_job = GhJob {
+        runner_name: Some("web-7".into()),
+        ..job(1, Some(7), "in_progress", MAC, Some(ago(60)))
+    };
+    f.jobs(ago(10), vec![web_job]);
     let view = f.view();
     let runner = |name: &str| view.unmatched_runners.iter().find(|r| r.name == name).unwrap();
 
     assert_eq!(runner("web-7").key, "gh:acme/web:7");
     assert_eq!(runner("api-7").key, "gh:acme/api:7");
+    assert_eq!(runner("org-7").key, "gh:acme:7");
     assert_eq!(runner("web-7").current_job.as_ref().map(|j| j.id), Some(1));
     assert_eq!(runner("api-7").current_job, None, "the job ran in acme/web");
+    assert_eq!(runner("org-7").current_job, None, "the job ran on web-7");
 }
 
 #[test]
