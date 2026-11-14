@@ -9,7 +9,7 @@
 //!   then `GET .../runs/{id}/jobs` (repo "Actions: read").
 //! - Every GET is conditional (ETag); a 304 doesn't count against the rate limit.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -406,8 +406,15 @@ impl GithubClient {
     /// The runners registered to each of `owner`'s `repos`, read one repository at a
     /// time. This works for an organization too, and never calls an `/orgs` endpoint.
     /// A repository that can't be read fails the whole refresh, so a partial list
-    /// never looks complete. The error names each repository that failed.
+    /// never looks complete. The error names each repository that failed. A
+    /// repository listed twice (names are case-insensitive) is read once.
     pub async fn listed_repo_runners(&self, owner: &str, repos: &[String]) -> Result<Vec<GhRunner>, GithubError> {
+        let mut seen = HashSet::new();
+        let repos: Vec<String> = repos
+            .iter()
+            .filter(|repo| seen.insert(repo.to_lowercase()))
+            .cloned()
+            .collect();
         let results: Vec<(String, Result<Vec<GhRunner>, GithubError>)> = stream::iter(repos.iter().cloned())
             .map(|repo| async move {
                 let result = self.repo_runners(owner, &repo).await;
@@ -858,6 +865,28 @@ mod tests {
             panic!("{err:?}")
         };
         assert!(msg.contains("Administration: read"));
+    }
+
+    #[tokio::test]
+    async fn a_repository_listed_twice_is_read_once() {
+        let router = Router::new().route(
+            "/repos/{owner}/{repo}/actions/runners",
+            get(|Path((_owner, repo)): Path<(String, String)>| async move {
+                Json(json!({"total_count": 1, "runners": [runner(7, &format!("{repo}-7"), false)]}))
+            }),
+        );
+        let base = serve(router).await;
+        let scope = RepoScope::Selected {
+            repos: vec!["app".into(), "App".into(), "site".into()],
+        };
+        let runners = GithubClient::new(&base, "t")
+            .user_runners("solo", &scope)
+            .await
+            .unwrap();
+        assert_eq!(
+            runners.iter().map(|r| r.repository.as_deref()).collect::<Vec<_>>(),
+            vec![Some("solo/app"), Some("solo/site")]
+        );
     }
 
     #[tokio::test]
