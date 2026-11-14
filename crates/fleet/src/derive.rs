@@ -176,8 +176,26 @@ struct GithubIndex {
     runners: Vec<GhEntry>,
     /// (org, lowercase name) -> index
     by_name: HashMap<(String, String), usize>,
-    /// (org, runner id) -> in-progress job
-    jobs_by_runner: HashMap<(String, u64), GhJob>,
+    /// (org, lowercase repository of a repository runner, runner id) -> in-progress job
+    jobs_by_runner: HashMap<(String, Option<String>, u64), GhJob>,
+}
+
+/// A GitHub runner's view key. An organization's runner list is one ID space,
+/// but each repository numbers its own runners, so a repository runner's key
+/// names its repository.
+pub(crate) fn github_runner_key(org: &str, runner: &GhRunner) -> String {
+    match &runner.repository {
+        Some(repository) => format!("gh:{}:{}", repository.to_lowercase(), runner.id),
+        None => format!("gh:{org}:{}", runner.id),
+    }
+}
+
+fn job_key(org: &str, runner: &GhRunner) -> (String, Option<String>, u64) {
+    (
+        org.to_string(),
+        runner.repository.as_deref().map(str::to_lowercase),
+        runner.id,
+    )
 }
 
 impl GithubIndex {
@@ -196,7 +214,7 @@ impl GithubIndex {
                     let i = idx.runners.len();
                     idx.by_name.insert((org.clone(), r.name.to_lowercase()), i);
                     idx.runners.push(GhEntry {
-                        key: format!("gh:{org}:{}", r.id),
+                        key: github_runner_key(&org, r),
                         org: org.clone(),
                         runner: r.clone(),
                         at: runners.at,
@@ -209,7 +227,10 @@ impl GithubIndex {
             {
                 for job in jobs.value.jobs.iter().filter(|j| j.status == "in_progress") {
                     if let Some(rid) = job.runner_id.filter(|id| *id != 0) {
-                        idx.jobs_by_runner.insert((org.clone(), rid), job.clone());
+                        // The job may have run on a runner of its repository or of the organization.
+                        idx.jobs_by_runner
+                            .insert((org.clone(), Some(job.repo.to_lowercase()), rid), job.clone());
+                        idx.jobs_by_runner.insert((org.clone(), None, rid), job.clone());
                     }
                 }
             }
@@ -287,7 +308,7 @@ fn runner_view(
     });
 
     let current_job = gh_entry
-        .and_then(|e| gh.jobs_by_runner.get(&(e.org.clone(), e.runner.id)))
+        .and_then(|e| gh.jobs_by_runner.get(&job_key(&e.org, &e.runner)))
         .map(job_view);
 
     let gh_fresh = github.as_ref().filter(|g| !g.stale);

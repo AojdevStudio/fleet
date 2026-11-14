@@ -249,6 +249,10 @@ pub struct GhRunner {
     pub ephemeral: Option<bool>,
     pub version: Option<String>,
     pub runner_group_id: Option<u64>,
+    /// `owner/repo` for a runner read from a repository's runner list. GitHub
+    /// numbers repository runners per repository, so two repositories can
+    /// each have a runner with the same ID.
+    pub repository: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]

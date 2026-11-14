@@ -381,7 +381,15 @@ impl GithubClient {
                 "Couldn't read all of {owner}/{repo}'s runners within {MAX_REPO_RUNNER_PAGES} pages."
             )));
         }
-        Ok(runners.items.into_iter().map(RawRunner::into_model).collect())
+        let repository = format!("{owner}/{repo}");
+        Ok(runners
+            .items
+            .into_iter()
+            .map(|raw| GhRunner {
+                repository: Some(repository.clone()),
+                ..raw.into_model()
+            })
+            .collect())
     }
 
     /// A personal account's runners, read per repository. The scope's list is used
@@ -413,11 +421,7 @@ impl GithubClient {
         for (repo, result) in results {
             match result {
                 Ok(batch) => {
-                    for runner in batch {
-                        if !runners.iter().any(|r| r.id == runner.id) {
-                            runners.push(runner);
-                        }
-                    }
+                    runners.extend(batch);
                 }
                 Err(e @ (GithubError::NotFound(_) | GithubError::Forbidden(_))) => failed.push((repo, e)),
                 Err(e) => return Err(e),
@@ -437,7 +441,7 @@ impl GithubClient {
                 reasons.join("; ")
             )));
         }
-        runners.sort_by_key(|r| r.id);
+        runners.sort_by(|a, b| (a.id, &a.repository).cmp(&(b.id, &b.repository)));
         Ok(runners)
     }
 
@@ -601,6 +605,7 @@ impl RawRunner {
             ephemeral: self.ephemeral,
             version: self.version,
             runner_group_id: self.runner_group_id,
+            repository: None,
         }
     }
 }
@@ -799,8 +804,8 @@ mod tests {
                 "/repos/{owner}/{repo}/actions/runners",
                 get(|Path((_owner, repo)): Path<(String, String)>| async move {
                     match repo.as_str() {
-                        "app" => (AxStatus::OK, Json(json!({"total_count": 2, "runners": [runner(1, "a", false), runner(2, "shared", true)]}))),
-                        "site" => (AxStatus::OK, Json(json!({"total_count": 1, "runners": [runner(2, "shared", true)]}))),
+                        "app" => (AxStatus::OK, Json(json!({"total_count": 2, "runners": [runner(1, "a", false), runner(2, "app-02", true)]}))),
+                        "site" => (AxStatus::OK, Json(json!({"total_count": 1, "runners": [runner(2, "site-2", true)]}))),
                         _ => (AxStatus::NOT_FOUND, Json(json!({"message": "Not Found"}))),
                     }
                 }),
@@ -817,7 +822,17 @@ mod tests {
             .runners("solo", AccountKind::User, &RepoScope::Recent { max_repos: 10 })
             .await
             .unwrap();
-        assert_eq!(runners.iter().map(|r| r.id).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            runners
+                .iter()
+                .map(|r| (r.id, r.name.as_str(), r.repository.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![
+                (1, "a", Some("solo/app")),
+                (2, "app-02", Some("solo/app")),
+                (2, "site-2", Some("solo/site")),
+            ]
+        );
         let scan = client
             .scan_account_jobs("solo", AccountKind::User, &RepoScope::Recent { max_repos: 10 })
             .await
