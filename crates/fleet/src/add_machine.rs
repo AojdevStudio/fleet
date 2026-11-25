@@ -18,8 +18,9 @@ use crate::model::TailnetPeer;
 /// machine rows, so a device shown as a machine is never offered. The comparison ignores case and
 /// a final dot. Disabled and decommissioned hosts count too, because they are still in the inventory.
 ///
-/// A host whose SSH name is exactly some device's MagicDNS name or tailnet IP (`exact` holds those
-/// of every device) names that device only. Tailscale can give two devices the same hostname, so
+/// A host whose effective SSH name (the one `ssh -G` resolved, else the written target) is exactly
+/// some device's MagicDNS name or tailnet IP (`exact` holds those of every device) names that
+/// device only. Tailscale can give two devices the same hostname, so
 /// pasting one device's entry must not hide the other.
 ///
 /// Known limit: an alias that resolves to a LAN address or a LAN name unlike the device's names
@@ -42,8 +43,10 @@ pub(crate) fn inventory_names_device(
         let written = host.ssh_target.as_deref();
         let resolved = written.and_then(|t| ssh_hosts.get(t)).map(String::as_str);
         let names: Vec<String> = [written, resolved].into_iter().flatten().map(normalized).collect();
-        if names.iter().any(|n| exact.contains(n)) {
-            return names.iter().any(|n| own_exact.contains(n));
+        if let Some(effective) = resolved.or(written).map(normalized)
+            && exact.contains(&effective)
+        {
+            return own_exact.contains(&effective);
         }
         device.contains(&normalized(&host.id))
             || names

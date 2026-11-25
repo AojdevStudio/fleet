@@ -541,6 +541,34 @@ fn pasting_one_entry_keeps_a_device_with_the_same_hostname_offered() {
 }
 
 #[test]
+fn an_ssh_config_that_sends_an_exact_target_elsewhere_excludes_the_real_destination() {
+    let text = "[organization]\nname = \"acme\"\nurl = \"https://github.com/acme\"\nrunner_group = \"trusted\"\n\n\
+                [[hosts]]\nid = \"box\"\nplatform = \"linux-x64\"\nssh = \"box.example.ts.net\"\nroot = \"~/gh-runners/acme\"\n\
+                service_mode = \"systemd\"\nlabels = [\"fleet\", \"linux-build\"]\n";
+    let mut f = Fixture::new();
+    f.plan.inventory = Some(Ok(crate::desired::inventory::parse_inventory(
+        text,
+        &Default::default(),
+    )
+    .unwrap()));
+    f.plan.ssh_hosts.insert("box.example.ts.net".into(), "build".into());
+    f.obs.tailscale.as_mut().unwrap().value.peers.extend([
+        TailnetPeer {
+            dns_name: Some("box.example.ts.net".into()),
+            ..peer("nBox", "box", "linux", true)
+        },
+        TailnetPeer {
+            dns_name: Some("build.example.ts.net".into()),
+            ..peer("nBuild", "build", "linux", true)
+        },
+        peer("nSpare", "spare", "linux", true),
+    ]);
+    let view = f.view();
+    let offered: Vec<_> = view.tailnet_devices.iter().map(|d| d.node_id.as_str()).collect();
+    assert_eq!(offered, ["nSpare"]);
+}
+
+#[test]
 fn a_newer_explicit_check_supersedes_old_poll_runner_facts_and_errors() {
     let (config, mut obs, mut plan) = demo();
     let observation = obs.machines.get_mut("inv:studio").unwrap();
