@@ -68,6 +68,10 @@ describe("reconcileSelection", () => {
     expect(reconcileSelection(view, { kind: "machine", id: "ts:nSpare" })).toEqual({ kind: "overview" });
     expect(reconcileSelection(view, { kind: "add-machine" })).toEqual({ kind: "add-machine" });
     expect(reconcileSelection({ ...view, tailnetDevices: [] }, { kind: "add-machine" })).toEqual({ kind: "overview" });
+    // After a failed Tailscale poll, Add machine stays to say why it lists no devices.
+    const failed = { ...view, tailnetDevices: [], tailnet: { ...view.tailnet, available: true, error: "Tailscale CLI failed" } };
+    expect(reconcileSelection(failed, { kind: "add-machine" })).toEqual({ kind: "add-machine" });
+    expect(flattenNav(failed, new Set(), closed).map((i) => selectionId(i.selection)).at(-1)).toBe("add-machine");
     expect(reconcileSelection(view, { kind: "machine", id: "gone" })).toEqual({ kind: "overview" });
     expect(reconcileSelection(view, { kind: "runner", key: "gh:acme-demo:501" })).toEqual({ kind: "runner", key: "gh:acme-demo:501" });
     expect(reconcileSelection(view, { kind: "runner", key: "gone" })).toEqual({ kind: "overview" });

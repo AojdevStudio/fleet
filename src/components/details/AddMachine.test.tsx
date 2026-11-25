@@ -12,4 +12,12 @@ describe("Add machine", () => {
     expect(html).toContain(view.tailnetDevices[0].inventoryEntry.split("\n")[0]);
     expect(html).toContain("Copy entry");
   });
+
+  it("says why it lists no devices after a failed Tailscale poll", () => {
+    const view = previewFleet();
+    const failed = { ...view, tailnetDevices: [], tailnet: { ...view.tailnet, error: "Tailscale CLI failed" } };
+    const html = renderToStaticMarkup(<AddMachine view={failed} />);
+    expect(html).toContain("Tailscale couldn&#x27;t be read just now, so no devices are listed. Check that Tailscale is running.");
+    expect(html).not.toContain("Copy entry");
+  });
 });

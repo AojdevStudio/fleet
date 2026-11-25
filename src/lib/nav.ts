@@ -74,6 +74,11 @@ export function filterNavView(view: FleetView, query: string): FleetView {
   };
 }
 
+/** Add machine shows while it offers devices, and after a failed Tailscale poll so it can say why it offers none. */
+export function showsAddMachine(view: FleetView): boolean {
+  return view.tailnetDevices.length > 0 || (view.tailnet.available && view.tailnet.error !== null);
+}
+
 /** Sidebar rows in visual order, honoring collapsed machines and groups. */
 export function flattenNav(view: FleetView, collapsed: ReadonlySet<string>, open: OpenGroups): NavItem[] {
   const items: NavItem[] = [{ selection: { kind: "overview" } }, { selection: { kind: "queue" } }];
@@ -90,7 +95,7 @@ export function flattenNav(view: FleetView, collapsed: ReadonlySet<string>, open
   if (open.unlinked) {
     for (const r of view.unmatchedRunners) items.push({ selection: { kind: "runner", key: r.key } });
   }
-  if (view.tailnetDevices.length > 0) items.push({ selection: { kind: "add-machine" } });
+  if (showsAddMachine(view)) items.push({ selection: { kind: "add-machine" } });
   return items;
 }
 
@@ -111,7 +116,7 @@ export function reconcileSelection(view: FleetView, s: Selection): Selection {
     case "runner":
       return findRunner(view, s.key) ? s : { kind: "overview" };
     case "add-machine":
-      return view.tailnetDevices.length > 0 ? s : { kind: "overview" };
+      return showsAddMachine(view) ? s : { kind: "overview" };
     case "moving":
     case "retiring":
       return view.rollout.length > 0 ? s : { kind: "overview" };

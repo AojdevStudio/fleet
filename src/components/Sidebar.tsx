@@ -3,7 +3,7 @@ import type { FleetView } from "../bindings/FleetView";
 import type { MachineView } from "../bindings/MachineView";
 import type { RunnerView } from "../bindings/RunnerView";
 import { formatClock } from "../lib/format";
-import { selectionId, type Selection } from "../lib/nav";
+import { selectionId, showsAddMachine, type Selection } from "../lib/nav";
 import { machineNeedsChanges, runnerNeedsChanges } from "../lib/desired";
 import { busySince, hasWarning, machineDot, machineSummary, machineTooltip, runnerStatus, tailnetState } from "../lib/status";
 import { movingRepos, retiringRepos } from "../lib/rollout";
@@ -72,7 +72,7 @@ export function Sidebar({ view, filtered, selection }: { view: FleetView; filter
           <Heading title="Not linked to a machine" count={filtered.unmatchedRunners.length} open={searching || open.unlinked} onToggle={() => setOpen("unlinked", !open.unlinked)} />
           {(searching || open.unlinked) && filtered.unmatchedRunners.map((r) => <RunnerRow key={r.key} r={r} isSelected={isSelected} />)}
         </>}
-        {filtered.tailnetDevices.length > 0 && <div className="mt-2">
+        {showsAddMachine(filtered) && <div className="mt-2">
           <Row sel={{ kind: "add-machine" }} selected={isSelected({ kind: "add-machine" })} icon={<Icon name="plus" />} label="Add machine" title="Tailnet devices that no inventory host names" trailing={filtered.tailnetDevices.length} />
         </div>}
         {searching && !filtered.machines.length && !filtered.poolRunners.length && !filtered.unmatchedRunners.length && !filtered.tailnetDevices.length && <EmptyLine>No machines or runners match “{query}”.</EmptyLine>}

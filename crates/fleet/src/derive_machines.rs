@@ -111,8 +111,13 @@ pub(super) fn assemble(
     let self_names = snapshot.map(|s| s.self_names.clone()).unwrap_or_default();
     let slots = slots(&peers, &self_names, inventory, plan);
     let rows: Vec<_> = slots.iter().map(|s| (s.host, s.peer)).collect();
-    let magic_dns = snapshot.is_some_and(|s| s.magic_dns);
-    let devices = crate::add_machine::tailnet_devices(&peers, inventory, &plan.ssh_hosts, &rows, magic_dns);
+    // Machine rows keep the last good peer data, but a failed poll lists no device as current.
+    let devices = if obs.tailscale_error.is_some() {
+        Vec::new()
+    } else {
+        let magic_dns = snapshot.is_some_and(|s| s.magic_dns);
+        crate::add_machine::tailnet_devices(&peers, inventory, &plan.ssh_hosts, &rows, magic_dns)
+    };
     let mut fleet = Vec::new();
     for slot in &slots {
         let mut view = machine_view(slot, &ctx, matched);

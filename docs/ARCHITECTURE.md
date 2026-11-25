@@ -60,7 +60,8 @@ identity conflict), any device the host plausibly names (by `id`, written SSH ta
 hostname, also by first DNS label) is left out. Disabled hosts count. The rule hides on any sign
 of a match. A device the inventory holds under an unrelated name, such as behind an alias that
 resolves to a LAN name, is still offered, so the pane asks the user to check before pasting.
-Nothing is offered without a loaded inventory.
+Nothing is offered without a loaded inventory, or while the latest Tailscale poll failed. Machine
+rows keep the last good peer data then.
 Monitoring keys history by inventory host. History that older versions saved under a tailnet key
 (`ts:<node id>`) belonged to devices outside the inventory, so it is dropped from memory when the
 history loads and from the file at the next history save.

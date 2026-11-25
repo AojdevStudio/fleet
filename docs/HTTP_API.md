@@ -78,7 +78,7 @@ Machines are the inventory's hosts. A tailnet device outside the inventory is ne
 is never contacted over SSH and never raises an alert. A machine joins the fleet when the
 inventory gets a `[[hosts]]` entry for it ([FLEET.md](FLEET.md)). `tailnetDevices` in
 `/v1/fleet` lists the devices Add machine offers, each with `nodeId`, `name` and the
-`inventoryEntry` that would add it. It is empty without a loaded inventory. The `otherMachines` and
+`inventoryEntry` that would add it. It is empty without a loaded inventory and while the latest Tailscale poll failed. The `otherMachines` and
 `ignored` fields, `GET /v1/discovered` and the `scope` filter of `/v1/machines` were
 removed. A request that still sends `scope` gets 400, and `/v1/discovered` gets 404. Queue scope
 metadata (`complete`, `asOf`, `otherQueued`, `stuckAfterSecs`) stays fleet-wide when jobs are
