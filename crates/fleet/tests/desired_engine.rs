@@ -493,6 +493,22 @@ fn inventory_hosts_match_tailnet_machines_by_their_ssh_target() {
     openssh.ssh_target = Some("builder.lan".into());
     let matched = peer_for_host(&openssh, None, &lan);
     assert_eq!(matched.map(|p| p.node_id.as_str()), Some("nA"));
+    // OpenSSH may send a bare `builder` to A through the hosts file, so both devices still fit,
+    // while `tailscale ssh builder` reaches B's MagicDNS label.
+    let candidates = |host: &fleet::desired::model::Host| {
+        fleet::fleet_plan::peer_candidates(host, None, &lan)
+            .iter()
+            .map(|p| p.node_id.clone())
+            .collect::<Vec<_>>()
+    };
+    openssh.ssh_target = Some("builder".into());
+    assert_eq!(candidates(&openssh), ["nA", "nB"]);
+    let mut magic = openssh.clone();
+    magic.ssh_transport = fleet::desired::model::SshTransport::Tailscale;
+    assert_eq!(candidates(&magic), ["nB"]);
+    // A fully qualified name with its final dot is still that exact MagicDNS name.
+    openssh.ssh_target = Some("builder@builder.example.ts.net.".into());
+    assert_eq!(candidates(&openssh), ["nB"]);
 }
 
 #[test]

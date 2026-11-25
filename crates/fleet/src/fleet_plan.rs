@@ -173,10 +173,11 @@ pub fn peer_candidates<'a>(host: &Host, ssh_hostname: Option<&str>, peers: &'a [
         return Vec::new();
     };
     let written = target.rsplit('@').next().unwrap_or(target);
+    let magic_dns = host.ssh_transport == SshTransport::Tailscale;
     transport_hostname(host, ssh_hostname)
         .into_iter()
         .chain([written])
-        .map(|name| peers_named(&name.to_ascii_lowercase(), peers))
+        .map(|name| peers_named(&name.trim_end_matches('.').to_ascii_lowercase(), magic_dns, peers))
         .find(|candidates| !candidates.is_empty())
         .unwrap_or_default()
 }
@@ -190,11 +191,13 @@ fn transport_hostname<'a>(host: &Host, ssh_hostname: Option<&'a str>) -> Option<
 }
 
 /// The peers of the first match kind that fits `name`: its full MagicDNS name, a tailnet IP,
-/// its MagicDNS label for a bare name (what MagicDNS resolves), then the first part of the name
-/// as a label or reported hostname. Only that last kind can fit several devices.
-fn peers_named<'a>(name: &str, peers: &'a [TailnetPeer]) -> Vec<&'a TailnetPeer> {
+/// its MagicDNS label for a bare name when `magic_dns` resolves it (`tailscale ssh`), then the
+/// first part of the name as a label or reported hostname. Only that last kind can fit several
+/// devices. OpenSSH may resolve a bare name through the hosts file or LAN DNS, so it skips the
+/// label step and an ambiguous name stays ambiguous.
+fn peers_named<'a>(name: &str, magic_dns: bool, peers: &'a [TailnetPeer]) -> Vec<&'a TailnetPeer> {
     let short = name.split('.').next().unwrap_or(name);
-    let bare = !name.contains('.');
+    let bare = magic_dns && !name.contains('.');
     let labelled = |p: &TailnetPeer| {
         p.dns_name
             .as_deref()
@@ -202,7 +205,11 @@ fn peers_named<'a>(name: &str, peers: &'a [TailnetPeer]) -> Vec<&'a TailnetPeer>
             .is_some_and(|d| d.eq_ignore_ascii_case(short))
     };
     let kinds: [&dyn Fn(&TailnetPeer) -> bool; 4] = [
-        &|p| p.dns_name.as_deref().is_some_and(|d| d.eq_ignore_ascii_case(name)),
+        &|p| {
+            p.dns_name
+                .as_deref()
+                .is_some_and(|d| d.trim_end_matches('.').eq_ignore_ascii_case(name))
+        },
         &|p| p.ips.iter().any(|ip| ip == name),
         &|p| bare && labelled(p),
         &|p| labelled(p) || p.hostname.eq_ignore_ascii_case(short),
