@@ -5,4 +5,17 @@ import type { FleetIssueFix } from "./FleetIssueFix";
 /**
  * A stable, actionable finding; stale and muted conditions remain unresolved.
  */
-export type FleetIssue = { id: string, category: FleetIssueCategory, title: string, detail: string, machineId: string | null, runnerKey: string | null, stale: boolean, muted: boolean, fix: FleetIssueFix | null, };
+export type FleetIssue = { id: string, category: FleetIssueCategory, title: string, detail: string, 
+/**
+ * What to do, in one or two sentences. A grouped finding has one line per problem.
+ */
+action: string, machineId: string | null, runnerKey: string | null, stale: boolean, muted: boolean, fix: FleetIssueFix | null, 
+/**
+ * Hidden by Clear while the same problem lasts. Cleared findings don't count in `summary.attention`.
+ */
+cleared: boolean, 
+/**
+ * What makes this the same problem for Clear (see [`rules`]). Clear sends back the
+ * fingerprint the user saw, so a problem that changed meanwhile isn't hidden.
+ */
+fingerprint: string, };

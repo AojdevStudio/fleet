@@ -14,18 +14,31 @@ import { useUi } from "../../store";
 import { Callout, Card, Elapsed, ErrorText, Meter, Stat, StatStrip, StatusDot, toneVar } from "../ui";
 import { Icon } from "../icons";
 import { CopyValue } from "../CopyValue";
+import { ClearButton } from "./Attention";
 
 /** Machines come only from the inventory, so a failed load explains the empty fleet on the first screen. */
 export function InventoryProblem({ view }: { view: FleetView }) {
   const p = view.plan;
+  const issue = view.issues.find((i) => i.id === "inventory");
   if (!p.inventoryError) return null;
+  if (issue?.cleared) {
+    return <div className="mt-4 flex items-center gap-3 text-[12.5px] text-ink-2">
+      <span className="min-w-0 flex-1">The inventory couldn't be loaded, so no machines are shown.</span>
+      <ClearButton issue={issue} />
+    </div>;
+  }
   return (
     <Callout tone="bad" title="The inventory couldn't be loaded, so no machines are shown">
-      <div>{p.inventoryError}</div>
-      <div className="mt-1">
-        Inventory: <CopyValue value={p.inventoryPath} label="Inventory path" className="font-mono" />
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div>{p.inventoryError}</div>
+          <div className="mt-1">
+            Inventory: <CopyValue value={p.inventoryPath} label="Inventory path" className="font-mono" />
+          </div>
+          {issue && <div className="mt-1">{issue.action}</div>}
+        </div>
+        {issue && <ClearButton issue={issue} />}
       </div>
-      <div className="mt-1">Create or fix this file. The app reads it again when it changes.</div>
     </Callout>
   );
 }

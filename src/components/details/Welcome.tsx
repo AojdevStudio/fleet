@@ -3,6 +3,7 @@ import type { FleetView } from "../../bindings/FleetView";
 import { commands, emitEvent, isTauri } from "../../lib/tauri";
 import { Button, Card, ErrorText } from "../ui";
 import { InventoryProblem } from "./shared";
+import { ClearedList } from "./Attention";
 
 /** First run: no organization and no machines yet. */
 export function Welcome({ view }: { view: FleetView }) {
@@ -14,7 +15,7 @@ export function Welcome({ view }: { view: FleetView }) {
         Watch your self-hosted GitHub runners: which machines are up, which runners are connected, and what they're
         working on.
       </p>
-      <div className="text-left"><InventoryProblem view={view} /></div>
+      <div className="text-left"><InventoryProblem view={view} /><ClearedList issues={view.issues} /></div>
       <Card className="mt-6 px-5 py-4 text-left">
         <ol className="space-y-3 text-[12.5px]">
           <li>

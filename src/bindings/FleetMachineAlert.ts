@@ -4,4 +4,8 @@ import type { FleetAlertKind } from "./FleetAlertKind";
 /**
  * An unresolved condition; missing data never implies recovery.
  */
-export type FleetMachineAlert = { id: string, machineKey: string, machineName: string, kind: FleetAlertKind, since: string, detail: string, stale: boolean, muted: boolean, };
+export type FleetMachineAlert = { id: string, machineKey: string, machineName: string, kind: FleetAlertKind, since: string, detail: string, 
+/**
+ * Low disk: the mount points below the threshold, sorted. Empty for offline.
+ */
+mounts: Array<string>, stale: boolean, muted: boolean, };

@@ -249,6 +249,44 @@ async fn lookup_prefers_exact_identity_and_reports_ambiguity() {
     );
 }
 
+#[tokio::test]
+async fn cleared_issues_stay_listed_but_leave_the_attention_count() {
+    let (_dir, engine) = engine(true);
+    let shown = engine
+        .view()
+        .issues
+        .into_iter()
+        .find(|i| i.id == "ts:nLinux:check")
+        .unwrap();
+    assert!(engine.clear_issue(&shown.id, "an older problem").is_err());
+    engine.clear_issue(&shown.id, &shown.fingerprint).unwrap();
+    let (_, summary) = call(&engine, get("/v1/summary")).await;
+    let (_, body) = call(&engine, get("/v1/issues")).await;
+    let issues = body["issues"].as_array().unwrap();
+    let cleared: Vec<_> = issues
+        .iter()
+        .filter(|i| i["cleared"] == true)
+        .map(|i| i["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(cleared, ["ts:nLinux:check", "ts:nWin:check"]);
+    assert_eq!(summary["summary"]["attention"], issues.len() - cleared.len());
+    assert!(
+        issues
+            .iter()
+            .all(|i| i["action"].as_str().is_some_and(|a| !a.is_empty()))
+    );
+    assert!(issues.iter().all(|i| i["fingerprint"].is_string()));
+
+    let (_, schema) = call(&engine, get("/v1/openapi.json")).await;
+    let required = &schema["components"]["schemas"]["FleetIssue"]["required"];
+    assert!(required.as_array().unwrap().contains(&json!("cleared")));
+    assert!(required.as_array().unwrap().contains(&json!("action")));
+
+    engine.restore_issue("ts:nLinux:check").unwrap();
+    let (_, summary) = call(&engine, get("/v1/summary")).await;
+    assert_eq!(summary["summary"]["attention"], issues.len() - 1);
+}
+
 #[test]
 fn runner_keys_precede_names_and_org_disambiguates_names() {
     let (_dir, engine) = engine(true);

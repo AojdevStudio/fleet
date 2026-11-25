@@ -14,7 +14,7 @@ import type { TailnetStatusView } from "./TailnetStatusView";
 
 export type FleetView = { generatedAt: string, source: DataSource, summary: FleetSummary, 
 /**
- * Shared attention findings; summary.attention is this collection’s length.
+ * Shared attention findings; summary.attention counts the ones that aren't cleared.
  */
 issues: Array<FleetIssue>, 
 /**

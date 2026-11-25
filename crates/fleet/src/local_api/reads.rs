@@ -34,7 +34,7 @@ pub(super) async fn index(Extension(s): Extension<Snapshot>, Parameters(_): Para
             "pagination": "Lists are sorted by stable ID with exclusive after and nextCursor. Events are newest first with exclusive before. Restart list pagination if revision changes.",
             "revision": "Opaque fingerprint of the fleet snapshot excluding generatedAt. ETags describe each response. Poll /v1/changes?since=revision or use If-None-Match on GET.",
             "checks": "POST starts a bounded read-only job. Poll its Location until completed or failed. completed means reads finished, not that the fleet is healthy; inspect result.issues and result.errors.",
-            "attention": "summary.attention equals issues.length, including unresolved stale or muted alerts.",
+            "attention": "summary.attention counts issues that are not cleared, including unresolved stale or muted alerts. Cleared issues stay in /v1/issues with cleared: true.",
             "history": format!(
                 "Observed machine transitions only; no completed-job archive. Retention is at most {} days and {MAX_EVENTS} events.",
                 EVENT_RETENTION.num_days()

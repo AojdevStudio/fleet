@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use chrono::Utc;
 
-use crate::derive::{derive, derive_without_issues};
+use crate::derive::derive_without_issues;
 use crate::github::{GithubClient, GithubError};
 use crate::model::*;
 use crate::sync::{MutexExt, RwLockExt};
@@ -47,6 +47,9 @@ pub struct Engine {
     desired_refresh_gate: tokio::sync::Mutex<()>,
     doctor_gate: tokio::sync::Mutex<()>,
     monitoring: Mutex<crate::monitoring::MonitorStore>,
+    /// Findings the user cleared: saved for live data, in memory for demo data.
+    clears: Mutex<crate::issues::cleared::ClearStore>,
+    demo_clears: Mutex<crate::issues::cleared::ClearStore>,
     /// Lets tests drive Apply, Retire and Decommission. Only test builds can set it.
     disabled_changes_allowed: bool,
 }
@@ -62,6 +65,8 @@ impl std::fmt::Debug for Engine {
 #[path = "engine_desired.rs"]
 pub mod desired;
 
+#[path = "engine_issues.rs"]
+mod issues;
 #[path = "engine_machines.rs"]
 mod machines;
 #[path = "engine_monitoring.rs"]
@@ -84,6 +89,7 @@ impl Engine {
             Err(e) => return Err(EngineError::Storage(e.to_string())),
         };
         let monitoring = crate::monitoring::MonitorStore::load(config_path.with_file_name("monitoring.json"));
+        let clears = crate::issues::cleared::ClearStore::load(config_path.with_file_name("cleared-issues.json"));
         Ok(Self {
             config_path,
             config: RwLock::new(config),
@@ -100,6 +106,8 @@ impl Engine {
             desired_refresh_gate: tokio::sync::Mutex::new(()),
             doctor_gate: tokio::sync::Mutex::new(()),
             monitoring: Mutex::new(monitoring),
+            clears: Mutex::new(clears),
+            demo_clears: Mutex::new(crate::issues::cleared::ClearStore::in_memory(demo::cleared_issues())),
             disabled_changes_allowed: false,
         })
     }
@@ -128,18 +136,35 @@ impl Engine {
         self.config.read_locked().clone()
     }
 
+    /// The fleet view. Every view also expires clears whose problem changed or went away, so a
+    /// recovery the app showed counts even if the problem returns before the next poll.
+    /// No disk writes: [`Engine::record_cleared`] saves the removals.
     pub fn view(&self) -> FleetView {
-        let now = Utc::now();
         let config = self.config();
+        let demo = config.demo_mode;
+        let mut clears = self.clear_store(&config).locked();
+        let view = self.view_with(config, &clears);
+        if !demo {
+            clears.observe(&view);
+        }
+        view
+    }
+
+    /// The fleet view with `clears` applied. Callers that change the clears hold their lock
+    /// across this, so a view never mixes old and new clears.
+    fn view_with(&self, config: AppConfig, clears: &crate::issues::cleared::ClearStore) -> FleetView {
+        let now = Utc::now();
         if config.demo_mode {
             let (demo_config, demo_obs) = demo::dataset(now);
-            return derive(
+            let mut view = derive_without_issues(
                 &demo_config,
                 &demo_obs,
                 &crate::demo_desired::plan_inputs(now),
                 now,
                 DataSource::Demo,
             );
+            crate::issues::attach(&mut view, |i| clears.is_cleared(i));
+            return view;
         }
         let plan = self.plan_inputs();
         // Polls read an account's inventory-listed repositories, so the view must count them too.
@@ -149,7 +174,7 @@ impl Engine {
         self.monitoring
             .locked()
             .attach(&mut view, now, config.desktop_notifications);
-        crate::issues::attach(&mut view);
+        crate::issues::attach(&mut view, |i| clears.is_cleared(i));
         view
     }
 

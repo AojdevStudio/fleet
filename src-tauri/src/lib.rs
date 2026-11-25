@@ -171,6 +171,8 @@ pub fn run() {
             commands::remove_org,
             commands::set_machine_preferences,
             commands::set_machine_maintenance,
+            commands::clear_issue,
+            commands::restore_issue,
             commands::get_monitoring_events,
             commands::set_desktop_notifications,
             commands::test_desktop_notification,
