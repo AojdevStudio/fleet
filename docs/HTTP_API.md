@@ -122,14 +122,15 @@ fleet-wide.
 sentences that say what to do, with one line per problem for a grouped issue.
 `summary.attention` counts the issues that are not cleared, including unresolved stale or
 muted alerts. The UI renders alerts, history storage failures and operation failures in their
-own panels; the remaining findings appear under Needs attention. IDs and entity references
-support navigation and deduplication.
+own panels, and stuck jobs on the job board. The remaining findings appear under Needs
+attention. IDs and entity references support navigation and deduplication.
 
 The user can clear an issue in the desktop app. A cleared issue stays in `/v1/issues` with
 `cleared: true` while the same problem lasts, and comes back when the problem changes or
 returns after it went away. "The same problem" ignores live values such as free disk space.
 `fingerprint` is the opaque value that decides this. Clients should not parse it.
-Clearing happens only in the app: this API stays read-only.
+Clearing happens only in the app: this API stays read-only. The app has no Clear for queue
+findings, because it doesn't list them under Needs attention.
 
 Lists default to 100 entries and accept `limit=1..200`. Each page has `total` (the full filtered
 count) and `nextCursor` (null on the last page). Pass it as `after` on the next request with the

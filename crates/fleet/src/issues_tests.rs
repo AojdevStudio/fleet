@@ -126,6 +126,30 @@ fn a_cleared_item_comes_back_when_its_problem_changes() {
 }
 
 #[test]
+fn a_cleared_queue_finding_comes_back_when_its_stuck_reason_changes() {
+    let now = Utc::now();
+    let (config, observations) = crate::demo::dataset(now);
+    let mut view = crate::derive::derive(
+        &config,
+        &observations,
+        &crate::demo_desired::plan_inputs(now),
+        now,
+        DataSource::Live,
+    );
+    let mut store = ClearStore::in_memory(Default::default());
+    tick(&mut view, &mut store);
+    let id = "queue:acme-demo:9007";
+    store.clear(issue(&view, id)).unwrap();
+    tick(&mut view, &mut store);
+    assert!(issue(&view, id).cleared);
+
+    let job = view.queue.jobs.iter_mut().find(|j| j.job.id == 9007).unwrap();
+    job.stuck.as_mut().unwrap().reason = crate::model::QueueStuckReason::NoLabelMatch;
+    tick(&mut view, &mut store);
+    assert!(!issue(&view, id).cleared);
+}
+
+#[test]
 fn a_new_reading_of_the_same_problem_stays_cleared() {
     let mut view = one_machine();
     let mut store = ClearStore::in_memory(Default::default());
