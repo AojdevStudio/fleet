@@ -47,10 +47,17 @@ runners = [{ name = "laptop-01", directory = "runner-01" }]
 const LOCAL_OUTPUT: &str = "RFD\tdisk\tpass\tlocal\nRFM\tos\tmacos\nRFM\tcpu\t12\nRFM\tmemory_total\t2000\n\
                             RFM\tmemory_available\t1000\nRFM_END\nRFM_RUNNERS\n";
 
+/// The self node's tailnet IP in the fake tailnet.
+const SELF_IP: &str = "100.64.0.1";
+
 fn laptop(ssh: &str) -> String {
+    host("laptop", ssh)
+}
+
+fn host(id: &str, ssh: &str) -> String {
     format!(
-        "[[hosts]]\nid = \"laptop\"\nplatform = \"darwin-arm64\"\nssh = \"{ssh}\"\nroot = \"~/gh-runners/test\"\n\
-         service_mode = \"launchagent\"\nlabels = [\"fleet\", \"macos-build\", \"host-laptop\"]\nrunners = []\n"
+        "[[hosts]]\nid = \"{id}\"\nplatform = \"darwin-arm64\"\nssh = \"{ssh}\"\nroot = \"~/gh-runners/test\"\n\
+         service_mode = \"launchagent\"\nlabels = [\"fleet\", \"macos-build\", \"host-{id}\"]\nrunners = []\n"
     )
 }
 
@@ -143,6 +150,7 @@ fn fixture_answering(inventory: &str, local_output: String) -> Fixture {
     // The self node is named like a `laptop` target, which still doesn't make it this Mac.
     let tailnet = Arc::new(Mutex::new(TailnetSnapshot {
         self_node_id: Some("nSelf".into()),
+        self_names: [SELF_IP.to_string(), "laptop.demo.ts.net".into()].into(),
         local_online: Some(true),
         tailnet_name: None,
         peers: vec![peer("nSelf", "laptop"), peer("nMini", "mini")],
@@ -333,6 +341,52 @@ async fn an_entry_edited_away_from_localhost_stops_being_this_mac_before_the_nex
     let laptop = machine(&f.engine, "laptop");
     assert_eq!(laptop.desired.unwrap().host.ssh_setting, "laptop-remote");
     assert!(!laptop.this_mac);
+}
+
+#[tokio::test]
+async fn an_entry_at_this_macs_tailnet_ip_conflicts_with_its_loopback_entry() {
+    let tailnet_runner = host("tailnet", SELF_IP).replace(
+        "runners = []",
+        "runners = [{ name = \"tailnet-01\", directory = \"runner-01\" }]",
+    );
+    let f = fixture(&format!("{ORGANIZATION}{}{tailnet_runner}{MINI}", laptop("localhost")));
+    {
+        let mut world = f.ssh_fleet.world();
+        let labels = ["fleet", "macos-build", "host-tailnet"];
+        world.github.insert(
+            "tailnet-01".into(),
+            GithubRunner::new(7, "tailnet-01", "online", false, &labels, Some(true)),
+        );
+        world.local.insert(
+            "tailnet-01".into(),
+            LocalRunner::new("tailnet-01", "p", true, "active", Some("2.330.0")),
+        );
+    }
+    f.engine.poll_tailscale().await;
+    let review = f
+        .engine
+        .desired_review(ChangeRequest::Restart {
+            runner: "tailnet-01".into(),
+        })
+        .await
+        .unwrap();
+    assert!(!review.ready);
+    assert!(
+        review.blockers.iter().any(|b| b.contains("share the same machine")),
+        "{:?}",
+        review.blockers
+    );
+    // The entry at the tailnet IP is still a remote host: it is checked over SSH, never locally.
+    assert!(!machine(&f.engine, "tailnet").this_mac);
+    assert!(f.ssh_fleet.world().reads.contains(&"probe tailnet".into()));
+    assert!(f.local.runs().is_empty());
+    let refused = f
+        .engine
+        .desired_execute(&review.id, ChangeSecrets::default(), None)
+        .await
+        .unwrap_err();
+    assert!(refused.to_string().contains("blockers"), "{refused}");
+    assert_nothing_changed(&f);
 }
 
 #[tokio::test]

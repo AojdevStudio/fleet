@@ -114,7 +114,8 @@ fn two_hosts_that_are_both_this_mac_conflict() {
         ("mini", "darwin-arm64", "mini"),
     ]);
     let this_mac = hosts(&inventory, &plain_resolution(&inventory), Some("ci"));
-    let conflicts = crate::fleet_plan::host_identity_conflicts(&inventory, &BTreeMap::new(), &[], &this_mac);
+    let conflicts =
+        crate::fleet_plan::host_identity_conflicts(&inventory, &BTreeMap::new(), &[], &this_mac, &BTreeSet::new());
     assert_eq!(conflicts.into_keys().collect::<Vec<_>>(), ["a", "b"]);
 }
 

@@ -198,14 +198,14 @@ impl Engine {
     }
 
     fn host_identity_conflict(&self, inventory: &Inventory, host_id: &str, ssh: &SshResolution) -> Option<String> {
-        let peers = self
+        let (peers, self_names) = self
             .obs
             .read_locked()
             .tailscale
             .as_ref()
-            .map(|snapshot| snapshot.value.peers.clone())
+            .map(|snapshot| (snapshot.value.peers.clone(), snapshot.value.self_names.clone()))
             .unwrap_or_default();
-        host_identity_conflicts(inventory, &ssh.hostnames(), &peers, &ssh.this_mac).remove(host_id)
+        host_identity_conflicts(inventory, &ssh.hostnames(), &peers, &ssh.this_mac, &self_names).remove(host_id)
     }
 
     fn ensure_live_desired(&self) -> Result<(), EngineError> {

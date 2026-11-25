@@ -188,17 +188,33 @@ fn peer_named<'a>(name: &str, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPee
 }
 
 /// Hosts that share a tailnet peer or SSH destination must not own independent execution targets.
-/// Two hosts that are both this Mac conflict too.
+/// Two hosts that are both this Mac conflict too: a host in `this_mac_hosts`, and a host whose
+/// SSH name is exactly one of `self_names` ([`crate::model::TailnetSnapshot::self_names`]).
 pub fn host_identity_conflicts(
     inventory: &Inventory,
     ssh_hosts: &BTreeMap<String, String>,
     peers: &[TailnetPeer],
     this_mac_hosts: &BTreeSet<String>,
+    self_names: &BTreeSet<String>,
 ) -> BTreeMap<String, String> {
     let mut owners: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for host in &inventory.hosts {
         let resolved = host.ssh_target.as_ref().and_then(|target| ssh_hosts.get(target));
-        let owner = if this_mac_hosts.contains(&host.id) {
+        let hostnames: Vec<String> = host
+            .ssh_target
+            .as_deref()
+            .into_iter()
+            .chain(resolved.map(String::as_str))
+            .map(|target| {
+                target
+                    .rsplit('@')
+                    .next()
+                    .unwrap_or(target)
+                    .trim_end_matches('.')
+                    .to_ascii_lowercase()
+            })
+            .collect();
+        let owner = if this_mac_hosts.contains(&host.id) || hostnames.iter().any(|name| self_names.contains(name)) {
             Some("this-mac".to_string())
         } else {
             peer_for_host(host, resolved.map(String::as_str), peers).map(|p| format!("peer:{}", p.node_id))
@@ -206,18 +222,7 @@ pub fn host_identity_conflicts(
         if let Some(owner) = owner {
             owners.entry(owner).or_default().insert(host.id.clone());
         }
-        for target in host
-            .ssh_target
-            .as_deref()
-            .into_iter()
-            .chain(resolved.map(String::as_str))
-        {
-            let hostname = target
-                .rsplit('@')
-                .next()
-                .unwrap_or(target)
-                .trim_end_matches('.')
-                .to_ascii_lowercase();
+        for hostname in hostnames {
             owners
                 .entry(format!("ssh:{hostname}"))
                 .or_default()

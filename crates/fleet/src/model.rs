@@ -3,7 +3,7 @@
 //! Observations are facts with timestamps. The view is a pure function of
 //! (config, observations, now) — see `derive.rs`.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::machine::{DiskStats, MachineReport, OsFamily};
 use chrono::{DateTime, Utc};
@@ -177,6 +177,9 @@ pub struct PoolsObservation {
 pub struct TailnetSnapshot {
     /// The node this app runs on. It is also in `peers`.
     pub self_node_id: Option<String>,
+    /// That node's MagicDNS name and tailnet IPs, lowercase and without a final dot.
+    /// Only the identity check uses them. They never match a peer or route a host.
+    pub self_names: BTreeSet<String>,
     pub local_online: Option<bool>,
     pub tailnet_name: Option<String>,
     pub peers: Vec<TailnetPeer>,

@@ -39,6 +39,7 @@ impl Fixture {
             ago(5),
             TailnetSnapshot {
                 self_node_id: Some("nSelf".into()),
+                self_names: Default::default(),
                 local_online: Some(true),
                 tailnet_name: None,
                 peers: vec![peer("nSelf", "my-mac", "macOS", true)],

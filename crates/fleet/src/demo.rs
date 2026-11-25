@@ -193,6 +193,7 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
             ago(4),
             TailnetSnapshot {
                 self_node_id: Some("nLaptop".into()),
+                self_names: Default::default(),
                 local_online: Some(true),
                 tailnet_name: Some("demo.ts.net".into()),
                 peers,
