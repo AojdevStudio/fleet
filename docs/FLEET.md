@@ -143,8 +143,8 @@ The inventory needs at least one host, so add the first one by hand.
 by name and shows the `[[hosts]]` entry to paste for each. It reads only the tailnet snapshot the
 app already holds and never contacts a listed device. Tailscale doesn't report a machine's CPU,
 so check `platform` before you save: a Windows entry may need `windows-arm64`, and an Intel Mac
-can't be added, since only `darwin-arm64` is supported. An OpenSSH entry uses the device's
-MagicDNS name only when MagicDNS is on, else its tailnet IP. If the latest Tailscale read failed,
+can't be added, since only `darwin-arm64` is supported. An entry uses the device's MagicDNS
+name only when MagicDNS is on, else its tailnet IP, for OpenSSH and Tailscale SSH alike. If the latest Tailscale read failed,
 the pane lists no devices and says why.
 
 Add machine leaves out this Mac, the device each machine row shows, and a device whose MagicDNS

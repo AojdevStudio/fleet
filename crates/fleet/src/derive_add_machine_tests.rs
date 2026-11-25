@@ -189,7 +189,7 @@ fn a_host_at_this_macs_name_still_hides_the_devices_it_names() {
 }
 
 #[test]
-fn an_openssh_entry_uses_the_tailnet_ip_unless_magic_dns_is_on() {
+fn an_entry_uses_the_tailnet_ip_unless_magic_dns_is_on() {
     let ssh = |magic_dns: bool| {
         let mut f = fixture(&[host("seed", "seed.lan", "")], []);
         let status = format!(
@@ -218,10 +218,10 @@ fn an_openssh_entry_uses_the_tailnet_ip_unless_magic_dns_is_on() {
             .collect::<Vec<_>>()
     };
     let pairs = |rows: [(&str, &str); 2]| rows.map(|(a, b)| (a.to_string(), b.to_string())).to_vec();
-    // `tailscale ssh` resolves the MagicDNS name itself, so a Tailscale SSH entry keeps it.
+    // With MagicDNS off, both transports get the tailnet IP: `tailscale ssh` on macOS hands the name to system SSH.
     assert_eq!(
         ssh(false),
-        pairs([("100.64.0.3", "openssh"), ("keyed.tail1.ts.net", "tailscale")])
+        pairs([("100.64.0.3", "openssh"), ("100.64.0.4", "tailscale")])
     );
     assert_eq!(
         ssh(true),

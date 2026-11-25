@@ -165,11 +165,9 @@ fn device_view(
     } else {
         SshTransport::Tailscale
     };
-    // `tailscale ssh` resolves a MagicDNS name itself. OpenSSH resolves it only with MagicDNS on.
-    let name = peer
-        .dns_name
-        .as_ref()
-        .filter(|_| magic_dns || transport == SshTransport::Tailscale);
+    // A MagicDNS name resolves only with MagicDNS on. `tailscale ssh` also hands the name to system
+    // SSH on macOS, so both transports use the tailnet IP otherwise.
+    let name = peer.dns_name.as_ref().filter(|_| magic_dns);
     let ssh = name.or(peer.ips.first()).cloned()?;
     let platform_note = match platform {
         Platform::WindowsX64 => " # Tailscale doesn't report the CPU: use windows-arm64 on an ARM machine.",
