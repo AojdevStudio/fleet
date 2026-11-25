@@ -248,10 +248,7 @@ impl GithubIndex {
             .get(&(entry.org.clone(), runner.id))?
             .iter()
             .filter(|job| {
-                runner
-                    .repository
-                    .as_deref()
-                    .is_none_or(|repository| job.repo.eq_ignore_ascii_case(repository))
+                takes_jobs_from(runner, &job.repo)
                     && job
                         .runner_name
                         .as_deref()
@@ -260,6 +257,15 @@ impl GithubIndex {
         let job = matching.next()?;
         matching.next().is_none().then_some(job)
     }
+}
+
+/// A repository runner takes only its own repository's jobs. An organization
+/// runner takes jobs from any repository its group allows.
+fn takes_jobs_from(runner: &GhRunner, repo: &str) -> bool {
+    runner
+        .repository
+        .as_deref()
+        .is_none_or(|repository| repository.eq_ignore_ascii_case(repo))
 }
 
 fn connection(
@@ -437,16 +443,10 @@ fn queue_view(
                 view.other_queued += 1;
                 continue;
             }
-            // A repository runner takes only its own repository's jobs.
             let compatible: Vec<&GhEntry> = by_label
                 .iter()
                 .copied()
-                .filter(|r| {
-                    r.runner
-                        .repository
-                        .as_deref()
-                        .is_none_or(|repository| repository.eq_ignore_ascii_case(&job.repo))
-                })
+                .filter(|r| takes_jobs_from(&r.runner, &job.repo))
                 .collect();
             let online: Vec<&&GhEntry> = compatible
                 .iter()
@@ -492,7 +492,7 @@ fn queue_view(
 
 fn stuck_detail(reason: QueueStuckReason, job: &GhJob) -> String {
     match reason {
-        QueueStuckReason::OtherRepository => "No runner is registered to this repository.".into(),
+        QueueStuckReason::OtherRepository => "Only runners registered to other repositories have its labels.".into(),
         QueueStuckReason::NoLabelMatch => format!("No runner has the labels {}.", job.labels.join(", ")),
         QueueStuckReason::RunnersOffline => "Every runner that can take it is offline or has no recent status.".into(),
         QueueStuckReason::WaitedPastLimit => format!(

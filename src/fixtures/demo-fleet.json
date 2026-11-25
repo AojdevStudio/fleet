@@ -1759,7 +1759,7 @@
         "compatibleIdle": 0,
         "stuck": {
           "reason": "otherRepository",
-          "detail": "No runner is registered to this repository."
+          "detail": "Only runners registered to other repositories have its labels."
         }
       },
       {

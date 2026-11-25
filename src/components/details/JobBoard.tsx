@@ -14,9 +14,6 @@ import { calloutSurface, Card, Elapsed, EmptyLine, StatusDot } from "../ui";
 import { Icon } from "../icons";
 import { GitHubLink, RunnerCells } from "./shared";
 
-/** Queued jobs shown per column before the rest move to Queued jobs. */
-const QUEUE_ROWS = 6;
-
 /** The first screen: what runs now, what comes next, and what is stuck. */
 export function JobBoard({ view }: { view: FleetView }) {
   const board = jobBoard(view);
@@ -33,12 +30,12 @@ export function JobBoard({ view }: { view: FleetView }) {
         </Column>
         <Column title="Up next" tone="ok" count={board.upNext.length} note="Oldest first"
           empty={q.asOf ? "Nothing is waiting for a runner." : "Waiting for job data from GitHub."}>
-          <QueuedRows jobs={board.upNext} />
+          {board.upNext.map((q) => <QueuedRow key={`${q.org}:${q.job.id}`} q={q} />)}
         </Column>
         <Column title="Stuck" tone="warn" count={board.stuck.length}
           note={`No runner can take it, or waiting over ${limit} min`}
           empty="Nothing is stuck.">
-          <QueuedRows jobs={board.stuck} />
+          {board.stuck.map((q) => <QueuedRow key={`${q.org}:${q.job.id}`} q={q} />)}
         </Column>
       </div>
       {(!q.complete || q.otherQueued > 0) && (
@@ -105,21 +102,6 @@ function RunningRow({ r, view }: { r: RunnerView; view: FleetView }) {
       </div>
       <span className="shrink-0 pt-px font-mono text-[12px] text-ink-2 tabular">{since ? <Elapsed since={since} /> : "—"}</span>
     </button>
-  );
-}
-
-function QueuedRows({ jobs }: { jobs: QueuedJobView[] }) {
-  const select = useUi((s) => s.select);
-  return (
-    <>
-      {jobs.slice(0, QUEUE_ROWS).map((q) => <QueuedRow key={`${q.org}:${q.job.id}`} q={q} />)}
-      {jobs.length > QUEUE_ROWS && (
-        <button type="button" onClick={() => select({ kind: "queue" })}
-          className="flex w-full items-center gap-1.5 px-4 py-2.5 text-left text-[12.5px] text-ink-2 hover:bg-hover hover:text-ink">
-          {jobs.length - QUEUE_ROWS} more in Queued jobs <Icon name="chevron" size={11} />
-        </button>
-      )}
-    </>
   );
 }
 

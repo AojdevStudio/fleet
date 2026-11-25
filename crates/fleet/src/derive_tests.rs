@@ -205,7 +205,7 @@ fn a_repository_runner_takes_only_its_own_repositorys_jobs() {
         dependabot.stuck.as_ref().map(|s| (s.reason, s.detail.as_str())),
         Some((
             QueueStuckReason::OtherRepository,
-            "No runner is registered to this repository."
+            "Only runners registered to other repositories have its labels."
         ))
     );
     assert_eq!(
