@@ -15,7 +15,6 @@ fn view(at: DateTime<Utc>) -> FleetView {
         DataSource::Live,
     );
     view.machines.retain(|m| m.display_name == "studio");
-    view.other_machines.clear();
     sample(&mut view, at);
     view.monitoring.desktop_notifications = true;
     view
@@ -272,26 +271,45 @@ fn failed_writes_hold_notifications_and_roll_back_maintenance_until_storage_reco
 }
 
 #[test]
-fn adding_a_discovered_machine_to_inventory_preserves_its_history() {
-    let (_dir, mut store) = store();
-    let mut v = view(now());
-    let desired = v.machines[0].desired.take();
-    store.deliver(&v, now());
-    let first_id = store.events(None, None, now())[0].id.clone();
-    v.machines[0].desired = desired;
-    sample(&mut v, now() + Duration::minutes(1));
-    store.deliver(&v, v.generated_at);
-    attach(&store, &mut v);
-    let machine = &v.machines[0];
-    assert!(machine.monitoring.machine_key.starts_with("inv:"));
-    assert!(machine.monitoring.events.iter().any(|e| e.id == first_id));
-    assert!(
-        machine
-            .monitoring
-            .events
-            .iter()
-            .all(|e| e.machine_key == machine.preferences_key())
-    );
+fn history_and_alerts_of_a_device_outside_the_inventory_are_dropped_on_load() {
+    let (dir, mut store) = store();
+    let path = dir.path().join("monitoring.json");
+    // Earlier versions watched tailnet devices outside the inventory, such as a family computer,
+    // under their tailnet key. Model that saved journal beside an inventory machine's history.
+    store.deliver(&view(now()), now());
+    let mut family = view(now());
+    let machine = &mut family.machines[0];
+    machine.id = "ts:nFamily".into();
+    machine.display_name = "family-pc".into();
+    machine.desired = None;
+    store.deliver(&family, now());
+    offline(&mut family);
+    for tick in 1..=15 {
+        let at = now() + Duration::seconds(tick * 15);
+        sample(&mut family, at);
+        store.deliver(&family, at);
+    }
+    attach(&store, &mut family);
+    assert_eq!(family.monitoring.alerts[0].machine_key, "ts:nFamily");
+    drop(store);
+    assert!(std::fs::read_to_string(&path).unwrap().contains("ts:nFamily"));
+
+    // Gone at load, before any refresh, even while the tailnet is unavailable.
+    let mut store = MonitorStore::load(path.clone());
+    let events = store.events(None, None, now() + Duration::minutes(5));
+    assert!(!events.is_empty() && events.iter().all(|e| e.machine_key == "inv:studio"));
+    let mut current = view(now() + Duration::minutes(5));
+    current.tailnet.as_of = None;
+    current.tailnet.available = false;
+    store.deliver(&current, current.generated_at);
+    attach(&store, &mut current);
+    crate::issues::attach(&mut current);
+    let saved = std::fs::read_to_string(&path).unwrap();
+    let shown = serde_json::to_string(&current).unwrap();
+    for text in [saved, shown] {
+        assert!(!text.contains("ts:nFamily") && !text.contains("family-pc"), "{text}");
+    }
+    assert!(current.monitoring.alerts.is_empty());
 }
 
 #[test]
@@ -509,15 +527,12 @@ fn persisted_notifications_survive_incomplete_discovery_and_inventory() {
     ] {
         let (dir, mut store) = store();
         let mut v = view(now());
-        // A discovered peer has no inventory entry to keep it visible during startup.
-        v.machines[0].desired = None;
         let notice = disk_notice(&mut store, &mut v).pop().unwrap();
         let path = dir.path().join("monitoring.json");
         drop(store);
         let mut store = MonitorStore::load(path.clone());
         let mut absent = v.clone();
         absent.machines.clear();
-        absent.other_machines.clear();
         absent.generated_at = now() + Duration::minutes(3);
         match missing_evidence {
             "pending" => {

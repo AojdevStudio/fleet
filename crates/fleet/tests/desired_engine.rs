@@ -478,6 +478,16 @@ fn inventory_hosts_match_tailnet_machines_by_their_ssh_target() {
     assert_eq!(peer_for_host(&alias, None, &peers), None);
     let resolved = peer_for_host(&alias, Some("mac-mini.example.ts.net"), &peers);
     assert_eq!(resolved.map(|p| p.node_id.as_str()), Some("n4"));
+    // A LAN name matches a peer by its first label.
+    alias.ssh_target = Some("mac-mini.home.lan".into());
+    assert_eq!(
+        peer_for_host(&alias, None, &peers).map(|p| p.node_id.as_str()),
+        Some("n4")
+    );
+    // What SSH resolves the target to wins over a different peer the written target names.
+    alias.ssh_target = Some("studio.example.ts.net".into());
+    let redirected = peer_for_host(&alias, Some("linux.example.ts.net"), &peers);
+    assert_eq!(redirected.map(|p| p.node_id.as_str()), Some("n2"));
 }
 
 #[test]
@@ -536,15 +546,17 @@ async fn ssh_aliases_resolve_to_their_tailnet_machine() {
     });
     let engine = Arc::new(engine);
     engine.poll_tailscale().await;
-    // Before SSH resolves the alias, the host and the tailnet machine are separate.
+    // Until SSH resolves the alias, the inventory row is `inv:mini` and the device is no machine.
     assert_eq!(machine(&engine, "mini").id, "inv:mini", "before SSH is resolved");
-    assert_eq!(engine.view().other_machines.len(), 1);
+    assert!(
+        engine.view().machines.iter().all(|m| m.id != "ts:nMini"),
+        "an unclaimed device is no machine"
+    );
     engine.desired_refresh(None).await.unwrap();
     // After: one machine, keyed by its tailnet node.
     let mini = machine(&engine, "mini");
     assert_eq!(mini.id, "ts:nMini");
     assert_eq!(mini.tailnet.unwrap().node_id, "nMini");
-    assert!(engine.view().other_machines.is_empty());
 }
 
 async fn review_restart(f: &Fixture) -> fleet::engine::desired::ReviewView {
