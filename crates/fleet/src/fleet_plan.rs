@@ -163,12 +163,22 @@ pub struct FleetPlanInputs {
 /// like `mini` → `mac-mini.<tailnet>.ts.net`. `tailscale ssh` never reads the
 /// OpenSSH config, so a Tailscale host is the peer its written name names.
 pub fn peer_for_host<'a>(host: &Host, ssh_hostname: Option<&str>, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPeer> {
-    let target = host.ssh_target.as_deref()?;
-    let written = target.rsplit('@').next()?;
+    peer_candidates(host, ssh_hostname, peers).first().copied()
+}
+
+/// Every tailnet machine that fits the host's SSH target equally well, in snapshot order.
+/// More than one means the name is ambiguous, and `peer_for_host` takes the first.
+pub fn peer_candidates<'a>(host: &Host, ssh_hostname: Option<&str>, peers: &'a [TailnetPeer]) -> Vec<&'a TailnetPeer> {
+    let Some(target) = host.ssh_target.as_deref() else {
+        return Vec::new();
+    };
+    let written = target.rsplit('@').next().unwrap_or(target);
     transport_hostname(host, ssh_hostname)
         .into_iter()
         .chain([written])
-        .find_map(|name| peer_named(&name.to_ascii_lowercase(), peers))
+        .map(|name| peers_named(&name.to_ascii_lowercase(), peers))
+        .find(|candidates| !candidates.is_empty())
+        .unwrap_or_default()
 }
 
 /// The resolved hostname the host's transport connects to. Only OpenSSH reads `ssh -G`.
@@ -179,27 +189,29 @@ fn transport_hostname<'a>(host: &Host, ssh_hostname: Option<&'a str>) -> Option<
     }
 }
 
-/// A bare name is what MagicDNS resolves, so its MagicDNS label comes before reported
-/// hostnames, which devices can share. A dotted name such as `builder.lan` names no label,
-/// so its first part matches a label or a hostname in snapshot order.
-fn peer_named<'a>(name: &str, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPeer> {
+/// The peers of the first match kind that fits `name`: its full MagicDNS name, a tailnet IP,
+/// its MagicDNS label for a bare name (what MagicDNS resolves), then the first part of the name
+/// as a label or reported hostname. Only that last kind can fit several devices.
+fn peers_named<'a>(name: &str, peers: &'a [TailnetPeer]) -> Vec<&'a TailnetPeer> {
     let short = name.split('.').next().unwrap_or(name);
-    let labelled = |p: &&'a TailnetPeer| {
+    let bare = !name.contains('.');
+    let labelled = |p: &TailnetPeer| {
         p.dns_name
             .as_deref()
             .and_then(|d| d.split('.').next())
             .is_some_and(|d| d.eq_ignore_ascii_case(short))
     };
-    peers
+    let kinds: [&dyn Fn(&TailnetPeer) -> bool; 4] = [
+        &|p| p.dns_name.as_deref().is_some_and(|d| d.eq_ignore_ascii_case(name)),
+        &|p| p.ips.iter().any(|ip| ip == name),
+        &|p| bare && labelled(p),
+        &|p| labelled(p) || p.hostname.eq_ignore_ascii_case(short),
+    ];
+    kinds
         .iter()
-        .find(|p| p.dns_name.as_deref().is_some_and(|d| d.eq_ignore_ascii_case(name)))
-        .or_else(|| peers.iter().find(|p| p.ips.iter().any(|ip| ip == name)))
-        .or_else(|| peers.iter().find(labelled).filter(|_| !name.contains('.')))
-        .or_else(|| {
-            peers
-                .iter()
-                .find(|p| labelled(p) || p.hostname.eq_ignore_ascii_case(short))
-        })
+        .map(|fits| peers.iter().filter(|p| fits(p)).collect::<Vec<_>>())
+        .find(|candidates| !candidates.is_empty())
+        .unwrap_or_default()
 }
 
 /// Hosts that share a tailnet peer or SSH destination must not own independent execution targets.

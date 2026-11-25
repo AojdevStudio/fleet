@@ -50,7 +50,8 @@ machine lists such desktop and server devices by name from the tailnet snapshot,
 It offers nothing until it knows every host's peer, since a host may own a peer its written name
 doesn't match. An unset `${VAR}` target holds it back, and so does a failed `ssh -G` of an
 OpenSSH target. A `tailscale` host needs no `ssh -G`, because `tailscale ssh` reaches the written
-name. Add machine then names the hosts it waits for. It also offers nothing without a loaded
+name. A target that fits several devices only by its first name part holds it back too. Add
+machine then names the hosts it waits for. It also offers nothing without a loaded
 inventory.
 Monitoring keys history by inventory host. History that older versions saved under a tailnet key
 (`ts:<node id>`) belonged to devices outside the inventory, so it is dropped when the history loads.

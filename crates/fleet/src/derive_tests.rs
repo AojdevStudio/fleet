@@ -503,6 +503,55 @@ fn add_machine_names_the_hosts_it_waits_for() {
 }
 
 #[test]
+fn add_machine_waits_when_a_host_name_fits_several_devices() {
+    let text = r#"
+[organization]
+name = "acme"
+url = "https://github.com/acme"
+runner_group = "trusted"
+
+[[hosts]]
+id = "builder"
+platform = "linux-x64"
+ssh = "builder.lan"
+root = "~/gh-runners/acme"
+service_mode = "systemd"
+labels = ["fleet", "linux-build"]
+"#;
+    let a = TailnetPeer {
+        dns_name: Some("build-a.ts.net".into()),
+        ..peer("nA", "builder", "linux", true)
+    };
+    let b = TailnetPeer {
+        dns_name: Some("builder.ts.net".into()),
+        ..peer("nB", "other", "linux", true)
+    };
+    // The snapshot order says nothing about which device LAN DNS reaches, so neither is offered.
+    for order in [[a.clone(), b.clone()], [b, a]] {
+        let mut f = Fixture::new();
+        f.plan.inventory = Some(Ok(crate::desired::inventory::parse_inventory(
+            text,
+            &Default::default(),
+        )
+        .unwrap()));
+        f.plan.ssh_hosts.insert("builder.lan".into(), "builder.lan".into());
+        f.obs.tailscale.as_mut().unwrap().value.peers.extend(order);
+        let view = f.view();
+        let crate::add_machine::AddMachineView::Waiting { hosts } = &view.add_machine else {
+            panic!("{:?}", view.add_machine)
+        };
+        let [wait] = &hosts[..] else { panic!("one host waits") };
+        assert_eq!(wait.host_id, "builder");
+        assert!(
+            wait.reason.contains("fits more than one tailnet device"),
+            "{}",
+            wait.reason
+        );
+        assert!(wait.reason.contains("build-a.ts.net") && wait.reason.contains("builder.ts.net"));
+    }
+}
+
+#[test]
 fn a_tailscale_host_claims_the_peer_tailscale_ssh_reaches() {
     let mut f = Fixture::new();
     let text = r#"

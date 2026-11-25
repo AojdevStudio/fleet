@@ -139,9 +139,9 @@ still present, runners pending decommission, and GitHub runners carrying its `ho
 A tailnet device outside the inventory is never listed, contacted or alerted on. **Add machine**
 in the sidebar lists those devices by name and shows the `[[hosts]]` entry to paste for each.
 Tailscale doesn't report a Windows machine's CPU, so check `platform` before you save. Until the
-app knows every host's tailnet machine (an OpenSSH target SSH hasn't resolved, or an unset
-`ssh = "${VAR}"`, disabled hosts included), Add machine offers no entry and names the hosts that
-need attention instead. The inventory needs at least one host, so add the first one by hand.
+app knows every host's tailnet machine (an OpenSSH target SSH hasn't resolved, an unset
+`ssh = "${VAR}"`, or a name such as `builder.lan` that fits several devices, disabled hosts
+included), Add machine offers no entry and names the hosts that need attention instead. The inventory needs at least one host, so add the first one by hand.
 
 - **Check now** (overview) or **Check** (a machine) reads GitHub with `gh` and probes hosts over
   SSH (`tailscale ssh` for `ssh_transport = "tailscale"`). The app checks once at launch, then

@@ -110,7 +110,7 @@ pub(super) fn assemble(
         .hosts
         .iter()
         .filter_map(|h| {
-            wait_reason(h, &plan.ssh_hosts).map(|reason| AddMachineWait {
+            wait_reason(h, &plan.ssh_hosts, &peers).map(|reason| AddMachineWait {
                 host_id: h.id.clone(),
                 reason,
             })

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::desired::model::{Host, Platform, SshTransport};
+use crate::fleet_plan::peer_candidates;
 use crate::model::TailnetPeer;
 
 /// What Add machine can offer.
@@ -35,7 +36,7 @@ pub struct AddMachineWait {
 /// Why `host`'s tailnet device isn't known yet, or `None` when it is. `ssh_hosts` maps each
 /// SSH target to the host name OpenSSH resolves it to. Disabled hosts count too: their device
 /// is still in the inventory, so an offer for it would add the machine twice.
-pub(crate) fn wait_reason(host: &Host, ssh_hosts: &BTreeMap<String, String>) -> Option<String> {
+pub(crate) fn wait_reason(host: &Host, ssh_hosts: &BTreeMap<String, String>, peers: &[TailnetPeer]) -> Option<String> {
     let Some(target) = &host.ssh_target else {
         return Some(format!(
             "ssh = \"{}\" is unset in the app's environment. Set the variable and restart the app, \
@@ -43,8 +44,19 @@ pub(crate) fn wait_reason(host: &Host, ssh_hosts: &BTreeMap<String, String>) -> 
             host.ssh_setting
         ));
     };
-    (host.ssh_transport == SshTransport::Openssh && !ssh_hosts.contains_key(target)).then(|| {
-        format!("SSH hasn't resolved {target} yet. If this lasts, check that `ssh -G {target}` works on this Mac.")
+    let resolved = ssh_hosts.get(target);
+    if host.ssh_transport == SshTransport::Openssh && resolved.is_none() {
+        return Some(format!(
+            "SSH hasn't resolved {target} yet. If this lasts, check that `ssh -G {target}` works on this Mac."
+        ));
+    }
+    let candidates = peer_candidates(host, resolved.map(String::as_str), peers);
+    (candidates.len() > 1).then(|| {
+        let names: Vec<_> = candidates.iter().map(|p| p.address()).collect();
+        format!(
+            "{target} fits more than one tailnet device: {}. Write the device's MagicDNS name or tailnet IP in ssh.",
+            names.join(", ")
+        )
     })
 }
 
