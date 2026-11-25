@@ -669,7 +669,14 @@ pub(crate) mod rules {
             PreserveService => "Wait for its job to finish, then start its service.".into(),
             PreserveDecommission => "Wait for its job to finish, then decommission it.".into(),
             RepairRegistration => "Check it by hand. GitHub has no runner for its local configuration.".into(),
-            RecoverLocal => "Configure it at its inventory path, or remove it from GitHub.".into(),
+            // Decommission refuses to delete a runner GitHub reports online when its inventory
+            // directory isn't configured, so this never leads with removal.
+            RecoverLocal => {
+                "Find the runner GitHub lists under this name, and check its directory against the inventory \
+                 before you change anything. If it runs from another directory, change the inventory path to match. \
+                 Remove it from GitHub only when it is offline, idle, and no machine runs it."
+                    .into()
+            }
             HardenGroup => {
                 "Set the runner group to allow all private repositories, no public ones, and all workflows.".into()
             }
