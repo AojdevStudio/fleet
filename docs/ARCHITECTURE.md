@@ -94,8 +94,9 @@ history is fictional, generated separately, and never touches the journal or sen
   runner, belongs to the job's repository. That isn't a promise of scheduling, because group
   access can also affect eligibility.
 - A queued job is stuck when no runner matches it, when every match is offline or has no recent
-  status, or when it had waited over 30 minutes when the last job scan began while a match is
-  idle. A job waiting while every match is working is not stuck. Stuck jobs show on the
+  status, or when it had waited over 30 minutes when the last job scan began while a match was
+  already idle. A job waiting while every match is working is not stuck. Until the first runner
+  list arrives, a job waits with matching unknown instead of being stuck. Stuck jobs show on the
   overview's job board and the Queued jobs page, not under Needs attention.
 - Fresh SSH runner facts update displayed inventory drift. Every change still re-reads the host
   through the desired-state engine before review and again before execution.

@@ -172,6 +172,7 @@ struct GhEntry {
     runner: GhRunner,
     at: DateTime<Utc>,
     stale: bool,
+    idle_since: Option<DateTime<Utc>>,
 }
 
 struct GithubIndex {
@@ -214,6 +215,7 @@ impl GithubIndex {
                         runner: r.clone(),
                         at: runners.at,
                         stale,
+                        idle_since: o.idle_since(r),
                     });
                 }
             }
@@ -433,6 +435,7 @@ fn queue_view(
             view.complete = false;
         }
         view.as_of = Some(view.as_of.map_or(jobs.at, |a: DateTime<Utc>| a.min(jobs.at)));
+        let runners_known = obs.github.get(&org).is_some_and(|o| o.runners.is_some());
 
         for job in jobs.value.jobs.iter().filter(|j| j.status == "queued") {
             let by_label: Vec<&GhEntry> = gh
@@ -449,26 +452,34 @@ fn queue_view(
                 .copied()
                 .filter(|r| takes_jobs_from(&r.runner, &job.repo))
                 .collect();
-            let online: Vec<&&GhEntry> = compatible
+            let online: Vec<&GhEntry> = compatible
                 .iter()
+                .copied()
                 .filter(|r| !r.stale && r.runner.status == "online")
                 .collect();
-            let idle = online
+            let idle: Vec<&GhEntry> = online
                 .iter()
+                .copied()
                 .filter(|r| {
                     !r.runner.busy
                         && by_key
                             .get(r.key.as_str())
                             .is_none_or(|v| !matches!(v.activity, RunnerActivity::Busy { .. }))
                 })
-                .count();
-            let reason = if by_label.is_empty() {
+                .collect();
+            // A runner that went idle after the scan began may have taken this job since.
+            let idle_at_scan = idle
+                .iter()
+                .any(|r| r.idle_since.is_some_and(|at| at <= jobs.value.started_at));
+            let reason = if !runners_known {
+                None
+            } else if by_label.is_empty() {
                 Some(QueueStuckReason::NoLabelMatch)
             } else if compatible.is_empty() {
                 Some(QueueStuckReason::OtherRepository)
             } else if online.is_empty() {
                 Some(QueueStuckReason::RunnersOffline)
-            } else if idle > 0
+            } else if idle_at_scan
                 && job
                     .created_at
                     .is_some_and(|at| jobs.value.started_at - at > STUCK_AFTER)
@@ -483,7 +494,8 @@ fn queue_view(
                 created_at: job.created_at,
                 compatible_runners: compatible.iter().map(|r| r.key.clone()).collect(),
                 compatible_online: count_u32(online.len()),
-                compatible_idle: count_u32(idle),
+                compatible_idle: count_u32(idle.len()),
+                runners_known,
                 stuck: reason.map(|reason| QueueStuck {
                     reason,
                     detail: stuck_detail(reason, job),

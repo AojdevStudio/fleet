@@ -1757,6 +1757,7 @@
         "compatibleRunners": [],
         "compatibleOnline": 0,
         "compatibleIdle": 0,
+        "runnersKnown": true,
         "stuck": {
           "reason": "otherRepository",
           "detail": "Only runners registered to other repositories have its labels."
@@ -1786,6 +1787,7 @@
         ],
         "compatibleOnline": 3,
         "compatibleIdle": 3,
+        "runnersKnown": true,
         "stuck": {
           "reason": "waitedPastLimit",
           "detail": "An idle runner matches it, but it has waited over 30 min."
@@ -1811,6 +1813,7 @@
         "compatibleRunners": [],
         "compatibleOnline": 0,
         "compatibleIdle": 0,
+        "runnersKnown": true,
         "stuck": {
           "reason": "noLabelMatch",
           "detail": "No runner has the labels self-hosted, gpu, a100."
@@ -1837,6 +1840,7 @@
         ],
         "compatibleOnline": 0,
         "compatibleIdle": 0,
+        "runnersKnown": true,
         "stuck": {
           "reason": "runnersOffline",
           "detail": "Every runner that matches it is offline or has no recent status."
@@ -1865,6 +1869,7 @@
         ],
         "compatibleOnline": 2,
         "compatibleIdle": 2,
+        "runnersKnown": true,
         "stuck": null
       },
       {
@@ -1890,6 +1895,7 @@
         ],
         "compatibleOnline": 2,
         "compatibleIdle": 1,
+        "runnersKnown": true,
         "stuck": null
       }
     ],

@@ -10,6 +10,11 @@ export type QueuedJobView = { org: string, job: JobView, createdAt: string | nul
  */
 compatibleRunners: Array<string>, compatibleOnline: number, compatibleIdle: number, 
 /**
+ * False until GitHub returns the organization's runner list. Until then no
+ * runner is matched and the job is never marked stuck.
+ */
+runnersKnown: boolean, 
+/**
  * Why the job isn't moving. None while it waits normally for a runner.
  */
 stuck: QueueStuck | null, };

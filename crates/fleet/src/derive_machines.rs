@@ -397,6 +397,7 @@ fn checked_github(plan: &FleetPlanInputs, org: &str, name: &str, host: &Host, no
         runner,
         at,
         stale: now - at > super::GITHUB_STALE_AFTER,
+        idle_since: None,
     })
 }
 

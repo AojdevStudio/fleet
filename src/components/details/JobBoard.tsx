@@ -108,6 +108,7 @@ function RunningRow({ r, view }: { r: RunnerView; view: FleetView }) {
 /** Who can take a waiting job, or why nobody can. */
 function takers(q: QueuedJobView): { tone: Tone; text: string } {
   if (q.stuck) return { tone: "warn", text: q.stuck.detail };
+  if (!q.runnersKnown) return { tone: "muted", text: "Runner matching isn't available yet. GitHub hasn't sent the runner list." };
   return q.compatibleIdle > 0
     ? { tone: "ok", text: `${plural(q.compatibleIdle, "idle runner")} ${q.compatibleIdle === 1 ? "matches" : "match"}` }
     : { tone: "busy", text: `${plural(q.compatibleOnline, "runner")} ${q.compatibleOnline === 1 ? "matches" : "match"}, all working` };

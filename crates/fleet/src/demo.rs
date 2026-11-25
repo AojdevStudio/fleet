@@ -189,35 +189,31 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
         }),
         ..Default::default()
     };
-    obs.github.insert(
-        ORG.into(),
-        OrgObservation {
-            runners: Some(Timed::new(ago(9), gh_runners)),
-            jobs: Some(Timed::new(
-                ago(21),
-                JobScan {
-                    started_at: ago(23),
-                    repos_scanned: vec![
-                        "ios-app".into(),
-                        "web".into(),
-                        "ml".into(),
-                        "infra".into(),
-                        "desktop".into(),
-                    ],
-                    truncated: false,
-                    jobs,
-                },
-            )),
-            error: None,
-            jobs_error: None,
-            rate_limit: Some(RateLimit {
-                limit: 5000,
-                remaining: 4712,
-                resets_at: Some(now + Duration::minutes(38)),
-            }),
-            missing_token: false,
+    let mut acme = OrgObservation::default();
+    acme.jobs = Some(Timed::new(
+        ago(21),
+        JobScan {
+            started_at: ago(23),
+            repos_scanned: vec![
+                "ios-app".into(),
+                "web".into(),
+                "ml".into(),
+                "infra".into(),
+                "desktop".into(),
+            ],
+            truncated: false,
+            jobs,
         },
-    );
+    ));
+    acme.rate_limit = Some(RateLimit {
+        limit: 5000,
+        remaining: 4712,
+        resets_at: Some(now + Duration::minutes(38)),
+    });
+    // An earlier runner poll saw the same list, so its idle runners were idle before the job scan.
+    acme.set_runners(Timed::new(ago(29), gh_runners.clone()));
+    acme.set_runners(Timed::new(ago(9), gh_runners));
+    obs.github.insert(ORG.into(), acme);
 
     let inventory = crate::demo_desired::inventory();
     let snapshot = crate::demo_desired::snapshot();

@@ -48,7 +48,11 @@ impl Fixture {
     }
 
     fn gh_runners(&mut self, at: DateTime<Utc>, runners: Vec<GhRunner>) -> &mut Self {
-        self.obs.github.entry("acme".into()).or_default().runners = Some(Timed::new(at, runners));
+        self.obs
+            .github
+            .entry("acme".into())
+            .or_default()
+            .set_runners(Timed::new(at, runners));
         self
     }
 
@@ -241,7 +245,9 @@ fn an_organization_runner_matches_any_repository_by_labels() {
 fn a_job_is_stuck_after_waiting_past_the_limit_only_while_a_matching_runner_is_idle() {
     let limit = STUCK_AFTER.num_minutes();
     let mut f = Fixture::new();
-    f.gh_runners(ago(10), vec![gh(1, "mac-idle", "online", false, MAC)])
+    // Two runner polls: the runner was already idle before every scan below began.
+    f.gh_runners(ago(145), vec![gh(1, "mac-idle", "online", false, MAC)])
+        .gh_runners(ago(10), vec![gh(1, "mac-idle", "online", false, MAC)])
         .jobs(
             ago(20),
             vec![
@@ -301,6 +307,62 @@ fn a_job_is_stuck_after_waiting_past_the_limit_only_while_a_matching_runner_is_i
         stuck(&f.view(), 10).map(|s| s.reason),
         Some(QueueStuckReason::RunnersOffline)
     );
+}
+
+#[test]
+fn a_runner_that_went_idle_after_the_job_scan_does_not_make_the_job_stuck() {
+    let mut f = Fixture::new();
+    let waiting = || {
+        vec![created(
+            STUCK_AFTER.num_minutes() + 5,
+            job(10, None, "queued", MAC, None),
+        )]
+    };
+    let stuck = |f: &Fixture| f.view().queue.jobs[0].stuck.as_ref().map(|s| s.reason);
+    f.gh_runners(ago(60), vec![gh(1, "mac", "online", true, MAC)])
+        .jobs(ago(40), waiting());
+    assert_eq!(stuck(&f), None, "every match is working");
+
+    // The job may have run on this runner and finished since the scan.
+    f.gh_runners(ago(20), vec![gh(1, "mac", "online", false, MAC)]);
+    let v = f.view();
+    assert_eq!(v.queue.jobs[0].compatible_idle, 1);
+    assert_eq!(stuck(&f), None);
+
+    // A later scan still sees the job queued while the runner is idle.
+    f.jobs(ago(10), waiting());
+    assert_eq!(stuck(&f), Some(QueueStuckReason::WaitedPastLimit));
+    f.gh_runners(ago(5), vec![gh(1, "mac", "online", false, MAC)]);
+    assert_eq!(
+        stuck(&f),
+        Some(QueueStuckReason::WaitedPastLimit),
+        "still idle since before the scan"
+    );
+}
+
+#[test]
+fn without_a_runner_list_a_self_hosted_job_waits_with_matching_unknown() {
+    let mut f = Fixture::new();
+    f.jobs(
+        ago(10),
+        vec![
+            job(10, None, "queued", &["self-hosted", "gpu"], None),
+            job(11, None, "queued", &["ubuntu-latest"], None),
+        ],
+    );
+    let v = f.view();
+    assert_eq!(v.queue.jobs.len(), 1);
+    assert_eq!(v.queue.other_queued, 1);
+    let q = &v.queue.jobs[0];
+    assert!(!q.runners_known);
+    assert_eq!(q.stuck, None, "no runner list is not a label mismatch");
+
+    // An empty list from GitHub is a real answer: nothing has the labels.
+    f.gh_runners(ago(5), vec![]);
+    let v = f.view();
+    let q = &v.queue.jobs[0];
+    assert!(q.runners_known);
+    assert_eq!(q.stuck.as_ref().map(|s| s.reason), Some(QueueStuckReason::NoLabelMatch));
 }
 
 #[test]

@@ -5,6 +5,10 @@ import type { QueuedJobView } from "../../bindings/QueuedJobView";
 import { previewFleet } from "../../lib/preview";
 import { JobBoard } from "./JobBoard";
 
+function board(view: ReturnType<typeof previewFleet>): string {
+  return renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}><JobBoard view={view} /></QueryClientProvider>);
+}
+
 function copies(job: QueuedJobView, n: number): QueuedJobView[] {
   return Array.from({ length: n }, (_, i) => ({ ...job, job: { ...job.job, id: job.job.id * 100 + i, name: `${job.job.name}-${i}` } }));
 }
@@ -15,8 +19,17 @@ describe("job board", () => {
     const waiting = view.queue.jobs.find((q) => !q.stuck)!;
     const stuck = view.queue.jobs.find((q) => q.stuck)!;
     view.queue.jobs = [...copies(waiting, 7), ...copies(stuck, 7)];
-    const html = renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}><JobBoard view={view} /></QueryClientProvider>);
+    const html = board(view);
     for (const q of view.queue.jobs) expect(html).toContain(`${q.job.name}`);
     expect(html.split(stuck.stuck!.detail).length - 1).toBe(7);
+  });
+
+  it("says matching is unknown before the runner list arrives", () => {
+    const view = previewFleet();
+    const waiting = view.queue.jobs.find((q) => !q.stuck)!;
+    view.queue.jobs = [{ ...waiting, compatibleRunners: [], compatibleOnline: 0, compatibleIdle: 0, runnersKnown: false }];
+    const html = board(view);
+    expect(html).toContain("Runner matching isn&#x27;t available yet.");
+    expect(html).not.toContain("all working");
   });
 });

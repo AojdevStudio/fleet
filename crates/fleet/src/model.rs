@@ -3,7 +3,7 @@
 //! Observations are facts with timestamps. The view is a pure function of
 //! (config, observations, now) — see `derive.rs`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::machine::{DiskStats, MachineReport, OsFamily};
 use chrono::{DateTime, Utc};
@@ -219,6 +219,35 @@ pub struct OrgObservation {
     pub jobs_error: Option<Timed<String>>,
     pub rate_limit: Option<RateLimit>,
     pub missing_token: bool,
+    /// The first runner list in the current unbroken run that showed each runner
+    /// online and idle. Keyed by repository and runner ID, like GitHub numbers them.
+    idle_since: HashMap<(Option<String>, u64), DateTime<Utc>>,
+}
+
+impl OrgObservation {
+    /// Stores a new runner list and carries over when each still-idle runner went idle.
+    pub fn set_runners(&mut self, runners: Timed<Vec<GhRunner>>) {
+        self.idle_since = runners
+            .value
+            .iter()
+            .filter(|r| r.status == "online" && !r.busy)
+            .map(|r| {
+                let key = idle_key(r);
+                let since = self.idle_since.get(&key).copied().unwrap_or(runners.at);
+                (key, since)
+            })
+            .collect();
+        self.runners = Some(runners);
+    }
+
+    /// When the runner list first showed this runner idle. None while it is busy or offline.
+    pub fn idle_since(&self, runner: &GhRunner) -> Option<DateTime<Utc>> {
+        self.idle_since.get(&idle_key(runner)).copied()
+    }
+}
+
+fn idle_key(r: &GhRunner) -> (Option<String>, u64) {
+    (r.repository.as_ref().map(|s| s.to_lowercase()), r.id)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -532,6 +561,9 @@ pub struct QueuedJobView {
     pub compatible_runners: Vec<String>,
     pub compatible_online: u32,
     pub compatible_idle: u32,
+    /// False until GitHub returns the organization's runner list. Until then no
+    /// runner is matched and the job is never marked stuck.
+    pub runners_known: bool,
     /// Why the job isn't moving. None while it waits normally for a runner.
     pub stuck: Option<QueueStuck>,
 }
@@ -555,7 +587,8 @@ pub enum QueueStuckReason {
     NoLabelMatch,
     /// Every matching runner is offline or has no fresh data.
     RunnersOffline,
-    /// A matching runner is idle, and the job had waited past the limit when the job scan began.
+    /// A matching runner was already idle when the last job scan began, and the job
+    /// had waited past the limit by then.
     WaitedPastLimit,
 }
 

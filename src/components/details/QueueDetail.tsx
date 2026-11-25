@@ -54,6 +54,7 @@ function QueueList({ view }: { view: FleetView }) {
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2">
             {q.stuck ? <Pill tone="warn">Stuck</Pill>
+              : !q.runnersKnown ? <Pill tone="muted">No runner list yet</Pill>
               : q.compatibleIdle > 0 ? <Pill tone="ok">{plural(q.compatibleIdle, "idle runner")} {q.compatibleIdle === 1 ? "matches" : "match"}</Pill>
               : <Pill tone="busy">{q.compatibleOnline} {q.compatibleOnline === 1 ? "matches" : "match"}, all working</Pill>}
             {q.createdAt && <span className="text-[11px] text-ink-2 tabular">waiting <Elapsed since={q.createdAt} /></span>}
