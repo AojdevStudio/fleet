@@ -168,3 +168,22 @@ fn add_machine_never_offers_this_mac() {
     .view();
     assert_eq!(offered(&view), ["nOther"]);
 }
+
+#[test]
+fn a_host_at_this_macs_name_still_hides_the_devices_it_names() {
+    // `studio` points at this Mac, so its row shows no device, even though a remote device shares
+    // this Mac's short name.
+    let mut f = fixture(
+        &[host("studio", "my-mac.ts.net", "")],
+        [
+            named("nMyMac1", "my-mac", Some("my-mac-1.ts.net"), &[]),
+            peer("nStudio", "studio", "linux", true),
+            peer("nSpare", "spare", "linux", true),
+        ],
+    );
+    f.obs.tailscale.as_mut().unwrap().value.self_names = ["my-mac.ts.net".to_string()].into();
+    let view = f.view();
+    let row = view.machines.iter().find(|m| m.display_name == "studio").unwrap();
+    assert!(row.tailnet.is_none(), "{:?}", row.tailnet);
+    assert_eq!(offered(&view), ["nSpare"]);
+}

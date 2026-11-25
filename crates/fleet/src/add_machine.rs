@@ -8,49 +8,48 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::desired::model::{Host, Inventory, Platform, SshTransport};
-use crate::fleet_plan::peer_for_host;
 use crate::model::TailnetPeer;
 
 /// The rule for which tailnet devices Add machine offers, sorted by name, each with its entry.
+/// `rows` pairs each inventory host with the device its machine row shows, if any.
 ///
 /// What it covers:
 /// - `peers` never holds this Mac's own node: Tailscale reports it apart from its peers, and
 ///   machine assembly also drops the self node by ID. So this Mac is never offered.
-/// - A device that `peer_for_host` gives to an inventory host is not offered. That is the device
-///   the host's machine row shows.
-/// - A device whose MagicDNS name, tailnet IP, or entry `ssh` value equals any host's written or
-///   `ssh -G` SSH name is not offered, so a pasted entry can't repeat an SSH target.
-/// - For a host matched to no device, a device it plausibly names is not offered. The device's
-///   MagicDNS name, short name (MagicDNS label or Tailscale hostname) and tailnet IPs are compared
-///   with the host's `id`, its written `ssh` target without the user part, and the hostname
-///   `ssh -G` resolved that target to, also by first DNS label.
+/// - The device a host's machine row shows is not offered.
+/// - A device whose MagicDNS name or tailnet IP equals any host's written or `ssh -G` SSH name is
+///   not offered, so a pasted entry can't repeat an SSH target.
+/// - For a host whose row shows no device (no match, this Mac, or an identity conflict), a device
+///   it plausibly names is not offered. The device's MagicDNS name, short name (MagicDNS label or
+///   Tailscale hostname) and tailnet IPs are compared with the host's `id`, its written `ssh`
+///   target without the user part, and the hostname `ssh -G` resolved that target to, also by
+///   first DNS label.
 /// - Comparisons ignore case and a final dot. Disabled and decommissioned hosts count, because
 ///   they are still in the inventory.
 /// - Everything else is offered. An entry's `id` is one no inventory host or other entry uses.
 ///
-/// What it does not cover: an alias whose own name is unlike the device's names, and that resolves
-/// to a LAN address or a LAN name also unlike them, doesn't hide the device. So the user checks
-/// before pasting an entry. The rule
-/// hides a device on any sign of a match, because a hidden device can still be added by hand.
+/// What it does not cover: a device in the inventory under a name unlike all of its own, such as
+/// behind an alias that resolves to a LAN address, is still offered. So the user checks before
+/// pasting an entry. The rule hides a device on any sign of a match, because a hidden device can
+/// still be added by hand.
 pub(crate) fn tailnet_devices(
     peers: &[TailnetPeer],
     inventory: &Inventory,
     ssh_hosts: &BTreeMap<String, String>,
+    rows: &[(&Host, Option<&TailnetPeer>)],
 ) -> Vec<TailnetDeviceView> {
-    let mut matched = HashSet::new();
-    let mut unmatched = Vec::new();
-    for host in &inventory.hosts {
-        let resolved = host.ssh_target.as_deref().and_then(|t| ssh_hosts.get(t));
-        match peer_for_host(host, resolved.map(String::as_str), peers) {
-            Some(peer) => {
-                matched.insert(peer.node_id.as_str());
-            }
-            None => unmatched.push(host),
-        }
-    }
+    let shown: HashSet<&str> = rows
+        .iter()
+        .filter_map(|(_, peer)| peer.map(|p| p.node_id.as_str()))
+        .collect();
+    let unmatched: Vec<&Host> = rows
+        .iter()
+        .filter(|(_, peer)| peer.is_none())
+        .map(|(host, _)| *host)
+        .collect();
     let mut offered: Vec<_> = peers
         .iter()
-        .filter(|p| !matched.contains(p.node_id.as_str()))
+        .filter(|p| !shown.contains(p.node_id.as_str()))
         .filter(|p| !ssh_target_reaches_device(&inventory.hosts, ssh_hosts, p))
         .filter(|p| !unmatched_host_names_device(&unmatched, ssh_hosts, p))
         .collect();

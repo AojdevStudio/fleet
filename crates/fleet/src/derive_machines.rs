@@ -110,6 +110,8 @@ pub(super) fn assemble(
 
     let self_names = snapshot.map(|s| s.self_names.clone()).unwrap_or_default();
     let slots = slots(&peers, &self_names, inventory, plan);
+    let rows: Vec<_> = slots.iter().map(|s| (s.host, s.peer)).collect();
+    let devices = crate::add_machine::tailnet_devices(&peers, inventory, &plan.ssh_hosts, &rows);
     let mut fleet = Vec::new();
     for slot in &slots {
         let mut view = machine_view(slot, &ctx, matched);
@@ -127,10 +129,7 @@ pub(super) fn assemble(
         fleet.push(view);
     }
     fleet.sort_by_key(|m| (m.display_name.to_lowercase(), m.id.clone()));
-    Machines {
-        fleet,
-        devices: crate::add_machine::tailnet_devices(&peers, inventory, &plan.ssh_hosts),
-    }
+    Machines { fleet, devices }
 }
 
 /// One slot per inventory host, matched to its tailnet peer.

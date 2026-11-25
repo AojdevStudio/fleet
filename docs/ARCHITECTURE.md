@@ -52,13 +52,14 @@ snapshot, in `FleetView.tailnetDevices`, each with a `[[hosts]]` entry whose ID 
 or other entry uses. `tailnet_devices` holds the whole matching rule in one function. Tailscale
 reports this Mac apart from its peers, and machine assembly also drops the self node by ID, so
 this Mac is never offered. An entry's `ssh` is the device's MagicDNS name, else its tailnet IP. A
-device with neither gets no entry. A host that `peer_for_host` matches leaves out
-the device its machine row shows. A device whose exact MagicDNS name or tailnet IP is already a
-host's SSH target is never offered, so a pasted entry can't repeat one. For a host matched to no
-device, any device the host plausibly names (by `id`, written SSH target or `ssh -G` hostname,
-also by first DNS label) is left out. Disabled hosts count. The rule hides on any sign of a
-match, and an alias that resolves to a LAN name unlike the device's names doesn't hide it, so the
-pane asks the user to check before pasting. Nothing is offered without a loaded inventory.
+device with neither gets no entry. The device a host's machine row shows is left out. A device
+whose exact MagicDNS name or tailnet IP is already a host's SSH target is never offered, so a
+pasted entry can't repeat one. For a host whose row shows no device (no match, this Mac, or an
+identity conflict), any device the host plausibly names (by `id`, written SSH target or `ssh -G`
+hostname, also by first DNS label) is left out. Disabled hosts count. The rule hides on any sign
+of a match. A device the inventory holds under an unrelated name, such as behind an alias that
+resolves to a LAN name, is still offered, so the pane asks the user to check before pasting.
+Nothing is offered without a loaded inventory.
 Monitoring keys history by inventory host. History that older versions saved under a tailnet key
 (`ts:<node id>`) belonged to devices outside the inventory, so it is dropped from memory when the
 history loads and from the file at the next history save.

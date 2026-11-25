@@ -143,14 +143,16 @@ The inventory needs at least one host, so add the first one by hand.
 by name and shows the `[[hosts]]` entry to paste for each. It reads only the tailnet snapshot the
 app already holds and never contacts a listed device. Tailscale doesn't report a machine's CPU,
 so check `platform` before you save: a Windows entry may need `windows-arm64`, and an Intel Mac
-can't be added, since only `darwin-arm64` is supported. Add machine leaves out this Mac, the
-device each machine row shows, and a device whose MagicDNS name or tailnet IP is already a
-host's SSH target. For a host matched to no device, it also leaves out any device whose name or
-tailnet IP matches the host's `id`, `ssh` target or resolved SSH hostname, disabled hosts
-included. It hides a device on any sign of a match, so a hidden device can still be added by
-hand. A LAN address that an alias resolves to never matches a device by itself. The host still
-hides a device its `id` or written target names, but an alias with an unrelated name doesn't. So
-check that a device isn't already in the inventory under another name before you paste its entry.
+can't be added, since only `darwin-arm64` is supported.
+
+Add machine leaves out this Mac, the device each machine row shows, and a device whose MagicDNS
+name or tailnet IP is already a host's SSH target. For a host whose machine row shows no device,
+it also leaves out any device whose MagicDNS name, short name or tailnet IP equals the host's
+`id`, its `ssh` target, its resolved SSH hostname, or the first DNS label of either SSH name.
+Disabled hosts count. It hides a device on any sign of a match, so a hidden device can still be
+added by hand. It can still offer a device that the inventory holds under an unrelated name, for
+example behind an alias that resolves to a LAN address. So check that a device isn't already in
+the inventory under another name before you paste its entry.
 
 - **Check now** (overview) or **Check** (a machine) reads GitHub with `gh` and probes hosts over
   SSH (`tailscale ssh` for `ssh_transport = "tailscale"`). The app checks once at launch, then
