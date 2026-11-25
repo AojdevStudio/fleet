@@ -465,6 +465,7 @@ fn add_machine_leaves_out_any_device_a_host_names() {
         host("beta", "runner@Beta-Box.ts.net.", ""),
         host("gamma", "gamma-alias", ""),
         host("delta", "delta.ts.net", "enabled = false\n"),
+        host("builder.site", "lan-two.home", ""),
     ]
     .join("\n");
     let mut f = Fixture::new();
@@ -490,10 +491,17 @@ fn add_machine_leaves_out_any_device_a_host_names() {
         by_ip,
         // A disabled host still names its device.
         peer("nDelta", "delta", "linux", true),
+        // A machine row matches an SSH name by its first label, so the device isn't offered.
+        peer("nLanBox", "lan-box", "linux", true),
+        // A host ID is compared whole: `builder.site` doesn't name `builder`.
+        peer("nBuilder", "builder", "linux", true),
         peer("nSpare", "spare", "linux", true),
     ]);
-    let offered: Vec<_> = f.view().tailnet_devices.into_iter().map(|d| d.node_id).collect();
-    assert_eq!(offered, ["nSpare"]);
+    let view = f.view();
+    let offered: Vec<_> = view.tailnet_devices.iter().map(|d| d.node_id.as_str()).collect();
+    assert_eq!(offered, ["nBuilder", "nSpare"]);
+    let lan_box = view.machines.iter().find(|m| m.display_name == "alpha").unwrap();
+    assert_eq!(lan_box.id, "ts:nLanBox");
 }
 
 #[test]

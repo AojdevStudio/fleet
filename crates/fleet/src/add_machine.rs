@@ -13,9 +13,10 @@ use crate::model::TailnetPeer;
 /// Whether any inventory host plausibly names `peer`, so Add machine leaves it out. An offer is
 /// only a paste suggestion, so any sign of a match is enough. The device's MagicDNS name, its
 /// short name (MagicDNS label or Tailscale hostname) and its tailnet IPs are compared with each
-/// host's `id`, its written `ssh` target without the user part, the hostname `ssh -G` resolved
-/// that target to, and the first DNS label of each of these. The comparison ignores case and a
-/// final dot. Disabled and decommissioned hosts count too, because they are still in the inventory.
+/// host's `id`, its written `ssh` target without the user part, and the hostname `ssh -G` resolved
+/// that target to. An SSH name also matches by its first DNS label, as `peer_for_host` does for
+/// machine rows, so a device shown as a machine is never offered. The comparison ignores case and
+/// a final dot. Disabled and decommissioned hosts count too, because they are still in the inventory.
 ///
 /// Known limit: an alias that resolves to a LAN address or a LAN name unlike the device's names
 /// doesn't exclude the device, so the user checks before pasting an entry.
@@ -30,11 +31,12 @@ pub(crate) fn inventory_names_device(hosts: &[Host], ssh_hosts: &BTreeMap<String
     hosts.iter().any(|host| {
         let written = host.ssh_target.as_deref();
         let resolved = written.and_then(|t| ssh_hosts.get(t)).map(String::as_str);
-        [Some(host.id.as_str()), written, resolved]
-            .into_iter()
-            .flatten()
-            .map(normalized)
-            .any(|name| device.contains(&name) || device.contains(first_label(&name)))
+        device.contains(&normalized(&host.id))
+            || [written, resolved]
+                .into_iter()
+                .flatten()
+                .map(normalized)
+                .any(|name| device.contains(&name) || device.contains(first_label(&name)))
     })
 }
 

@@ -49,7 +49,8 @@ machine lists such desktop and server devices by name from the tailnet snapshot,
 `[[hosts]]` entry built in `add_machine.rs`, with an ID no inventory host or other entry uses.
 An entry is a paste suggestion, so `inventory_names_device` leaves out a device on any sign of a
 match: its MagicDNS name, short name or tailnet IP equals a host's ID, written SSH target or
-`ssh -G` hostname, or the first label of one. Disabled hosts count. An alias that resolves to a
+`ssh -G` hostname, or the first label of an SSH name, which machine rows also match. Disabled
+hosts count. An alias that resolves to a
 LAN name unlike the device's names doesn't exclude it, so the pane asks the user to check before
 pasting. It offers nothing without a loaded inventory.
 Monitoring keys history by inventory host. History that older versions saved under a tailnet key
