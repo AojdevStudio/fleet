@@ -150,6 +150,27 @@ fn a_cleared_queue_finding_comes_back_when_its_stuck_reason_changes() {
 }
 
 #[test]
+fn a_cleared_runner_group_finding_comes_back_when_its_policy_violations_change() {
+    let unsafe_group = |violations: &str| {
+        let reason = format!("runner group 'trusted' is unsafe: {violations}");
+        vec![PlanItem::new(FleetPlanAction::HardenGroup, "control", "trusted", reason).blocked()]
+    };
+    let mut view = one_machine();
+    let mut store = ClearStore::in_memory(Default::default());
+    view.plan.control = unsafe_group("public repositories must be disabled");
+    tick(&mut view, &mut store);
+    store.clear(issue(&view, "control:0")).unwrap();
+    for _ in 0..2 {
+        tick(&mut view, &mut store);
+        assert!(issue(&view, "control:0").cleared);
+    }
+
+    view.plan.control = unsafe_group("workflow access must include all workflows in private repositories");
+    tick(&mut view, &mut store);
+    assert!(!issue(&view, "control:0").cleared);
+}
+
+#[test]
 fn a_new_reading_of_the_same_problem_stays_cleared() {
     let mut view = one_machine();
     let mut store = ClearStore::in_memory(Default::default());

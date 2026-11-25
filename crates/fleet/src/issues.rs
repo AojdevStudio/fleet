@@ -457,8 +457,9 @@ fn operation_issues(view: &FleetView) -> Vec<FleetIssue> {
 /// - Connection: the state (stale, offline, SSH error). For SSH errors, also the
 ///   kind of failure (key, host key, unreachable, other).
 /// - Inventory: a runner check's ID and status; a runner plan's runners and their
-///   steps; the kind of SSH failure for a machine that couldn't be checked; the
-///   error text for everything else.
+///   steps, with the label changes for a label step; the runner group's policy
+///   violations; the kind of SSH failure for a machine that couldn't be checked;
+///   the error text for everything else.
 /// - Runner: the kind of each warning (not configured, not running).
 /// - Queue: the stuck reason, or that the runner list hasn't arrived.
 /// - Github, Tailnet, Storage: the error text. Operation: the error text and the start
@@ -620,11 +621,14 @@ pub(crate) mod rules {
                 format!("{who}: {}", plan_action(p))
             })
             .collect();
-        // A label step's reason is the label changes, so a new label problem is a new fingerprint.
+        // A label step's reason is the label changes, and a runner group step's reason is the
+        // policy violations, so a new label or policy problem is a new fingerprint.
         let print: Vec<_> = steps
             .iter()
             .map(|p| match p.action {
-                FleetPlanAction::ReconcileLabels => format!("{}:{}:{}", p.runner, p.action.as_str(), p.reason),
+                FleetPlanAction::ReconcileLabels | FleetPlanAction::HardenGroup => {
+                    format!("{}:{}:{}", p.runner, p.action.as_str(), p.reason)
+                }
                 _ => format!("{}:{}", p.runner, p.action.as_str()),
             })
             .collect();
