@@ -22,7 +22,8 @@
 //! - A failed Clear or Bring back changes nothing.
 //!
 //! Not covered: a value the app can't read (`Unknown`) hides a diagnostic warning, and that
-//! counts as gone. A "shown since launch" finding (GitHub, runner checks, the runner plan,
+//! counts as gone. Quitting within one poll (5 seconds) of a view that showed a recovery
+//! keeps the saved clear, because the removal wasn't saved yet. A "shown since launch" finding (GitHub, runner checks, the runner plan,
 //! runner group, failed change) that is gone when the app starts and returns with the same
 //! fingerprint stays cleared, because the app never saw it gone.
 
@@ -210,9 +211,9 @@ impl ClearStore {
         );
     }
 
-    /// Observe `view`, then save the removal of every expired clear.
-    pub fn record(&mut self, view: &FleetView) -> Result<(), String> {
-        self.observe(view);
+    /// Save the removal of every expired clear. A failed save keeps them expired, so they
+    /// still hide nothing, and the next call tries again.
+    pub fn save_expired(&mut self) -> Result<(), String> {
         if !self.expired.is_empty() {
             let mut next = self.cleared.clone();
             next.retain(|id, _| !self.expired.contains(id));

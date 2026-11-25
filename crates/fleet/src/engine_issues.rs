@@ -49,15 +49,13 @@ impl Engine {
         Ok(())
     }
 
-    /// Save the removal of clears that no longer apply. Performs local disk I/O; call off the async runtime.
+    /// Save the removal of clears that a view found no longer apply. Performs local disk I/O;
+    /// call off the async runtime.
     pub fn record_cleared(&self) {
-        let config = self.config();
-        if config.demo_mode {
+        if self.config().demo_mode {
             return;
         }
-        let mut clears = self.clears.locked();
-        let view = self.view_with(config, &clears);
-        if let Err(e) = clears.record(&view) {
+        if let Err(e) = self.clears.locked().save_expired() {
             tracing::warn!("saving cleared items failed: {e}");
         }
     }
@@ -72,6 +70,7 @@ mod tests {
     #[test]
     fn a_recovery_a_view_showed_brings_the_problem_back_before_the_next_poll() {
         let dir = tempfile::tempdir().unwrap();
+        let saved = || std::fs::read_to_string(dir.path().join("cleared-issues.json")).unwrap();
         let engine = Engine::load(dir.path().join("config.json"), Arc::new(MemorySecrets::default())).unwrap();
         let broken = dir.path().join("broken.toml").display().to_string();
         let valid = dir.path().join("fleet.toml");
@@ -82,6 +81,7 @@ mod tests {
         let shown = inventory(&engine).unwrap();
         engine.clear_issue(&shown.id, &shown.fingerprint).unwrap();
         assert!(inventory(&engine).unwrap().cleared);
+        let with_clear = saved();
 
         engine.set_inventory_path(Some(valid.display().to_string())).unwrap();
         assert!(inventory(&engine).is_none());
@@ -89,5 +89,11 @@ mod tests {
         let back = inventory(&engine).unwrap();
         assert_eq!(back.fingerprint, shown.fingerprint);
         assert!(!back.cleared);
+        // Views write nothing. The poller's save drops the clear, so a restart keeps it shown.
+        assert_eq!(saved(), with_clear);
+        engine.record_cleared();
+        assert!(!saved().contains("\"inventory\""), "{}", saved());
+        let restarted = Engine::load(dir.path().join("config.json"), Arc::new(MemorySecrets::default())).unwrap();
+        assert!(!inventory(&restarted).unwrap().cleared);
     }
 }

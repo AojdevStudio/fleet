@@ -68,7 +68,8 @@ fn set_disk_alert(view: &mut FleetView, mounts: &[&str], detail: &str) {
 /// as the poller does on each tick.
 fn tick(view: &mut FleetView, store: &mut ClearStore) {
     attach(view, |i| store.is_cleared(i));
-    store.record(view).unwrap();
+    store.observe(view);
+    store.save_expired().unwrap();
     attach(view, |i| store.is_cleared(i));
 }
 
@@ -349,7 +350,8 @@ fn a_recovery_the_app_showed_counts_when_its_save_fails() {
     recovered.monitoring.alerts.clear();
     attach(&mut recovered, |i| store.is_cleared(i));
     std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o500)).unwrap();
-    let failed = store.record(&recovered);
+    store.observe(&recovered);
+    let failed = store.save_expired();
     std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     assert!(failed.is_err());
 

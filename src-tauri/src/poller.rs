@@ -52,9 +52,11 @@ pub fn start(app: AppHandle, engine: Arc<Engine>) -> Poller {
             loop {
                 tick.tick().await;
                 let monitor = engine.clone();
+                // Monitoring's view expires stale clears first, then their removal is saved.
                 match tauri::async_runtime::spawn_blocking(move || {
+                    let events = monitor.record_monitoring(chrono::Utc::now());
                     monitor.record_cleared();
-                    monitor.record_monitoring(chrono::Utc::now())
+                    events
                 })
                 .await
                 {
