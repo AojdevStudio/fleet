@@ -107,10 +107,10 @@ pub(crate) fn device_view(
     } else {
         SshTransport::Tailscale
     };
-    let platform_note = if platform.is_windows() {
-        " # Tailscale doesn't report the CPU: use windows-arm64 on an ARM machine."
-    } else {
-        ""
+    let platform_note = match platform {
+        Platform::WindowsX64 => " # Tailscale doesn't report the CPU: use windows-arm64 on an ARM machine.",
+        Platform::DarwinArm64 => " # Tailscale doesn't report the CPU: an Intel Mac isn't supported.",
+        _ => "",
     };
     let quote = |value: &str| toml::Value::String(value.into()).to_string();
     let inventory_entry = format!(

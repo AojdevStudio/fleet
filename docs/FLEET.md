@@ -138,7 +138,9 @@ resolves its target, or by the written name when `ssh_transport = "tailscale"`, 
 still present, runners pending decommission, and GitHub runners carrying its `host-*` label.
 A tailnet device outside the inventory is never listed, contacted or alerted on. **Add machine**
 in the sidebar lists those devices by name and shows the `[[hosts]]` entry to paste for each.
-Tailscale doesn't report a Windows machine's CPU, so check `platform` before you save. Until the
+Tailscale doesn't report a machine's CPU, so check `platform` before you save. A Windows entry
+may need `windows-arm64`, and an Intel Mac can't be added, since only `darwin-arm64` is
+supported. Until the
 app can prove every host's tailnet machine, Add machine offers no entry and names the hosts
 that need attention instead, disabled hosts included. Proof is that SSH connects to the
 machine's MagicDNS name or tailnet IP (`ssh -G` shows the name OpenSSH uses), or to its bare

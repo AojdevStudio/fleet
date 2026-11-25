@@ -1753,7 +1753,7 @@
       {
         "nodeId": "nLaptop",
         "name": "dev-laptop",
-        "inventoryEntry": "[[hosts]]\nid = \"dev-laptop\"\nplatform = \"darwin-arm64\"\nssh = \"dev-laptop.demo.ts.net\"\nssh_transport = \"openssh\"\nroot = \"~/gh-runners/acme-demo\"\nservice_mode = \"launchagent\"\n"
+        "inventoryEntry": "[[hosts]]\nid = \"dev-laptop\"\nplatform = \"darwin-arm64\" # Tailscale doesn't report the CPU: an Intel Mac isn't supported.\nssh = \"dev-laptop.demo.ts.net\"\nssh_transport = \"openssh\"\nroot = \"~/gh-runners/acme-demo\"\nservice_mode = \"launchagent\"\n"
       },
       {
         "nodeId": "nNas",
