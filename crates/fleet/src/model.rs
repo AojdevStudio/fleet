@@ -384,6 +384,7 @@ pub struct FleetView {
     #[serde(default)]
     pub pool_runners: Vec<RunnerView>,
     /// Tailnet devices no inventory host names, offered by Add machine. Never contacted.
+    #[serde(default)]
     pub tailnet_devices: Vec<crate::add_machine::TailnetDeviceView>,
     pub queue: QueueView,
     /// Desired state from `inventory/fleet.toml`: errors, last check, the current change.
