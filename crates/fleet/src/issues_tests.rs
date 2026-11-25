@@ -199,6 +199,36 @@ fn only_a_fresh_read_counts_as_the_problem_going_away() {
     assert!(!issue(&view, &id).cleared);
 }
 
+#[test]
+fn alerts_and_tailscale_count_as_gone_only_when_their_source_says_so() {
+    let mut view = one_machine();
+    let mut store = ClearStore::in_memory(Default::default());
+    set_disk_alert(&mut view, &["/"], "/: 5.7% free.");
+    view.tailnet.local_online = Some(false);
+    tick(&mut view, &mut store);
+    store.clear(issue(&view, "alert:disk")).unwrap();
+    store.clear(issue(&view, "tailnet-offline")).unwrap();
+
+    // A broken inventory lists no machines, so no alerts. Tailscale isn't read yet.
+    let mut broken = view.clone();
+    broken.machines.clear();
+    broken.monitoring.alerts.clear();
+    broken.tailnet.local_online = None;
+    tick(&mut broken, &mut store);
+    tick(&mut view, &mut store);
+    assert!(issue(&view, "alert:disk").cleared);
+    assert!(issue(&view, "tailnet-offline").cleared);
+
+    let mut recovered = view.clone();
+    recovered.machines[0].monitoring.alerts.clear();
+    recovered.monitoring.alerts.clear();
+    recovered.tailnet.local_online = Some(true);
+    tick(&mut recovered, &mut store);
+    tick(&mut view, &mut store);
+    assert!(!issue(&view, "alert:disk").cleared);
+    assert!(!issue(&view, "tailnet-offline").cleared);
+}
+
 #[cfg(unix)]
 #[test]
 fn a_failed_save_changes_nothing() {

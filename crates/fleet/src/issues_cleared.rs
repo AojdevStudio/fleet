@@ -6,9 +6,12 @@
 //! - A new fingerprint brings it back, and the saved clear is dropped.
 //! - A finding that goes away and returns comes back. "Gone" needs evidence from the
 //!   source that raised it, saved with the clear as [`Confirm`]:
-//!   - An alert: its absence. Monitoring keeps an alert while its data is missing.
+//!   - An alert: absence while its machine is still listed. Monitoring keeps an alert
+//!     while its data is missing, but a machine that isn't listed (a broken inventory)
+//!     has no alerts at all.
 //!   - A diagnostic, connection or runner finding on a machine: absence while the machine
 //!     has a fresh SSH read, which reads those again.
+//!   - A Tailscale finding: absence while Tailscale reports this Mac online.
 //!   - Anything else: absence after the app showed the finding since launch, and for a
 //!     machine finding, while the machine has a fresh SSH read.
 //! - Bring back drops the saved clear at once.
@@ -32,30 +35,42 @@ const VERSION: u32 = 1;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 enum Confirm {
-    Absence,
+    Listed { machine: Option<String> },
     FreshRead { machine: String },
+    TailnetOnline,
     Shown { machine: Option<String> },
 }
 
 impl Confirm {
     fn of(issue: &FleetIssue) -> Self {
-        use FleetIssueCategory::{Alert, Connection, Diagnostic, Runner};
+        use FleetIssueCategory::{Alert, Connection, Diagnostic, Runner, Tailnet};
         match (issue.category, &issue.machine_id) {
-            (Alert, _) => Self::Absence,
+            (Alert, machine) => Self::Listed {
+                machine: machine.clone(),
+            },
             (Diagnostic | Connection | Runner, Some(machine)) => Self::FreshRead {
                 machine: machine.clone(),
             },
+            (Tailnet, _) => Self::TailnetOnline,
             (_, machine) => Self::Shown {
                 machine: machine.clone(),
             },
         }
     }
 
-    fn gone(&self, shown: bool, fresh: &BTreeSet<&str>) -> bool {
+    fn gone(&self, shown: bool, view: &FleetView) -> bool {
+        let fresh = |id: &str| {
+            view.machines
+                .iter()
+                .any(|m| m.id == id && matches!(m.connection, MachineConnection::Connected { .. }))
+        };
         match self {
-            Self::Absence => true,
-            Self::FreshRead { machine } => fresh.contains(machine.as_str()),
-            Self::Shown { machine } => shown && machine.as_deref().is_none_or(|m| fresh.contains(m)),
+            Self::Listed { machine } => machine
+                .as_deref()
+                .is_none_or(|id| view.machines.iter().any(|m| m.id == id)),
+            Self::FreshRead { machine } => fresh(machine),
+            Self::TailnetOnline => view.tailnet.local_online == Some(true),
+            Self::Shown { machine } => shown && machine.as_deref().is_none_or(fresh),
         }
     }
 }
@@ -164,18 +179,12 @@ impl ClearStore {
     /// Drop clears that no longer apply: a changed fingerprint, or a finding that went away.
     pub fn record(&mut self, view: &FleetView) -> Result<(), String> {
         let present: BTreeMap<&str, &FleetIssue> = view.issues.iter().map(|i| (i.id.as_str(), i)).collect();
-        let fresh: BTreeSet<&str> = view
-            .machines
-            .iter()
-            .filter(|m| matches!(m.connection, MachineConnection::Connected { .. }))
-            .map(|m| m.id.as_str())
-            .collect();
         let next: BTreeMap<String, Entry> = self
             .cleared
             .iter()
             .filter(|(id, entry)| match present.get(id.as_str()) {
                 Some(issue) => issue.fingerprint == entry.fingerprint,
-                None => !entry.confirm.gone(self.shown.contains(*id), &fresh),
+                None => !entry.confirm.gone(self.shown.contains(*id), view),
             })
             .map(|(id, entry)| (id.clone(), entry.clone()))
             .collect();

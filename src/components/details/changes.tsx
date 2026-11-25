@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ChangeRequest } from "../../bindings/ChangeRequest";
+import type { FleetIssue } from "../../bindings/FleetIssue";
 import type { FleetPlanItem } from "../../bindings/FleetPlanItem";
 import type { FleetView } from "../../bindings/FleetView";
 import type { OperationStatus } from "../../bindings/OperationStatus";
@@ -11,6 +12,7 @@ import type { Tone } from "../../lib/status";
 import { commands, errorText } from "../../lib/tauri";
 import { Button, Card, ErrorText, Pill, Section, StatusDot, TimeAgo } from "../ui";
 import { Icon } from "../icons";
+import { ClearButton } from "./Attention";
 
 /** Opens a review for a change: reads the host again and shows what would happen. */
 export function useChange() {
@@ -70,15 +72,16 @@ const OPERATION_STATUS: Record<OperationStatus, { label: string; tone: Tone }> =
 };
 
 /** The change that's running or last ran. */
-/** What to do about the failed change: the `last-operation` attention item. */
-export function operationAction(view: FleetView): string | undefined {
-  return view.issues.find((i) => i.id === "last-operation")?.action;
+/** The failed change's attention item, `last-operation`. */
+export function operationIssue(view: FleetView): FleetIssue | undefined {
+  return view.issues.find((i) => i.id === "last-operation");
 }
 
-/** A change in progress or finished. `action` says what to do when it failed. */
-export function OperationCard({ op, action }: { op: OperationView; action?: string }) {
+/** A change in progress or finished. A failed change shows its `issue`: what to do, and Clear. */
+export function OperationCard({ op, issue }: { op: OperationView; issue?: FleetIssue }) {
   const dismiss = useMutation({ mutationFn: commands.desiredDismissOperation });
   const status = OPERATION_STATUS[op.status];
+  if (issue?.cleared) return null;
   return (
     <Section title={op.title}>
       <Card className="px-4 py-3 text-[12.5px]">
@@ -108,7 +111,10 @@ export function OperationCard({ op, action }: { op: OperationView; action?: stri
           </ul>
         )}
         {op.error && <div className="mt-2 text-bad selectable">{op.error}</div>}
-        {op.error && action && <p className="mt-1 text-ink selectable">{action}</p>}
+        {op.error && issue && <div className="mt-1 flex items-start gap-3">
+          <p className="min-w-0 flex-1 text-ink selectable">{issue.action}</p>
+          <ClearButton issue={issue} />
+        </div>}
         {dismiss.isError && <ErrorText error={dismiss.error} className="mt-2" />}
       </Card>
     </Section>

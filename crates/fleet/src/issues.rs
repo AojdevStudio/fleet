@@ -594,10 +594,13 @@ pub(crate) mod rules {
             "power-sleep" => "Run `sudo pmset -c sleep 0` on that Mac.".into(),
             "power-recovery" => "Run `sudo pmset -a autorestart 1` on that Mac.".into(),
             "power-hibernate" => "Run `powercfg /change hibernate-timeout-ac 0` on that PC.".into(),
-            "power-idle" => "Set `IdleAction=ignore` in /etc/systemd/logind.conf, then restart systemd-logind.".into(),
+            "power-idle" => {
+                "Set `IdleAction=ignore` in logind.conf, or in the drop-in that sets it, then restart systemd-logind."
+                    .into()
+            }
             "disk-space" => "Free space on the fullest disk, or grow it.".into(),
             _ if id.starts_with("runner:") && check.value == "Not configured" => {
-                "Review and apply the runner plan on the machine pane to configure it.".into()
+                "Configure it with the apply command in this machine's runner plan.".into()
             }
             _ if id.starts_with("runner:") => "Start the runner's service, or restart it from its runner pane.".into(),
             _ => "Fix this on the machine. The Diagnostics section shows what was read.".into(),
@@ -610,7 +613,7 @@ pub(crate) mod rules {
             .iter()
             .map(|p| {
                 let who = if p.runner.is_empty() { "Runner group" } else { &p.runner };
-                format!("{who}: {}", plan_action(p.action))
+                format!("{who}: {}", plan_action(p))
             })
             .collect();
         // A label step's reason is the label changes, so a new label problem is a new fingerprint.
@@ -624,28 +627,45 @@ pub(crate) mod rules {
         advice(lines.join("\n"), print.join(","))
     }
 
-    fn plan_action(action: FleetPlanAction) -> &'static str {
+    /// Apply, Retire and Decommission are turned off in this app, so those steps name
+    /// the Runner Fleet command line the plan gives for them.
+    fn plan_action(step: &PlanItem) -> String {
         use FleetPlanAction::*;
-        match action {
-            Install => "Review and apply the plan to install it.",
-            ReconcileLabels => {
-                "Apply the plan to add and remove the listed labels, or change the labels in the inventory."
+        let run = |purpose: &str, without: &str| match &step.command {
+            Some(command) => format!("Run `{command}` from Runner Fleet {purpose}."),
+            None => without.into(),
+        };
+        match step.action {
+            Install => run("to install it", "Install it with Runner Fleet."),
+            ReconcileLabels => match &step.command {
+                Some(command) => format!(
+                    "Run `{command}` from Runner Fleet to add and remove the listed labels, or change the labels in the inventory."
+                ),
+                None => "Change the runner's labels to match the inventory, or change the inventory.".into(),
+            },
+            AssignGroup => run(
+                "to move it into the runner group",
+                "Move it into the runner group in GitHub.",
+            ),
+            StartService => run("to start its service", "Start its service on the machine."),
+            RetireLegacy => run(
+                "to retire the legacy runner",
+                "Retire the legacy runner with Runner Fleet.",
+            ),
+            Decommission => run("to stop and deregister it", "Decommission it with Runner Fleet."),
+            Restart => "Restart it from its runner pane.".into(),
+            Inspect => "Read the reason, then check the runner on the machine and in GitHub.".into(),
+            InspectOffline => "Read its logs on the runner pane to see why GitHub reports it offline.".into(),
+            InspectGroup => "Create the runner group in GitHub, or fix runner_group in the inventory.".into(),
+            PreserveLegacy => "Wait. The legacy runner stays until its replacement is online.".into(),
+            PreserveService => "Wait for its job to finish, then start its service.".into(),
+            PreserveDecommission => "Wait for its job to finish, then decommission it.".into(),
+            RepairRegistration => "Check it by hand. GitHub has no runner for its local configuration.".into(),
+            RecoverLocal => "Configure it at its inventory path, or remove it from GitHub.".into(),
+            HardenGroup => {
+                "Set the runner group to allow all private repositories, no public ones, and all workflows.".into()
             }
-            AssignGroup => "Apply the plan to move it into the runner group.",
-            StartService => "Apply the plan to start its service.",
-            RetireLegacy => "Retire the legacy runner from the machine pane.",
-            Decommission => "Apply the plan to stop and deregister it.",
-            Restart => "Restart it from its runner pane.",
-            Inspect => "Read the reason, then check the runner on the machine and in GitHub.",
-            InspectOffline => "Read its logs on the runner pane to see why GitHub reports it offline.",
-            InspectGroup => "Create the runner group in GitHub, or fix runner_group in the inventory.",
-            PreserveLegacy => "Wait. The legacy runner stays until its replacement is online.",
-            PreserveService => "Wait for its job to finish, then start its service.",
-            PreserveDecommission => "Wait for its job to finish, then decommission it.",
-            RepairRegistration => "Check it by hand. GitHub has no runner for its local configuration.",
-            RecoverLocal => "Configure it at its inventory path, or remove it from GitHub.",
-            HardenGroup => "Set the runner group to allow all private repositories, no public ones, and all workflows.",
-            NoChange => "Nothing to do.",
+            NoChange => "Nothing to do.".into(),
         }
     }
 
@@ -672,11 +692,11 @@ pub(crate) mod rules {
             "autologon" => "Set up automatic logon for the runner user with Sysinternals Autologon.".into(),
             "session" => format!("Sign in as {name} on the machine so its logon-task runners start."),
             "runner" if check.status == crate::desired::model::CheckStatus::Warn => {
-                format!("Review and apply the runner plan on the machine pane to configure {name}.")
+                format!("Configure {name} with the apply command in this machine's runner plan.")
             }
             "runner" => format!("Start {name}'s service, or restart it from its runner pane."),
             "legacy" => format!("Check {name}'s service. It stays until its replacement is online."),
-            "decommission" => format!("Decommission {name} from the machine pane."),
+            "decommission" => format!("Run the decommission command in the detail to remove {name}."),
             "runner-probe" => {
                 "Check that the runner folders can be read over SSH, then run Runner checks again.".into()
             }
@@ -720,7 +740,7 @@ pub(crate) mod rules {
             .map(|w| {
                 if w.starts_with("The runner is not configured") {
                     (
-                        "Review and apply the runner plan on the machine pane to configure it.",
+                        "Configure it with the apply command in this machine's runner plan.",
                         "not-configured",
                     )
                 } else if w.starts_with("Runner service is") {
