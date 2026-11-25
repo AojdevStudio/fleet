@@ -8,7 +8,7 @@ import type { FleetIssueFix } from "../../bindings/FleetIssueFix";
 import { Attention, ClearedList } from "./Attention";
 
 function issue(id: string, detail: string, fix: FleetIssueFix | null = null, category: FleetIssueCategory = "inventory", cleared = false): FleetIssue {
-  return { id, detail, title: id, action: `Do something about ${id}.`, category, machineId: null, runnerKey: null,
+  return { id, detail, title: id, action: `Do something about ${id}.`, fingerprint: detail, category, machineId: null, runnerKey: null,
     stale: false, muted: false, fix, cleared };
 }
 

@@ -137,8 +137,15 @@ impl Engine {
     }
 
     pub fn view(&self) -> FleetView {
-        let now = Utc::now();
         let config = self.config();
+        let clears = self.clear_store(&config).locked();
+        self.view_with(config, &clears)
+    }
+
+    /// The fleet view with `clears` applied. Callers that change the clears hold their lock
+    /// across this, so a view never mixes old and new clears.
+    fn view_with(&self, config: AppConfig, clears: &crate::issues::cleared::ClearStore) -> FleetView {
+        let now = Utc::now();
         if config.demo_mode {
             let (demo_config, demo_obs) = demo::dataset(now);
             let mut view = derive_without_issues(
@@ -148,7 +155,7 @@ impl Engine {
                 now,
                 DataSource::Demo,
             );
-            crate::issues::attach(&mut view, self.demo_clears.locked().cleared());
+            crate::issues::attach(&mut view, |i| clears.is_cleared(i));
             return view;
         }
         let plan = self.plan_inputs();
@@ -159,7 +166,7 @@ impl Engine {
         self.monitoring
             .locked()
             .attach(&mut view, now, config.desktop_notifications);
-        crate::issues::attach(&mut view, self.clears.locked().cleared());
+        crate::issues::attach(&mut view, |i| clears.is_cleared(i));
         view
     }
 

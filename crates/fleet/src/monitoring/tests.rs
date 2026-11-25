@@ -303,7 +303,7 @@ fn history_and_alerts_of_a_device_outside_the_inventory_are_dropped_on_load() {
     current.tailnet.available = false;
     store.deliver(&current, current.generated_at);
     attach(&store, &mut current);
-    crate::issues::attach(&mut current, &Default::default());
+    crate::issues::attach(&mut current, |_| false);
     let saved = std::fs::read_to_string(&path).unwrap();
     let shown = serde_json::to_string(&current).unwrap();
     for text in [saved, shown] {

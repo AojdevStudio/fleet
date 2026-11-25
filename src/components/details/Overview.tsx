@@ -5,7 +5,7 @@ import { isLive } from "../../lib/tauri";
 import { Section } from "../ui";
 import { activeAlerts } from "../../lib/monitoring";
 import { Attention, ClearedList } from "./Attention";
-import { OperationCard } from "./changes";
+import { OperationCard, operationAction } from "./changes";
 import { InventoryProblem, PageHeader } from "./shared";
 import { JobBoard } from "./JobBoard";
 import { MachineTable } from "./MachineTable";
@@ -33,7 +33,7 @@ export function Overview({ view }: { view: FleetView }) {
       />
       <PlanLine view={view} />
       <InventoryProblem view={view} />
-      {view.plan.operation && <OperationCard op={view.plan.operation} />}
+      {view.plan.operation && <OperationCard op={view.plan.operation} action={operationAction(view)} />}
       <JobBoard view={view} />
 
       <Attention issues={view.issues.filter((i) => i.id !== "inventory")} />

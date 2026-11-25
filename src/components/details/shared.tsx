@@ -25,7 +25,7 @@ export function InventoryProblem({ view }: { view: FleetView }) {
       <div className="mt-1">
         Inventory: <CopyValue value={p.inventoryPath} label="Inventory path" className="font-mono" />
       </div>
-      <div className="mt-1">Create or fix this file. The app reads it again when it changes.</div>
+      <div className="mt-1">{view.issues.find((i) => i.id === "inventory")?.action}</div>
     </Callout>
   );
 }

@@ -1,7 +1,5 @@
 //! Shared attention findings for the desktop and local HTTP clients.
 
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -63,10 +61,9 @@ pub struct FleetIssue {
     pub fix: Option<FleetIssueFix>,
     /// Hidden by Clear while the same problem lasts. Cleared findings don't count in `summary.attention`.
     pub cleared: bool,
-    /// What makes this the same problem for Clear. See [`rules`].
-    #[serde(skip)]
-    #[ts(skip)]
-    pub(crate) fingerprint: String,
+    /// What makes this the same problem for Clear (see [`rules`]). Clear sends back the
+    /// fingerprint the user saw, so a problem that changed meanwhile isn't hidden.
+    pub fingerprint: String,
 }
 
 impl FleetIssue {
@@ -94,9 +91,8 @@ impl FleetIssue {
     }
 }
 
-/// Rebuild findings after monitoring has attached its current alerts. `cleared` maps
-/// an issue ID to the fingerprint it had when it was cleared.
-pub(crate) fn attach(view: &mut FleetView, cleared: &BTreeMap<String, String>) {
+/// Rebuild findings after monitoring has attached its current alerts.
+pub(crate) fn attach(view: &mut FleetView, is_cleared: impl Fn(&FleetIssue) -> bool) {
     let mut issues: Vec<FleetIssue> = [
         alert_issues(view),
         fleet_issues(view),
@@ -111,7 +107,7 @@ pub(crate) fn attach(view: &mut FleetView, cleared: &BTreeMap<String, String>) {
     .flatten()
     .collect();
     for issue in &mut issues {
-        issue.cleared = cleared.get(&issue.id) == Some(&issue.fingerprint);
+        issue.cleared = is_cleared(issue);
     }
     view.summary.attention = count_u32(issues.iter().filter(|i| !i.cleared).count());
     view.issues = issues;
@@ -482,7 +478,7 @@ pub(crate) mod rules {
         }
     }
 
-    pub(super) const INVENTORY: &str = "Fix the inventory file named in the detail, then select Check now.";
+    pub(super) const INVENTORY: &str = "Create or fix the inventory file. The app reads it again when it changes.";
     pub(super) const PLAN_GITHUB: &str = "Check this Mac's network and GitHub sign-in, then select Check now.";
     pub(super) const CHECKS_FAILED: &str = "Fix the error in the detail, then run Runner checks again.";
     pub(super) const TAILNET_ERROR: &str = "Check that Tailscale is installed and running on this Mac.";
@@ -590,6 +586,9 @@ pub(crate) mod rules {
             "tailscale-state" => "Open Tailscale on the machine and connect it.".into(),
             "tailscale-unattended" => "Turn on Run unattended in the Tailscale menu on that PC.".into(),
             "tailscale-startup" if windows => "Set the Tailscale service to start automatically.".into(),
+            "tailscale-startup" if check.detail.contains("masked") => {
+                "Run `sudo systemctl unmask tailscaled`, then `sudo systemctl enable --now tailscaled`.".into()
+            }
             "tailscale-startup" => "Run `sudo systemctl enable --now tailscaled` on the machine.".into(),
             "power-sleep" if windows => "Run `powercfg /change standby-timeout-ac 0` on that PC.".into(),
             "power-sleep" => "Run `sudo pmset -c sleep 0` on that Mac.".into(),
@@ -614,9 +613,13 @@ pub(crate) mod rules {
                 format!("{who}: {}", plan_action(p.action))
             })
             .collect();
+        // A label step's reason is the label changes, so a new label problem is a new fingerprint.
         let print: Vec<_> = steps
             .iter()
-            .map(|p| format!("{}:{}", p.runner, p.action.as_str()))
+            .map(|p| match p.action {
+                FleetPlanAction::ReconcileLabels => format!("{}:{}:{}", p.runner, p.action.as_str(), p.reason),
+                _ => format!("{}:{}", p.runner, p.action.as_str()),
+            })
             .collect();
         advice(lines.join("\n"), print.join(","))
     }

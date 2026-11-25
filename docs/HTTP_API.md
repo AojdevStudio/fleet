@@ -128,6 +128,7 @@ support navigation and deduplication.
 The user can clear an issue in the desktop app. A cleared issue stays in `/v1/issues` with
 `cleared: true` while the same problem lasts, and comes back when the problem changes or
 returns after it went away. "The same problem" ignores live values such as free disk space.
+`fingerprint` is the opaque value that decides this. Clients should not parse it.
 Clearing happens only in the app: this API stays read-only.
 
 Lists default to 100 entries and accept `limit=1..200`. Each page has `total` (the full filtered

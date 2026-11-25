@@ -13,4 +13,9 @@ action: string, machineId: string | null, runnerKey: string | null, stale: boole
 /**
  * Hidden by Clear while the same problem lasts. Cleared findings don't count in `summary.attention`.
  */
-cleared: boolean, };
+cleared: boolean, 
+/**
+ * What makes this the same problem for Clear (see [`rules`]). Clear sends back the
+ * fingerprint the user saw, so a problem that changed meanwhile isn't hidden.
+ */
+fingerprint: string, };

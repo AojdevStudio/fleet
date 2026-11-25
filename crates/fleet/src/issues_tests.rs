@@ -67,9 +67,9 @@ fn set_disk_alert(view: &mut FleetView, mounts: &[&str], detail: &str) {
 /// Rebuild findings with the store's clears, then let the store drop stale clears,
 /// as the poller does on each tick.
 fn tick(view: &mut FleetView, store: &mut ClearStore) {
-    attach(view, store.cleared());
+    attach(view, |i| store.is_cleared(i));
     store.record(view).unwrap();
-    attach(view, store.cleared());
+    attach(view, |i| store.is_cleared(i));
 }
 
 fn issue<'a>(view: &'a FleetView, id: &str) -> &'a FleetIssue {
@@ -85,7 +85,7 @@ fn alerts_replace_duplicate_disk_and_offline_findings_but_keep_other_diagnostics
     view.machines[0].monitoring.alerts[0].muted = true;
     view.monitoring.alerts[0].stale = true;
     view.monitoring.alerts[0].muted = true;
-    attach(&mut view, &Default::default());
+    attach(&mut view, |_| false);
     let diagnostic = view.issues.iter().find(|i| i.category == Diagnostic).unwrap();
     assert_eq!(diagnostic.detail, "sleep: warning");
     assert_eq!(view.issues.iter().filter(|i| i.category == Alert).count(), 1);
@@ -95,7 +95,7 @@ fn alerts_replace_duplicate_disk_and_offline_findings_but_keep_other_diagnostics
     view.machines[0].connection = MachineConnection::Offline { last_seen: None };
     view.machines[0].monitoring.alerts[0].kind = FleetAlertKind::Offline;
     view.monitoring.alerts[0].kind = FleetAlertKind::Offline;
-    attach(&mut view, &Default::default());
+    attach(&mut view, |_| false);
     assert!(
         !view
             .issues
@@ -159,36 +159,61 @@ fn a_cleared_item_comes_back_when_it_returns_after_going_away() {
 
     set_diagnostics(&mut view, vec![]);
     tick(&mut view, &mut store);
-    assert!(store.cleared().is_empty());
     set_diagnostics(&mut view, vec![warn("power-recovery")]);
     tick(&mut view, &mut store);
     assert!(!issue(&view, &id).cleared);
 }
 
 #[test]
-fn missing_data_does_not_count_as_the_problem_going_away() {
+fn only_a_fresh_read_counts_as_the_problem_going_away() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cleared-issues.json");
     let mut view = one_machine();
     set_diagnostics(&mut view, vec![warn("power-recovery")]);
-    attach(&mut view, &Default::default());
-    let cleared = issue(&view, &format!("{}:diagnostics", view.machines[0].id)).clone();
-    let mut store = ClearStore::in_memory([(cleared.id.clone(), cleared.fingerprint.clone())].into());
+    attach(&mut view, |_| false);
+    let id = format!("{}:diagnostics", view.machines[0].id);
+    ClearStore::load(path.clone()).clear(issue(&view, &id)).unwrap();
 
-    // After a restart, before the first read: the finding is absent but was never shown.
+    // After a restart, before the first read.
+    let mut store = ClearStore::load(path.clone());
     let mut starting = view.clone();
     starting.machines[0].diagnostics = None;
     starting.machines[0].connection = MachineConnection::Pending;
     tick(&mut starting, &mut store);
-    assert_eq!(store.cleared().len(), 1);
-
-    tick(&mut view, &mut store);
-    assert!(issue(&view, &cleared.id).cleared);
-    // A stale read hides the finding without a fresh read saying it is fixed.
-    view.machines[0].connection = MachineConnection::Stale {
+    // A stale read hides the warning without saying it is fixed.
+    let mut stale = view.clone();
+    stale.machines[0].connection = MachineConnection::Stale {
         checked_at: Utc::now(),
         reason: "The last read failed.".into(),
     };
+    tick(&mut stale, &mut store);
     tick(&mut view, &mut store);
-    assert_eq!(store.cleared().len(), 1);
+    assert!(issue(&view, &id).cleared);
+
+    // After a restart, the first fresh read shows it fixed. Then it returns.
+    let mut store = ClearStore::load(path);
+    set_diagnostics(&mut view, vec![]);
+    tick(&mut view, &mut store);
+    set_diagnostics(&mut view, vec![warn("power-recovery")]);
+    tick(&mut view, &mut store);
+    assert!(!issue(&view, &id).cleared);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failed_save_changes_nothing() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let mut view = one_machine();
+    set_disk_alert(&mut view, &["/"], "/: 5.7% free.");
+    let mut store = ClearStore::load(dir.path().join("cleared-issues.json"));
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o500)).unwrap();
+    tick(&mut view, &mut store);
+    let failed = store.clear(issue(&view, "alert:disk"));
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(failed.is_err());
+    tick(&mut view, &mut store);
+    assert!(!issue(&view, "alert:disk").cleared);
 }
 
 #[test]
@@ -197,7 +222,7 @@ fn clears_survive_a_restart() {
     let path = dir.path().join("cleared-issues.json");
     let mut view = one_machine();
     set_disk_alert(&mut view, &["/"], "/: 5.7% free.");
-    attach(&mut view, &Default::default());
+    attach(&mut view, |_| false);
     ClearStore::load(path.clone())
         .clear(issue(&view, "alert:disk"))
         .unwrap();
@@ -218,7 +243,7 @@ fn a_saved_file_that_cannot_be_read_is_kept() {
     std::fs::write(&path, b"not json").unwrap();
     let mut view = one_machine();
     set_disk_alert(&mut view, &["/"], "/: 5.7% free.");
-    attach(&mut view, &Default::default());
+    attach(&mut view, |_| false);
     let error = ClearStore::load(path.clone())
         .clear(issue(&view, "alert:disk"))
         .unwrap_err();
@@ -259,7 +284,7 @@ fn every_finding_says_what_to_do() {
         "unknown",
     ];
     set_diagnostics(&mut view, ids.iter().map(|id| warn(id)).collect());
-    attach(&mut view, &Default::default());
+    attach(&mut view, |_| false);
     actions.extend(view.issues.iter().map(|i| (i.id.clone(), i.action.clone())));
 
     for detail in [

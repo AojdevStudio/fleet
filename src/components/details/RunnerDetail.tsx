@@ -11,7 +11,7 @@ import { isLive } from "../../lib/tauri";
 import { useUi } from "../../store";
 import { Button, Callout, Card, KeyValuePanel, Label, Pill, Section, Stat, StatStrip, type KeyValueRow } from "../ui";
 import { Icon } from "../icons";
-import { OperationCard, PlanItems, useChange } from "./changes";
+import { OperationCard, operationAction, PlanItems, useChange } from "./changes";
 import { LogsPanel } from "./LogsPanel";
 import { ChangePanel } from "./ReviewCard";
 import { JobCard, PageHeader } from "./shared";
@@ -48,7 +48,7 @@ export function RunnerDetail({ runner: r, view }: { runner: RunnerView; view: Fl
         </Button>)}
       />
       {actions.some((a) => a.disabled) && <p className="mt-2 text-[12px] text-ink-2">{actions.find((a) => a.disabled)?.disabled}</p>}
-      {op && requestTargetsRunner(op.request, r) && <OperationCard op={op} />}
+      {op && requestTargetsRunner(op.request, r) && <OperationCard op={op} action={operationAction(view)} />}
       <ChangePanel change={change} busy={busy} />
 
       <div className="mt-8"><StatStrip cols={3}>

@@ -9,17 +9,17 @@ import { Icon } from "../icons";
 /** Findings shown elsewhere on the overview: alerts, stuck jobs, history storage and the running change. */
 const SHOWN_ELSEWHERE: FleetIssueCategory[] = ["alert", "queue", "storage", "operation"];
 
-/** Clear hides an item while the same problem lasts. Bring back shows it again. */
-function useClear(id: string, cleared: boolean) {
+/** Clear hides an item while the problem shown lasts. Bring back shows it again. */
+function useClear(issue: FleetIssue) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => (cleared ? commands.restoreIssue(id) : commands.clearIssue(id)),
+    mutationFn: () => (issue.cleared ? commands.restoreIssue(issue.id) : commands.clearIssue(issue.id, issue.fingerprint)),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["fleet"] }),
   });
 }
 
 export function ClearButton({ issue }: { issue: FleetIssue }) {
-  const clear = useClear(issue.id, issue.cleared);
+  const clear = useClear(issue);
   return <div className="flex shrink-0 flex-col items-end gap-1">
     <Button small variant="ghost" disabled={clear.isPending} onClick={() => clear.mutate()}
       title={issue.cleared ? "Show this item again" : "Hide this item until the problem changes or comes back"}>

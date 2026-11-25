@@ -8,7 +8,7 @@ import { activityCounts, machineStatus } from "../../lib/status";
 import { isLive } from "../../lib/tauri";
 import { Button, Callout, Card, Pill, Section } from "../ui";
 import { Icon } from "../icons";
-import { OperationCard, useChange } from "./changes";
+import { OperationCard, operationAction, useChange } from "./changes";
 import { ChangePanel } from "./ReviewCard";
 import { HealthMeters, PageHeader } from "./shared";
 import { MachineChanges } from "./MachineChanges";
@@ -60,7 +60,7 @@ export function MachineDetail({ machine: m, view }: { machine: MachineView; view
         {m.health && <HealthMeters h={m.health} />}
       </div>
 
-      {op && requestTargetsMachine(op.request, m) && <OperationCard op={op} />}
+      {op && requestTargetsMachine(op.request, m) && <OperationCard op={op} action={operationAction(view)} />}
       {d && <MachineChanges d={d} change={change} live={live && !busy} />}
       <ChangePanel change={change} busy={busy} />
       <Attention machineId={m.id} issues={view.issues.filter((i) => i.machineId === m.id && i.category !== "connection")} />

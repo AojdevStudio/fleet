@@ -56,7 +56,7 @@ export const commands = {
     updateConfig("set_machine_preferences", { id, displayName, description }),
   setDemoMode: (on: boolean) => updateConfig("set_demo_mode", { on }),
   setMachineMaintenance: (id: string, paused: boolean) => invoke<void>("set_machine_maintenance", { id, paused }),
-  clearIssue: (id: string) => invoke<void>("clear_issue", { id }),
+  clearIssue: (id: string, fingerprint: string) => invoke<void>("clear_issue", { id, fingerprint }),
   restoreIssue: (id: string) => invoke<void>("restore_issue", { id }),
   getMonitoringEvents: (machineKey: string | null, before: string | null) =>
     invoke<FleetMachineEvent[]>("get_monitoring_events", { machineKey, before }),

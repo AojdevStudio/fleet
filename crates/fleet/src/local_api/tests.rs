@@ -252,7 +252,14 @@ async fn lookup_prefers_exact_identity_and_reports_ambiguity() {
 #[tokio::test]
 async fn cleared_issues_stay_listed_but_leave_the_attention_count() {
     let (_dir, engine) = engine(true);
-    engine.clear_issue("ts:nLinux:check").unwrap();
+    let shown = engine
+        .view()
+        .issues
+        .into_iter()
+        .find(|i| i.id == "ts:nLinux:check")
+        .unwrap();
+    assert!(engine.clear_issue(&shown.id, "an older problem").is_err());
+    engine.clear_issue(&shown.id, &shown.fingerprint).unwrap();
     let (_, summary) = call(&engine, get("/v1/summary")).await;
     let (_, body) = call(&engine, get("/v1/issues")).await;
     let issues = body["issues"].as_array().unwrap();
@@ -268,7 +275,7 @@ async fn cleared_issues_stay_listed_but_leave_the_attention_count() {
             .iter()
             .all(|i| i["action"].as_str().is_some_and(|a| !a.is_empty()))
     );
-    assert!(issues.iter().all(|i| i.get("fingerprint").is_none()));
+    assert!(issues.iter().all(|i| i["fingerprint"].is_string()));
 
     let (_, schema) = call(&engine, get("/v1/openapi.json")).await;
     let required = &schema["components"]["schemas"]["FleetIssue"]["required"];

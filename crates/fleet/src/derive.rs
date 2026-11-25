@@ -41,7 +41,7 @@ pub fn derive(
         DataSource::Demo => crate::demo::cleared_issues(),
         DataSource::Live => Default::default(),
     };
-    crate::issues::attach(&mut view, &cleared);
+    crate::issues::attach(&mut view, |i| cleared.get(&i.id) == Some(&i.fingerprint));
     view
 }
 

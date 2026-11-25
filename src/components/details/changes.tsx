@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ChangeRequest } from "../../bindings/ChangeRequest";
 import type { FleetPlanItem } from "../../bindings/FleetPlanItem";
+import type { FleetView } from "../../bindings/FleetView";
 import type { OperationStatus } from "../../bindings/OperationStatus";
 import type { OperationView } from "../../bindings/OperationView";
 import type { ReviewView } from "../../bindings/ReviewView";
@@ -69,7 +70,13 @@ const OPERATION_STATUS: Record<OperationStatus, { label: string; tone: Tone }> =
 };
 
 /** The change that's running or last ran. */
-export function OperationCard({ op }: { op: OperationView }) {
+/** What to do about the failed change: the `last-operation` attention item. */
+export function operationAction(view: FleetView): string | undefined {
+  return view.issues.find((i) => i.id === "last-operation")?.action;
+}
+
+/** A change in progress or finished. `action` says what to do when it failed. */
+export function OperationCard({ op, action }: { op: OperationView; action?: string }) {
   const dismiss = useMutation({ mutationFn: commands.desiredDismissOperation });
   const status = OPERATION_STATUS[op.status];
   return (
@@ -101,6 +108,7 @@ export function OperationCard({ op }: { op: OperationView }) {
           </ul>
         )}
         {op.error && <div className="mt-2 text-bad selectable">{op.error}</div>}
+        {op.error && action && <p className="mt-1 text-ink selectable">{action}</p>}
         {dismiss.isError && <ErrorText error={dismiss.error} className="mt-2" />}
       </Card>
     </Section>

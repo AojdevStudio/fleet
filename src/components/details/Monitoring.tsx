@@ -14,10 +14,17 @@ import { Icon } from "../icons";
 import { ActionText, ClearButton } from "./Attention";
 
 export function MonitoringError({ view }: { view: FleetView }) {
-  if (!view.monitoring.storageError) return null;
+  const issue = view.issues.find((i) => i.id === "monitoring-storage");
+  if (!view.monitoring.storageError || issue?.cleared) return null;
   return <Callout tone="warn" title="Machine history isn't being saved">
-    {view.monitoring.storageError}
-    <p className="mt-1">Desktop alerts wait until history can be saved.</p>
+    <div className="flex items-start gap-3">
+      <div className="min-w-0 flex-1">
+        {view.monitoring.storageError}
+        <p className="mt-1">Desktop alerts wait until history can be saved.</p>
+        {issue && <ActionText action={issue.action} />}
+      </div>
+      {issue && <ClearButton issue={issue} />}
+    </div>
   </Callout>;
 }
 

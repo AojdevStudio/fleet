@@ -24,7 +24,8 @@
       "stale": false,
       "muted": false,
       "fix": null,
-      "cleared": false
+      "cleared": false,
+      "fingerprint": "low-disk:/"
     },
     {
       "id": "ts:nLinux:check",
@@ -37,7 +38,8 @@
       "stale": false,
       "muted": false,
       "fix": null,
-      "cleared": false
+      "cleared": false,
+      "fingerprint": "unreachable"
     },
     {
       "id": "ts:nMini:changes",
@@ -50,7 +52,8 @@
       "stale": false,
       "muted": false,
       "fix": null,
-      "cleared": false
+      "cleared": false,
+      "fingerprint": "mini-02:reconcile-labels:add macos-build; remove old-label"
     },
     {
       "id": "ts:nNew:check",
@@ -63,7 +66,8 @@
       "stale": false,
       "muted": false,
       "fix": null,
-      "cleared": false
+      "cleared": false,
+      "fingerprint": "key"
     },
     {
       "id": "ts:nStudio:changes",
@@ -76,7 +80,8 @@
       "stale": false,
       "muted": false,
       "fix": null,
-      "cleared": false
+      "cleared": false,
+      "fingerprint": "Studio-Old-2:retire-legacy"
     },
     {
       "id": "ts:nWin:check",
@@ -89,7 +94,8 @@
       "stale": false,
       "muted": false,
       "fix": null,
-      "cleared": true
+      "cleared": true,
+      "fingerprint": "unreachable"
     },
     {
       "id": "queue:acme-demo:9007",
@@ -102,7 +108,8 @@
       "stale": false,
       "muted": false,
       "fix": null,
-      "cleared": false
+      "cleared": false,
+      "fingerprint": "other-repository"
     },
     {
       "id": "queue:acme-demo:9004",
@@ -115,7 +122,8 @@
       "stale": false,
       "muted": false,
       "fix": null,
-      "cleared": false
+      "cleared": false,
+      "fingerprint": "no-label-match"
     },
     {
       "id": "queue:acme-demo:9008",
@@ -128,7 +136,8 @@
       "stale": false,
       "muted": false,
       "fix": null,
-      "cleared": false
+      "cleared": false,
+      "fingerprint": "runners-offline"
     }
   ],
   "machines": [
