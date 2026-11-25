@@ -16,7 +16,7 @@ pub(super) fn endpoint_descriptions() -> Value {
     json!({
         "GET /": "Capabilities, limits and semantics",
         "GET /v1/summary": "Fleet counts, GitHub and tailnet status; attention equals issues.length",
-        "GET /v1/fleet": "Complete snapshot, including shared issues and all machine categories",
+        "GET /v1/fleet": "Complete snapshot, including inventory machines and shared issues",
         "GET /v1/machines": "The inventory's machines, filtered by os, connection and q",
         "GET /v1/machines/{id}": "Machine by exact ID, inventory alias, or unambiguous name",
         "GET /v1/runners": "Runner list, filtered by machine, org, activity, label, or current-job repo",

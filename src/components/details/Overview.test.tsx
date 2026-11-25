@@ -40,7 +40,7 @@ describe("inventory that fails to load", () => {
     const failed = previewFleet();
     failed.source = "live";
     failed.machines = [];
-    failed.plan = { ...failed.plan, inventoryError: "cannot load /fake/fleet.toml: No such file", inventoryPath: "/fake/fleet.toml" };
+    failed.plan = { ...failed.plan, inventoryError: "No such file or directory", inventoryPath: "/fake/fleet.toml" };
     for (const view of [failed, { ...failed, orgs: [] }]) {
       const html = renderToStaticMarkup(
         <QueryClientProvider client={new QueryClient()}><Overview view={view} /></QueryClientProvider>,

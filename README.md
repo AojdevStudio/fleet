@@ -1,19 +1,19 @@
 # Runner Dashboard
 
-A macOS app for watching GitHub Actions self-hosted runners across the machines on your
-Tailscale tailnet. It answers three questions per runner: is it installed, is it connected to
-GitHub, and is it doing work right now?
+A macOS app for watching GitHub Actions self-hosted runners across the machines in your
+inventory, reached over SSH on your Tailscale tailnet. It answers three questions per runner:
+is it installed, is it connected to GitHub, and is it doing work right now?
 
 **Personal project:** This is completely vibe coded for my own personal use case. I won't be
 accepting feature requests, but you're welcome to fork it and make it your own.
 
 ![Runner Dashboard fleet overview](docs/screenshot.png)
 
-- **Mac app** (Tauri 2 + React). Machines come from your tailnet. The sidebar lists each runner
-  machine with its runners nested under it, below a fleet overview. A machine's pane shows its
-  status, SSH health, diagnostics, inventory configuration, runner checks and pending changes.
-  A runner's pane shows its GitHub and service state, its jobs, and how it compares with the
-  inventory.
+- **Mac app** (Tauri 2 + React). The `[[hosts]]` entries in the inventory define the fleet. The
+  sidebar lists each machine with its runners nested under it, below a fleet overview. A
+  machine's pane shows its status, SSH health, diagnostics, inventory configuration, runner
+  checks and pending changes. A runner's pane shows its GitHub and service state, its jobs,
+  and how it compares with the inventory.
 - **SSH monitoring** reads CPU, load, memory, free disk, uptime and runner configuration from
   the machines. Nothing is installed on the machines.
 - **Event history and alerts** keep observed connections, reboots and runner service changes
@@ -26,7 +26,8 @@ plans against your inventory, `inventory/fleet.toml`.
 ## Requirements
 
 - macOS, with its built-in OpenSSH.
-- Tailscale, signed in to your tailnet. The app reads machines through the Tailscale CLI.
+- Tailscale, signed in to your tailnet. The app matches inventory hosts to tailnet devices
+  through the Tailscale CLI.
 - The GitHub CLI (`gh`), logged in as an organization owner. Monitoring can use a pasted token
   instead; changes always use the `gh` login.
 - Rust 1.93+, Node 22 and pnpm, to build.
