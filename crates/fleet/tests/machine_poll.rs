@@ -66,7 +66,7 @@ fn tailnet() -> TailnetSnapshot {
                 hostname: "family-pc".into(),
                 dns_name: Some("family-pc.demo.ts.net".into()),
                 os: "windows".into(),
-                ips: vec![],
+                ips: vec!["100.64.0.9".into()],
                 online: true,
                 last_seen: None,
                 tags: vec![],
