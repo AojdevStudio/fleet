@@ -49,12 +49,11 @@ impl Engine {
         Ok(())
     }
 
-    /// Save the removal of clears that a view found no longer apply. Performs local disk I/O;
-    /// call off the async runtime.
+    /// Save the removal of live clears that a live view found no longer apply. Runs in demo mode
+    /// too, so a recovery seen before the switch is still saved. Demo clears are never saved, and
+    /// nothing is written when no removal is pending. Performs local disk I/O; call off the async
+    /// runtime.
     pub fn record_cleared(&self) {
-        if self.config().demo_mode {
-            return;
-        }
         if let Err(e) = self.clears.locked().save_expired() {
             tracing::warn!("saving cleared items failed: {e}");
         }
@@ -94,6 +93,30 @@ mod tests {
         engine.record_cleared();
         assert!(!saved().contains("\"inventory\""), "{}", saved());
         let restarted = Engine::load(dir.path().join("config.json"), Arc::new(MemorySecrets::default())).unwrap();
+        assert!(!inventory(&restarted).unwrap().cleared);
+    }
+
+    #[test]
+    fn a_live_recovery_seen_before_demo_mode_is_saved_on_a_demo_tick() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = Engine::load(dir.path().join("config.json"), Arc::new(MemorySecrets::default())).unwrap();
+        let broken = dir.path().join("broken.toml").display().to_string();
+        let valid = dir.path().join("fleet.toml");
+        std::fs::write(&valid, include_str!("../../../inventory/fleet.example.toml")).unwrap();
+        let inventory = |engine: &Engine| engine.view().issues.into_iter().find(|i| i.id == "inventory");
+
+        engine.set_inventory_path(Some(broken.clone())).unwrap();
+        let shown = inventory(&engine).unwrap();
+        engine.clear_issue(&shown.id, &shown.fingerprint).unwrap();
+        engine.set_inventory_path(Some(valid.display().to_string())).unwrap();
+        assert!(inventory(&engine).is_none());
+        engine.set_inventory_path(Some(broken)).unwrap();
+        assert!(!inventory(&engine).unwrap().cleared);
+
+        engine.set_demo_mode(true).unwrap();
+        engine.record_cleared();
+        let restarted = Engine::load(dir.path().join("config.json"), Arc::new(MemorySecrets::default())).unwrap();
+        restarted.set_demo_mode(false).unwrap();
         assert!(!inventory(&restarted).unwrap().cleared);
     }
 }
