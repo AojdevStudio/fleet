@@ -94,14 +94,14 @@ for any repository. `compatibleOnline` and `compatibleIdle` count the online and
 | --- | --- |
 | `otherRepository` | Runners have the job's labels, but each is registered to another repository |
 | `noLabelMatch` | No observed runner has every label the job asks for |
-| `runnersOffline` | Every runner that can take the job is offline or has no recent status |
-| `waitedPastLimit` | A runner that can take it is idle, and it has waited over `stuckAfterSecs` (30 minutes) |
+| `runnersOffline` | Every matching runner is offline or has no recent status |
+| `waitedPastLimit` | A matching runner is idle, and the job had waited over `stuckAfterSecs` (30 minutes) at the last job scan |
 
-A job waiting while every runner that can take it is working is not stuck. A job without a
+A job waiting while every matching runner is working is not stuck. A job without a
 creation time is never `waitedPastLimit`. Runner-group access isn't in the API, so a job can
-still wait on a runner the group doesn't allow. `otherQueued` counts jobs no self-hosted runner
-matches by label, such as `ubuntu-latest`. A job that matches only another repository's runner
-stays in `jobs` as `otherRepository`.
+still wait on a runner the group doesn't allow. `otherQueued` counts jobs that match no observed
+runner by label and don't ask for `self-hosted`, such as `ubuntu-latest`. A job that matches only
+another repository's runner stays in `jobs` as `otherRepository`.
 
 Stuck jobs are not attention findings. The `queue` issue category was removed, so
 `/v1/issues?category=queue` gets 400.

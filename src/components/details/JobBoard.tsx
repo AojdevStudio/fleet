@@ -33,7 +33,7 @@ export function JobBoard({ view }: { view: FleetView }) {
           {board.upNext.map((q) => <QueuedRow key={`${q.org}:${q.job.id}`} q={q} />)}
         </Column>
         <Column title="Stuck" tone="warn" count={board.stuck.length}
-          note={`No runner can take it, or waiting over ${limit} min`}
+          note={`No runner matches, or over ${limit} min with one idle`}
           empty="Nothing is stuck.">
           {board.stuck.map((q) => <QueuedRow key={`${q.org}:${q.job.id}`} q={q} />)}
         </Column>
@@ -41,7 +41,7 @@ export function JobBoard({ view }: { view: FleetView }) {
       {(!q.complete || q.otherQueued > 0) && (
         <div className="mt-2 space-y-1 px-0.5 text-[12px] text-ink-2">
           {!q.complete && <p className="text-warn">Job data is partial. Some organizations or repositories have no recent scan.</p>}
-          {q.otherQueued > 0 && <p>{plural(q.otherQueued, "queued job")} for GitHub-hosted runners {q.otherQueued === 1 ? "is" : "are"} not shown.</p>}
+          {q.otherQueued > 0 && <p>{plural(q.otherQueued, "queued job")} {q.otherQueued === 1 ? "matches" : "match"} no self-hosted runner and {q.otherQueued === 1 ? "is" : "are"} not shown.</p>}
         </div>
       )}
       <MachineStrip machines={view.machines} />
@@ -109,8 +109,8 @@ function RunningRow({ r, view }: { r: RunnerView; view: FleetView }) {
 function takers(q: QueuedJobView): { tone: Tone; text: string } {
   if (q.stuck) return { tone: "warn", text: q.stuck.detail };
   return q.compatibleIdle > 0
-    ? { tone: "ok", text: `${plural(q.compatibleIdle, "idle runner")} can take it` }
-    : { tone: "busy", text: `${plural(q.compatibleOnline, "runner")} can take it, all working` };
+    ? { tone: "ok", text: `${plural(q.compatibleIdle, "idle runner")} ${q.compatibleIdle === 1 ? "matches" : "match"}` }
+    : { tone: "busy", text: `${plural(q.compatibleOnline, "runner")} ${q.compatibleOnline === 1 ? "matches" : "match"}, all working` };
 }
 
 function QueuedRow({ q }: { q: QueuedJobView }) {

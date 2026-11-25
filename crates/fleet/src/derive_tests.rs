@@ -237,7 +237,7 @@ fn an_organization_runner_matches_any_repository_by_labels() {
 }
 
 #[test]
-fn a_job_is_stuck_after_waiting_past_the_limit_only_while_a_runner_that_can_take_it_is_idle() {
+fn a_job_is_stuck_after_waiting_past_the_limit_only_while_a_matching_runner_is_idle() {
     let limit = STUCK_AFTER.num_minutes();
     let mut f = Fixture::new();
     f.gh_runners(ago(10), vec![gh(1, "mac-idle", "online", false, MAC)])
@@ -256,11 +256,30 @@ fn a_job_is_stuck_after_waiting_past_the_limit_only_while_a_runner_that_can_take
         stuck(&v, 11).map(|s| (s.reason, s.detail)),
         Some((
             QueueStuckReason::WaitedPastLimit,
-            "An idle runner can take it, but it has waited over 30 min.".into()
+            "An idle runner matches it, but it has waited over 30 min.".into()
         ))
     );
 
-    // Every runner that can take it is working: the job waits its turn.
+    // The wait counts up to the last job scan, since the job may have started after it.
+    f.jobs(
+        ago(6 * 60),
+        vec![created(limit + 4, job(12, None, "queued", MAC, None))],
+    );
+    assert_eq!(stuck(&f.view(), 12), None);
+    f.jobs(ago(20), vec![created(limit + 4, job(12, None, "queued", MAC, None))]);
+    assert_eq!(
+        stuck(&f.view(), 12).map(|s| s.reason),
+        Some(QueueStuckReason::WaitedPastLimit)
+    );
+    f.jobs(
+        ago(20),
+        vec![
+            created(limit - 1, job(10, None, "queued", MAC, None)),
+            created(limit + 1, job(11, None, "queued", MAC, None)),
+        ],
+    );
+
+    // Every matching runner is working: the job waits its turn.
     f.gh_runners(ago(10), vec![gh(1, "mac-busy", "online", true, MAC)]);
     assert_eq!(stuck(&f.view(), 11), None);
     // The runner is offline: nothing can take the job.

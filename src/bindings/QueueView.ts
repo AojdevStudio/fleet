@@ -12,6 +12,6 @@ otherQueued: number,
  */
 complete: boolean, asOf: string | null, 
 /**
- * How long a job may wait while an idle runner can take it before it counts as stuck.
+ * How long a job may wait while a matching runner is idle before it counts as stuck.
  */
 stuckAfterSecs: number, };

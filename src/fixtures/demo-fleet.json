@@ -1788,7 +1788,7 @@
         "compatibleIdle": 3,
         "stuck": {
           "reason": "waitedPastLimit",
-          "detail": "An idle runner can take it, but it has waited over 30 min."
+          "detail": "An idle runner matches it, but it has waited over 30 min."
         }
       },
       {
@@ -1839,7 +1839,7 @@
         "compatibleIdle": 0,
         "stuck": {
           "reason": "runnersOffline",
-          "detail": "Every runner that can take it is offline or has no recent status."
+          "detail": "Every runner that matches it is offline or has no recent status."
         }
       },
       {

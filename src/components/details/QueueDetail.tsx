@@ -30,9 +30,9 @@ export function QueueDetail({ view }: { view: FleetView }) {
         </Card>}
       </div>
       <div className="mt-4 space-y-1.5 text-[12px] text-ink-2">
-        {q.otherQueued > 0 && <p>{plural(q.otherQueued, "queued job")} target GitHub-hosted labels (like ubuntu-latest) and are not shown.</p>}
+        {q.otherQueued > 0 && <p>{plural(q.otherQueued, "queued job")} {q.otherQueued === 1 ? "matches" : "match"} no self-hosted runner, such as jobs for ubuntu-latest, and {q.otherQueued === 1 ? "is" : "are"} not shown.</p>}
         {!q.complete && <p className="text-warn">This list may be incomplete: job data is missing, stale, or limited to the repositories in each organization's scan scope (Settings).</p>}
-        <p>A runner can take a job when it has every label the job asks for. A runner registered to one repository takes only that repository's jobs. A job is stuck when no runner can take it, or when it has waited over {Math.round(q.stuckAfterSecs / 60)} min while one that can take it is idle. Runner-group access rules can still keep a job off a runner, and GitHub's API doesn't show that per job.</p>
+        <p>A runner matches a job when it has every label the job asks for. A runner registered to one repository matches only that repository's jobs. A job is stuck when no runner matches it, when every match is offline, or when it has waited over {Math.round(q.stuckAfterSecs / 60)} min while a match is idle. Runner-group access rules can still keep a job off a matching runner, and GitHub's API doesn't show that per job.</p>
       </div>
     </div>
   );
@@ -54,8 +54,8 @@ function QueueList({ view }: { view: FleetView }) {
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2">
             {q.stuck ? <Pill tone="warn">Stuck</Pill>
-              : q.compatibleIdle > 0 ? <Pill tone="ok">{plural(q.compatibleIdle, "idle runner")} can take it</Pill>
-              : <Pill tone="busy">{q.compatibleOnline} can take it, all working</Pill>}
+              : q.compatibleIdle > 0 ? <Pill tone="ok">{plural(q.compatibleIdle, "idle runner")} {q.compatibleIdle === 1 ? "matches" : "match"}</Pill>
+              : <Pill tone="busy">{q.compatibleOnline} {q.compatibleOnline === 1 ? "matches" : "match"}, all working</Pill>}
             {q.createdAt && <span className="text-[11px] text-ink-2 tabular">waiting <Elapsed since={q.createdAt} /></span>}
           </div>
         </div>

@@ -512,7 +512,7 @@ pub struct QueueView {
     /// False when job data is missing or stale for some org.
     pub complete: bool,
     pub as_of: Option<DateTime<Utc>>,
-    /// How long a job may wait while an idle runner can take it before it counts as stuck.
+    /// How long a job may wait while a matching runner is idle before it counts as stuck.
     pub stuck_after_secs: u32,
 }
 

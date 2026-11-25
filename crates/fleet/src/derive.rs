@@ -6,8 +6,8 @@
 //! - "Installed" comes from SSH; "connected" and "doing work" come from GitHub.
 //! - A current job is shown only when GitHub's jobs API links it to the runner.
 //! - Elapsed time alone never marks a running job as stuck. A queued job is
-//!   stuck when no runner can take it, or when it has waited past
-//!   [`STUCK_AFTER`] while a runner that can take it is idle.
+//!   stuck when no runner matches it, or when it had waited past
+//!   [`STUCK_AFTER`] at the last job scan while a matching runner is idle.
 
 use std::collections::{HashMap, HashSet};
 
@@ -24,7 +24,7 @@ mod machines;
 pub const SSH_STALE_AFTER: Duration = Duration::seconds(150);
 pub const GITHUB_STALE_AFTER: Duration = Duration::seconds(150);
 pub const JOBS_STALE_AFTER: Duration = Duration::seconds(300);
-/// A queued job that waits this long while an idle runner can take it is stuck.
+/// A queued job that waits this long while a matching runner is idle is stuck.
 pub const STUCK_AFTER_SECS: u32 = 30 * 60;
 pub const STUCK_AFTER: Duration = Duration::seconds(STUCK_AFTER_SECS as i64);
 
@@ -467,7 +467,7 @@ fn queue_view(
                 Some(QueueStuckReason::OtherRepository)
             } else if online.is_empty() {
                 Some(QueueStuckReason::RunnersOffline)
-            } else if idle > 0 && job.created_at.is_some_and(|at| now - at > STUCK_AFTER) {
+            } else if idle > 0 && job.created_at.is_some_and(|at| jobs.at - at > STUCK_AFTER) {
                 Some(QueueStuckReason::WaitedPastLimit)
             } else {
                 None
@@ -494,9 +494,9 @@ fn stuck_detail(reason: QueueStuckReason, job: &GhJob) -> String {
     match reason {
         QueueStuckReason::OtherRepository => "Only runners registered to other repositories have its labels.".into(),
         QueueStuckReason::NoLabelMatch => format!("No runner has the labels {}.", job.labels.join(", ")),
-        QueueStuckReason::RunnersOffline => "Every runner that can take it is offline or has no recent status.".into(),
+        QueueStuckReason::RunnersOffline => "Every runner that matches it is offline or has no recent status.".into(),
         QueueStuckReason::WaitedPastLimit => format!(
-            "An idle runner can take it, but it has waited over {} min.",
+            "An idle runner matches it, but it has waited over {} min.",
             STUCK_AFTER.num_minutes()
         ),
     }
