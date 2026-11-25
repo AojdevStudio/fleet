@@ -98,6 +98,8 @@ fn refuse_this_mac(ssh: &SshResolution, host: &Host) -> Result<(), EngineError> 
     Ok(())
 }
 
+const TAILNET_PENDING: &str = "The app hasn't read this Mac's tailnet names yet, so this host might be this Mac. Wait a moment and review the change again.";
+
 const CHANGE_RUNNING: &str = "Another change is running; wait for it to finish.";
 
 /// Apply, Retire and Decommission are off until the desired-state rewrite.
@@ -198,13 +200,17 @@ impl Engine {
     }
 
     fn host_identity_conflict(&self, inventory: &Inventory, host_id: &str, ssh: &SshResolution) -> Option<String> {
-        let (peers, self_names) = self
-            .obs
-            .read_locked()
+        let obs = self.obs.read_locked();
+        // Until the first tailnet read ends, this Mac's tailnet names are unknown, so another entry may be this Mac.
+        if obs.tailscale.is_none() && obs.tailscale_error.is_none() && !ssh.this_mac.is_empty() {
+            return Some(TAILNET_PENDING.into());
+        }
+        let (peers, self_names) = obs
             .tailscale
             .as_ref()
             .map(|snapshot| (snapshot.value.peers.clone(), snapshot.value.self_names.clone()))
             .unwrap_or_default();
+        drop(obs);
         host_identity_conflicts(inventory, &ssh.hostnames(), &peers, &ssh.this_mac, &self_names).remove(host_id)
     }
 

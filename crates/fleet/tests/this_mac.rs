@@ -392,14 +392,21 @@ async fn an_entry_at_this_macs_tailnet_ip_conflicts_with_its_loopback_entry() {
             LocalRunner::new("tailnet-01", "p", true, "active", Some("2.330.0")),
         );
     }
-    f.engine.poll_tailscale().await;
-    let review = f
-        .engine
-        .desired_review(ChangeRequest::Restart {
+    let restart_tailnet = || {
+        f.engine.desired_review(ChangeRequest::Restart {
             runner: "tailnet-01".into(),
         })
-        .await
-        .unwrap();
+    };
+    // Before the first tailnet read ends, the app can't tell whether the entry is this Mac.
+    let pending = restart_tailnet().await.unwrap();
+    assert!(!pending.ready);
+    assert!(
+        pending.blockers.iter().any(|b| b.contains("tailnet names yet")),
+        "{:?}",
+        pending.blockers
+    );
+    f.engine.poll_tailscale().await;
+    let review = restart_tailnet().await.unwrap();
     assert!(!review.ready);
     assert!(
         review.blockers.iter().any(|b| b.contains("share the same machine")),
