@@ -218,10 +218,11 @@ fn an_entry_uses_the_tailnet_ip_unless_magic_dns_is_on() {
             .collect::<Vec<_>>()
     };
     let pairs = |rows: [(&str, &str); 2]| rows.map(|(a, b)| (a.to_string(), b.to_string())).to_vec();
-    // With MagicDNS off, both transports get the tailnet IP: `tailscale ssh` on macOS hands the name to system SSH.
+    // With MagicDNS off, every entry is OpenSSH to the tailnet IP: `tailscale ssh` on macOS would
+    // rewrite the target to a name that doesn't resolve.
     assert_eq!(
         ssh(false),
-        pairs([("100.64.0.3", "openssh"), ("100.64.0.4", "tailscale")])
+        pairs([("100.64.0.3", "openssh"), ("100.64.0.4", "openssh")])
     );
     assert_eq!(
         ssh(true),

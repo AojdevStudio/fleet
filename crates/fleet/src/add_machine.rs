@@ -160,13 +160,14 @@ fn device_view(
     } else {
         format!("~/gh-runners/{organization}")
     };
-    let transport = if peer.ssh_host_keys.is_empty() {
-        SshTransport::Openssh
-    } else {
+    // Without MagicDNS a peer name doesn't resolve, and `tailscale ssh` on macOS rewrites even an IP
+    // target to that name. So Tailscale SSH and the MagicDNS name are offered only with MagicDNS on.
+    // Otherwise the entry is plain OpenSSH to the tailnet IP.
+    let transport = if magic_dns && !peer.ssh_host_keys.is_empty() {
         SshTransport::Tailscale
+    } else {
+        SshTransport::Openssh
     };
-    // A MagicDNS name resolves only with MagicDNS on. `tailscale ssh` also hands the name to system
-    // SSH on macOS, so both transports use the tailnet IP otherwise.
     let name = peer.dns_name.as_ref().filter(|_| magic_dns);
     let ssh = name.or(peer.ips.first()).cloned()?;
     let platform_note = match platform {
