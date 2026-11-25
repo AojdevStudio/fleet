@@ -271,7 +271,7 @@ async fn personal_labels_persist_across_restart_and_tailnet_discovery_without_ch
 }
 
 #[tokio::test]
-async fn tailnet_devices_outside_the_inventory_are_never_contacted_listed_or_labelled() {
+async fn tailnet_devices_outside_the_inventory_are_never_contacted_or_labelled() {
     let fake = Arc::new(FakeMachine::default());
     let (_dir, engine) = fixture(fake.clone(), INVENTORY);
     engine.poll_tailscale().await;
@@ -282,10 +282,6 @@ async fn tailnet_devices_outside_the_inventory_are_never_contacted_listed_or_lab
     assert_eq!(
         view.machines.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
         ["ts:nMini"]
-    );
-    assert_eq!(
-        view.tailnet_devices.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
-        ["family-pc"]
     );
     assert!(
         !serde_json::to_string(&view.issues).unwrap().contains("family-pc"),

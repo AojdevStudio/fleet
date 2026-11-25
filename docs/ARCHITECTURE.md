@@ -44,18 +44,9 @@ Each result is a timestamped observation. Errors are recorded beside the last su
 `derive(config, observations, plan, now, source)` produces the complete view without I/O.
 Machines use `ts:<node id>` as their UI identity, or `inv:<host id>` without a tailnet match.
 Inventory SSH aliases resolve through `ssh -G`. Machines are the inventory's hosts only. A tailnet
-device no host claims gets no machine view, no SSH read, no issue and no monitoring state. Add
-machine lists such desktop and server devices by name from the tailnet snapshot, with a
-`[[hosts]]` entry built in `add_machine.rs`, with an ID no inventory host or other entry uses.
-A host that `peer_for_host` matches leaves out only the device its machine row shows, so Add
-machine and the machine list never disagree. A device whose exact MagicDNS name or tailnet IP is
-already a host's SSH target is never offered, so a pasted entry can't repeat one. For a host
-matched to no device, an entry is a paste
-suggestion, so `unmatched_host_names_device` leaves out a device on any sign of a match: its
-MagicDNS name, short name or tailnet IP equals the host's ID, written SSH target or `ssh -G`
-hostname, or the first label of an SSH name. Disabled hosts count. An alias that resolves to a
-LAN name unlike the device's names doesn't exclude it, so the pane asks the user to check before
-pasting. It offers nothing without a loaded inventory.
+device no host claims gets no machine view, no SSH read, no issue and no monitoring state. A
+machine joins the fleet only when the inventory gets a `[[hosts]]` entry for it
+([FLEET.md](FLEET.md)). Without a loaded inventory there are no machines.
 Monitoring keys history by inventory host. History that older versions saved under a tailnet key
 (`ts:<node id>`) belonged to devices outside the inventory, so it is dropped from memory when the
 history loads and from the file at the next history save.

@@ -1,10 +1,9 @@
 //! Assembling machines. Each inventory host becomes one machine, joined with
 //! its tailnet peer, SSH observations and GitHub runners. A tailnet peer no
-//! host claims is only offered to Add machine, never observed.
+//! host claims is never observed.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::add_machine::{TailnetDeviceView, device_view, ssh_target_reaches_device, unmatched_host_names_device};
 use crate::machine::{MachineReport, OsFamily};
 use chrono::{DateTime, Utc};
 
@@ -16,11 +15,6 @@ use crate::fleet_plan::{
     DesiredRunnerRole, FleetPlanInputs, MachineDesired, RunnerDesired, host_identity_conflicts, peer_for_host,
 };
 use crate::model::*;
-
-pub(super) struct Machines {
-    pub fleet: Vec<MachineView>,
-    pub devices: Vec<TailnetDeviceView>,
-}
 
 /// One inventory host before it's turned into a view.
 struct Slot<'a> {
@@ -77,7 +71,7 @@ pub(super) fn assemble(
     gh: &GithubIndex,
     matched: &mut HashSet<String>,
     now: DateTime<Utc>,
-) -> Machines {
+) -> Vec<MachineView> {
     let snapshot = obs.tailscale.as_ref().map(|t| &t.value);
     let self_node = snapshot.and_then(|s| s.self_node_id.as_deref());
     let peers: Vec<TailnetPeer> = snapshot
@@ -89,12 +83,9 @@ pub(super) fn assemble(
                 .collect()
         })
         .unwrap_or_default();
-    // Without a loaded inventory nothing says which devices are already in it.
+    // Without a loaded inventory there are no machines.
     let Some(inventory) = plan.inventory.as_ref().and_then(|r| r.as_ref().ok()) else {
-        return Machines {
-            fleet: Vec::new(),
-            devices: Vec::new(),
-        };
+        return Vec::new();
     };
     let ctx = DeriveCtx {
         obs,
@@ -123,44 +114,7 @@ pub(super) fn assemble(
         fleet.push(view);
     }
     fleet.sort_by_key(|m| (m.display_name.to_lowercase(), m.id.clone()));
-    Machines {
-        fleet,
-        devices: devices(&peers, inventory, &plan.ssh_hosts),
-    }
-}
-
-/// Tailnet devices for Add machine, by name: those no inventory host names. A host that
-/// `peer_for_host` matches excludes that device only, as its machine row shows it. A device whose
-/// exact name or IP is already some host's SSH target is never offered. Entries never reuse an
-/// inventory host ID.
-fn devices(
-    peers: &[TailnetPeer],
-    inventory: &Inventory,
-    ssh_hosts: &BTreeMap<String, String>,
-) -> Vec<TailnetDeviceView> {
-    let mut host_ids = inventory.hosts.iter().map(|h| h.id.clone()).collect();
-    let mut matched = HashSet::new();
-    let mut unmatched = Vec::new();
-    for host in &inventory.hosts {
-        let resolved = host.ssh_target.as_deref().and_then(|t| ssh_hosts.get(t));
-        match peer_for_host(host, resolved.map(String::as_str), peers) {
-            Some(peer) => {
-                matched.insert(peer.node_id.as_str());
-            }
-            None => unmatched.push(host),
-        }
-    }
-    let mut unnamed: Vec<_> = peers
-        .iter()
-        .filter(|p| !matched.contains(p.node_id.as_str()))
-        .filter(|p| !ssh_target_reaches_device(&inventory.hosts, ssh_hosts, p))
-        .filter(|p| !unmatched_host_names_device(unmatched.iter().copied(), ssh_hosts, p))
-        .collect();
-    unnamed.sort_by_key(|p| (p.hostname.to_lowercase(), p.node_id.clone()));
-    unnamed
-        .into_iter()
-        .filter_map(|p| device_view(p, &inventory.organization.name, &mut host_ids))
-        .collect()
+    fleet
 }
 
 /// One slot per inventory host, matched to its tailnet peer.

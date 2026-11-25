@@ -67,11 +67,9 @@ always uses demo data.
    no runner group and no `admin:org` scope. The `repo` scope (or the repository permissions
    **Administration: Read** and **Actions: Read**) is enough.
 3. Your fleet is the hosts in the inventory. Only they are listed under **Machines**, checked
-   over SSH, and alerted on. A tailnet device outside the inventory is never contacted.
-   **Add machine** in the sidebar lists those devices by name and shows the `[[hosts]]` entry
-   to paste for each. Phones and TVs are left out, and so is any device whose name or tailnet
-   IP an inventory host uses. Check that a device isn't already in the inventory under another
-   name before you paste its entry. Add the first host by hand, because the inventory needs one.
+   over SSH, and alerted on. A tailnet device outside the inventory is never contacted. A
+   machine joins the fleet when you add a `[[hosts]]` entry for it to the inventory
+   ([docs/FLEET.md](docs/FLEET.md) describes the format).
 4. Make each inventory host reachable through your existing SSH setup, with its `ssh` target
    and `ssh_transport`. OpenSSH host keys must already be trusted. Tailscale SSH uses the
    tailnet's SSH policy.
