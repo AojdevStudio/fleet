@@ -201,9 +201,10 @@ impl Engine {
 
     fn host_identity_conflict(&self, inventory: &Inventory, host_id: &str, ssh: &SshResolution) -> Option<String> {
         let obs = self.obs.read_locked();
-        // Until a tailnet read succeeds, this Mac's tailnet names are unknown, so another entry may be this Mac.
-        // A failed read proves nothing either.
-        if obs.tailscale.is_none() && !ssh.this_mac.is_empty() {
+        // Until a tailnet read names this Mac, another entry may be this Mac. A failed read, or one without
+        // the self node, proves nothing.
+        let self_known = obs.tailscale.as_ref().is_some_and(|s| !s.value.self_names.is_empty());
+        if !self_known && !ssh.this_mac.is_empty() {
             return Some(TAILNET_PENDING.into());
         }
         let (peers, self_names) = obs

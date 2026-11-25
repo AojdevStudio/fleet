@@ -424,6 +424,17 @@ async fn an_entry_at_this_macs_tailnet_ip_conflicts_with_its_loopback_entry() {
         failed.blockers
     );
     *f.tailnet_error.lock().unwrap() = None;
+    // A read without the self node doesn't name this Mac either.
+    let self_names = std::mem::take(&mut f.tailnet.lock().unwrap().self_names);
+    f.engine.poll_tailscale().await;
+    let no_self = restart_tailnet().await.unwrap();
+    assert!(!no_self.ready);
+    assert!(
+        no_self.blockers.iter().any(|b| b.contains("tailnet names yet")),
+        "{:?}",
+        no_self.blockers
+    );
+    f.tailnet.lock().unwrap().self_names = self_names;
     f.engine.poll_tailscale().await;
     let review = restart_tailnet().await.unwrap();
     assert!(!review.ready);
