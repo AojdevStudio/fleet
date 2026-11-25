@@ -1747,23 +1747,26 @@
       "desired": null
     }
   ],
-  "tailnetDevices": [
-    {
-      "nodeId": "nLaptop",
-      "name": "dev-laptop",
-      "inventoryEntry": "[[hosts]]\nid = \"dev-laptop\"\nplatform = \"darwin-arm64\"\nssh = \"dev-laptop.demo.ts.net\"\nssh_transport = \"openssh\"\nroot = \"~/gh-runners/acme-demo\"\nservice_mode = \"launchagent\"\n"
-    },
-    {
-      "nodeId": "nNas",
-      "name": "home-nas",
-      "inventoryEntry": "[[hosts]]\nid = \"home-nas\"\nplatform = \"linux-x64\"\nssh = \"home-nas.demo.ts.net\"\nssh_transport = \"tailscale\"\nroot = \"~/gh-runners/acme-demo\"\nservice_mode = \"systemd\"\n"
-    },
-    {
-      "nodeId": "nSpare",
-      "name": "spare-ubuntu",
-      "inventoryEntry": "[[hosts]]\nid = \"spare-ubuntu\"\nplatform = \"linux-x64\"\nssh = \"spare-ubuntu.demo.ts.net\"\nssh_transport = \"tailscale\"\nroot = \"~/gh-runners/acme-demo\"\nservice_mode = \"systemd\"\n"
-    }
-  ],
+  "addMachine": {
+    "state": "ready",
+    "devices": [
+      {
+        "nodeId": "nLaptop",
+        "name": "dev-laptop",
+        "inventoryEntry": "[[hosts]]\nid = \"dev-laptop\"\nplatform = \"darwin-arm64\"\nssh = \"dev-laptop.demo.ts.net\"\nssh_transport = \"openssh\"\nroot = \"~/gh-runners/acme-demo\"\nservice_mode = \"launchagent\"\n"
+      },
+      {
+        "nodeId": "nNas",
+        "name": "home-nas",
+        "inventoryEntry": "[[hosts]]\nid = \"home-nas\"\nplatform = \"linux-x64\"\nssh = \"home-nas.demo.ts.net\"\nssh_transport = \"tailscale\"\nroot = \"~/gh-runners/acme-demo\"\nservice_mode = \"systemd\"\n"
+      },
+      {
+        "nodeId": "nSpare",
+        "name": "spare-ubuntu",
+        "inventoryEntry": "[[hosts]]\nid = \"spare-ubuntu\"\nplatform = \"linux-x64\"\nssh = \"spare-ubuntu.demo.ts.net\"\nssh_transport = \"tailscale\"\nroot = \"~/gh-runners/acme-demo\"\nservice_mode = \"systemd\"\n"
+      }
+    ]
+  },
   "queue": {
     "jobs": [
       {

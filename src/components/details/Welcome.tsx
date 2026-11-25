@@ -22,10 +22,10 @@ export function Welcome({ view }: { view: FleetView }) {
             <span className="text-ink-2">It uses your GitHub CLI (gh) login; nothing is copied.</span>
           </li>
           <li>
-            <span className="font-medium">2. Describe your machines in inventory/fleet.toml.</span>{" "}
+            <span className="font-medium">2. Add your first machine to inventory/fleet.toml by hand.</span>{" "}
             <span className="text-ink-2">
-              Only machines in the inventory are shown and checked. Add machine lists your tailnet devices and the entry
-              for each one.
+              Only machines in the inventory are shown and checked. docs/FLEET.md describes the format. Once the inventory
+              has a host, Add machine lists your other tailnet devices with the entry for each one.
             </span>
           </li>
           <li>

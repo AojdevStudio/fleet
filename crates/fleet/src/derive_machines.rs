@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::add_machine::{TailnetDeviceView, device_view};
+use crate::add_machine::{AddMachineView, AddMachineWait, TailnetDeviceView, device_view, wait_reason};
 use crate::machine::{MachineReport, OsFamily};
 use chrono::{DateTime, Utc};
 
@@ -19,7 +19,7 @@ use crate::model::*;
 
 pub(super) struct Machines {
     pub fleet: Vec<MachineView>,
-    pub devices: Vec<TailnetDeviceView>,
+    pub add_machine: AddMachineView,
 }
 
 /// One inventory host before it's turned into a view.
@@ -93,7 +93,7 @@ pub(super) fn assemble(
     let Some(inventory) = plan.inventory.as_ref().and_then(|r| r.as_ref().ok()) else {
         return Machines {
             fleet: Vec::new(),
-            devices: Vec::new(),
+            add_machine: AddMachineView::NoInventory,
         };
     };
     let ctx = DeriveCtx {
@@ -106,12 +106,16 @@ pub(super) fn assemble(
     };
 
     let (slots, claimed) = slots(&peers, inventory, &plan.ssh_hosts);
-    // Until SSH has resolved every host's target, a host may own a different peer than its
-    // written name matches, so an offer could duplicate an enrolled machine.
-    let ownership_known = inventory
+    let waiting: Vec<AddMachineWait> = inventory
         .hosts
         .iter()
-        .all(|h| h.ssh_target.as_ref().is_some_and(|t| plan.ssh_hosts.contains_key(t)));
+        .filter_map(|h| {
+            wait_reason(h, &plan.ssh_hosts).map(|reason| AddMachineWait {
+                host_id: h.id.clone(),
+                reason,
+            })
+        })
+        .collect();
     let mut fleet = Vec::new();
     for slot in &slots {
         let mut view = machine_view(slot, &ctx, matched);
@@ -131,15 +135,17 @@ pub(super) fn assemble(
     fleet.sort_by_key(|m| (m.display_name.to_lowercase(), m.id.clone()));
     Machines {
         fleet,
-        devices: if ownership_known {
-            devices(
-                &peers,
-                &claimed,
-                &inventory.organization.name,
-                inventory.hosts.iter().map(|h| h.id.clone()).collect(),
-            )
+        add_machine: if waiting.is_empty() {
+            AddMachineView::Ready {
+                devices: devices(
+                    &peers,
+                    &claimed,
+                    &inventory.organization.name,
+                    inventory.hosts.iter().map(|h| h.id.clone()).collect(),
+                ),
+            }
         } else {
-            Vec::new()
+            AddMachineView::Waiting { hosts: waiting }
         },
     }
 }

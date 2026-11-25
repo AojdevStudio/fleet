@@ -3,7 +3,7 @@ import type { FleetView } from "../bindings/FleetView";
 import type { MachineView } from "../bindings/MachineView";
 import type { RunnerView } from "../bindings/RunnerView";
 import { formatClock } from "../lib/format";
-import { selectionId, type Selection } from "../lib/nav";
+import { selectionId, showsAddMachine, type Selection } from "../lib/nav";
 import { machineNeedsChanges, runnerNeedsChanges } from "../lib/desired";
 import { busySince, hasWarning, machineDot, machineSummary, machineTooltip, runnerStatus, tailnetState } from "../lib/status";
 import { movingRepos, retiringRepos } from "../lib/rollout";
@@ -68,13 +68,29 @@ export function Sidebar({ view, filtered, selection }: { view: FleetView; filter
           <Heading title="Not linked to a machine" count={filtered.unmatchedRunners.length} open={searching || open.unlinked} onToggle={() => setOpen("unlinked", !open.unlinked)} />
           {(searching || open.unlinked) && filtered.unmatchedRunners.map((r) => <RunnerRow key={r.key} r={r} isSelected={isSelected} />)}
         </>}
-        {filtered.tailnetDevices.length > 0 && <div className="mt-2">
-          <Row sel={{ kind: "add-machine" }} selected={isSelected({ kind: "add-machine" })} icon={<Icon name="plus" />} label="Add machine" title="Tailnet devices that aren't in the inventory" trailing={filtered.tailnetDevices.length} />
-        </div>}
-        {searching && !filtered.machines.length && !filtered.unmatchedRunners.length && !filtered.tailnetDevices.length && <EmptyLine>No machines or runners match “{query}”.</EmptyLine>}
+        {showsAddMachine(filtered) && <div className="mt-2"><AddMachineRow view={filtered} selected={isSelected({ kind: "add-machine" })} /></div>}
+        {searching && !filtered.machines.length && !filtered.unmatchedRunners.length && !showsAddMachine(filtered) && <EmptyLine>No machines or runners match “{query}”.</EmptyLine>}
       </nav>
       <Footer view={view} />
     </aside>
+  );
+}
+
+/** While it waits, the row names the hosts that need attention instead of counting devices. */
+function AddMachineRow({ view, selected }: { view: FleetView; selected: boolean }) {
+  const add = view.addMachine;
+  const common = { sel: { kind: "add-machine" } as const, selected, icon: <Icon name="plus" />, label: "Add machine" };
+  if (add.state !== "waiting") {
+    return <Row {...common} title="Tailnet devices that aren't in the inventory" trailing={add.state === "ready" ? add.devices.length : undefined} />;
+  }
+  const hosts = add.hosts.map((h) => h.hostId);
+  return (
+    <Row
+      {...common}
+      warn
+      title={`Unavailable until the app knows which tailnet device each host is. Needs attention: ${hosts.join(", ")}`}
+      trailing={hosts.length === 1 ? hosts[0] : `${hosts.length} hosts`}
+    />
   );
 }
 

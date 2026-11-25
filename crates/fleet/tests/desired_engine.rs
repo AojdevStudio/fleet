@@ -472,12 +472,17 @@ fn inventory_hosts_match_tailnet_machines_by_their_ssh_target() {
     assert_eq!(matched("windows").as_deref(), Some("n3"), "alias win-builder matches");
     assert_eq!(matched("linux-canary"), None);
     assert_eq!(matched("mini").as_deref(), Some("n4"), "user@MagicDNS name matches");
-    // An alias like `ssh = "mini"` only names the machine once SSH resolves it.
+    // An OpenSSH alias like `ssh = "mini"` only names the machine once SSH resolves it.
     let mut alias = inventory.find_host("mini").unwrap().clone();
     alias.ssh_target = Some("mini".into());
+    alias.ssh_transport = fleet::desired::model::SshTransport::Openssh;
     assert_eq!(peer_for_host(&alias, None, &peers), None);
     let resolved = peer_for_host(&alias, Some("mac-mini.example.ts.net"), &peers);
     assert_eq!(resolved.map(|p| p.node_id.as_str()), Some("n4"));
+    // `tailscale ssh` reaches the written name, whatever OpenSSH resolves it to.
+    let tailscale = inventory.find_host("mini").unwrap();
+    let reached = peer_for_host(tailscale, Some("win-builder.example.ts.net"), &peers);
+    assert_eq!(reached.map(|p| p.node_id.as_str()), Some("n4"));
 }
 
 #[test]
@@ -513,6 +518,7 @@ fn debug_output_never_shows_secrets() {
 
 #[tokio::test]
 async fn ssh_aliases_resolve_to_their_tailnet_machine() {
+    use fleet::add_machine::AddMachineView;
     use fleet::model::{TailnetPeer, TailnetSnapshot};
     let inventory = INVENTORY;
     let f = fixture(inventory);
@@ -539,13 +545,13 @@ async fn ssh_aliases_resolve_to_their_tailnet_machine() {
     // Before SSH resolves the alias, the host and the tailnet machine are separate.
     assert_eq!(machine(&engine, "mini").id, "inv:mini", "before SSH is resolved");
     // The peer may be the inventory's, so Add machine waits instead of offering it.
-    assert!(engine.view().tailnet_devices.is_empty());
+    assert!(matches!(engine.view().add_machine, AddMachineView::Waiting { .. }));
     engine.desired_refresh(None).await.unwrap();
     // After: one machine, keyed by its tailnet node.
     let mini = machine(&engine, "mini");
     assert_eq!(mini.id, "ts:nMini");
     assert_eq!(mini.tailnet.unwrap().node_id, "nMini");
-    assert!(engine.view().tailnet_devices.is_empty());
+    assert_eq!(engine.view().add_machine, AddMachineView::Ready { devices: vec![] });
 }
 
 async fn review_restart(f: &Fixture) -> fleet::engine::desired::ReviewView {

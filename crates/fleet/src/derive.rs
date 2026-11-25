@@ -48,7 +48,7 @@ pub(crate) fn derive_without_issues(
     let checked = machines::Checked::build(plan);
     let gh = GithubIndex::build(config, obs, now);
     let mut matched: HashSet<String> = HashSet::new();
-    let machines::Machines { fleet, devices } =
+    let machines::Machines { fleet, add_machine } =
         machines::assemble(config, obs, plan, checked.as_ref(), &gh, &mut matched, now);
 
     let mut unmatched_runners: Vec<RunnerView> = gh
@@ -75,7 +75,7 @@ pub(crate) fn derive_without_issues(
         issues: Vec::new(),
         machines: fleet,
         unmatched_runners,
-        tailnet_devices: devices,
+        add_machine,
         queue,
         orgs: org_statuses(config, obs),
         tailnet: TailnetStatusView {

@@ -83,6 +83,16 @@ fn peer(id: &str, host: &str, os: &str, online: bool) -> TailnetPeer {
     }
 }
 
+/// The node IDs Add machine offers, or `None` while it waits or has no inventory.
+fn offered(view: &FleetView) -> Option<Vec<&str>> {
+    match &view.add_machine {
+        crate::add_machine::AddMachineView::Ready { devices } => {
+            Some(devices.iter().map(|d| d.node_id.as_str()).collect())
+        }
+        _ => None,
+    }
+}
+
 fn gh(id: u64, name: &str, status: &str, busy: bool, labels: &[&str]) -> GhRunner {
     GhRunner {
         id,
@@ -445,33 +455,83 @@ fn discovery_and_demo_cover_current_stale_offline_and_failed_ssh() {
         ["build-linux-01", "mac-mini-02", "mac-mini-03", "studio", "win-builder"]
     );
     // Peers no inventory host claims are only offered to Add machine; a phone fits no platform.
-    let devices: Vec<_> = view.tailnet_devices.iter().map(|d| d.name.as_str()).collect();
+    let crate::add_machine::AddMachineView::Ready { devices } = &view.add_machine else {
+        panic!("every demo host's device is known: {:?}", view.add_machine)
+    };
+    let devices: Vec<_> = devices.iter().map(|d| d.name.as_str()).collect();
     assert_eq!(devices, ["dev-laptop", "home-nas", "spare-ubuntu"]);
     let issues = serde_json::to_string(&view.issues).unwrap();
     assert!(devices.iter().all(|name| !issues.contains(name)), "{issues}");
 }
 
 #[test]
-fn add_machine_offers_nothing_until_inventory_ownership_is_known() {
+fn add_machine_names_the_hosts_it_waits_for() {
+    use crate::add_machine::{AddMachineView, AddMachineWait};
     let (config, obs, mut plan) = demo();
-    let offered = |plan: &crate::fleet_plan::FleetPlanInputs| {
-        derive(&config, &obs, plan, now(), DataSource::Demo)
-            .tailnet_devices
-            .len()
+    let add_machine =
+        |plan: &crate::fleet_plan::FleetPlanInputs| derive(&config, &obs, plan, now(), DataSource::Demo).add_machine;
+    let waiting = |plan: &crate::fleet_plan::FleetPlanInputs| match add_machine(plan) {
+        AddMachineView::Waiting { hosts } => hosts,
+        other => panic!("expected Add machine to wait: {other:?}"),
     };
-    assert_eq!(offered(&plan), 3);
-    // An unresolved SSH target may still claim a peer its written name doesn't match.
-    let (target, hostname) = plan.ssh_hosts.pop_first().unwrap();
-    assert_eq!(offered(&plan), 0);
-    plan.ssh_hosts.insert(target, hostname);
-    assert_eq!(offered(&plan), 3);
-    // So may a host whose `ssh = "${VAR}"` is unset, since its target is unknown.
+    assert!(matches!(add_machine(&plan), AddMachineView::Ready { devices } if devices.len() == 3));
+    // An unresolved OpenSSH alias may still claim a peer its written name doesn't match.
+    plan.ssh_hosts.remove("mac-mini-02");
+    let [AddMachineWait { host_id, reason }] = &waiting(&plan)[..] else {
+        panic!("one host waits")
+    };
+    assert_eq!(host_id, "mac-mini-02");
+    assert!(reason.contains("SSH hasn't resolved mac-mini-02"), "{reason}");
+    plan.ssh_hosts.insert("mac-mini-02".into(), "mac-mini-02".into());
+    // `tailscale ssh` doesn't use SSH resolution, so a Tailscale host never waits for it.
+    plan.ssh_hosts.remove("builder@build-linux-01.demo.ts.net");
+    assert!(matches!(add_machine(&plan), AddMachineView::Ready { .. }));
+    // A disabled host whose `ssh = "${VAR}"` is unset still owns its device, so offers wait.
     let inventory = plan.inventory.as_mut().unwrap().as_mut().unwrap();
-    inventory.hosts[0].ssh_target = None;
-    assert_eq!(offered(&plan), 0);
+    let host = inventory.hosts.iter_mut().find(|h| h.id == "studio").unwrap();
+    host.ssh_target = None;
+    host.ssh_setting = "${STUDIO_SSH}".into();
+    host.enabled = false;
+    let [AddMachineWait { host_id, reason }] = &waiting(&plan)[..] else {
+        panic!("one host waits")
+    };
+    assert_eq!(host_id, "studio");
+    assert!(reason.contains("ssh = \"${STUDIO_SSH}\" is unset"), "{reason}");
     // A broken inventory says nothing about which peers are enrolled.
     plan.inventory = Some(Err("TOML: expected a table".into()));
-    assert_eq!(offered(&plan), 0);
+    assert_eq!(add_machine(&plan), AddMachineView::NoInventory);
+}
+
+#[test]
+fn a_tailscale_host_claims_the_peer_tailscale_ssh_reaches() {
+    let mut f = Fixture::new();
+    let inventory = r#"
+[organization]
+name = "acme"
+url = "https://github.com/acme"
+runner_group = "trusted"
+
+[[hosts]]
+id = "alpha"
+platform = "linux-x64"
+ssh = "builder@alpha"
+ssh_transport = "tailscale"
+root = "~/gh-runners/acme"
+service_mode = "systemd"
+labels = ["fleet", "linux-build"]
+runners = [{ name = "alpha-01", directory = "runner-01" }]
+"#;
+    let inventory = crate::desired::inventory::parse_inventory(inventory, &Default::default()).unwrap();
+    f.plan.inventory = Some(Ok(inventory));
+    // OpenSSH maps `alpha` to a different peer, but `tailscale ssh` resolves it through MagicDNS.
+    f.plan.ssh_hosts.insert("builder@alpha".into(), "beta.ts.net".into());
+    let peers = &mut f.obs.tailscale.as_mut().unwrap().value.peers;
+    peers.push(peer("nAlpha", "alpha", "linux", true));
+    peers.push(peer("nBeta", "beta", "linux", true));
+    let view = f.view();
+    let alpha = view.machines.iter().find(|m| m.display_name == "alpha").unwrap();
+    assert_eq!(alpha.id, "ts:nAlpha");
+    assert_eq!(offered(&view), Some(vec!["nBeta"]));
 }
 
 #[test]
@@ -551,6 +611,9 @@ runners = [{ name = "second-01", directory = "runner-01" }]
     // Both host declarations are individually valid inventory entries.
     let inventory = crate::desired::inventory::parse_inventory(&inventory_text, &Default::default()).unwrap();
     f.plan.inventory = Some(Ok(inventory));
+    for target in ["builder@mini.example.ts.net", "another-user@mini.example.ts.net"] {
+        f.plan.ssh_hosts.insert(target.into(), "mini.example.ts.net".into());
+    }
     f.obs.tailscale.as_mut().unwrap().value.peers.push(TailnetPeer {
         dns_name: Some("mini.example.ts.net".into()),
         ..peer("nMini", "Mac Mini", "macOS", true)
@@ -578,7 +641,7 @@ runners = [{ name = "second-01", directory = "runner-01" }]
         .map(|m| (m.id.as_str(), m.display_name.as_str()))
         .collect();
     assert_eq!(identities, [("inv:mini", "mini"), ("inv:second", "second")]);
-    assert!(!view.tailnet_devices.iter().any(|d| d.node_id == "nMini"));
+    assert!(!offered(&view).unwrap().contains(&"nMini"));
     for machine in &view.machines {
         let MachineConnection::Error { detail } = &machine.connection else {
             panic!("conflict must be an error")

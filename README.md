@@ -69,7 +69,9 @@ always uses demo data.
 3. Your fleet is the hosts in the inventory. Only they are listed under **Machines**, checked
    over SSH, and alerted on. A tailnet device outside the inventory is never contacted.
    **Add machine** in the sidebar lists those devices by name and shows the `[[hosts]]` entry
-   to paste for each. Phones and TVs are left out.
+   to paste for each. Phones and TVs are left out. Add the first host by hand, because the
+   inventory needs one. While a host's SSH target is unset or unresolved, Add machine names
+   that host instead of offering entries.
 4. Make each inventory host reachable through your existing SSH setup, with its `ssh` target
    and `ssh_transport`. OpenSSH host keys must already be trusted. Tailscale SSH uses the
    tailnet's SSH policy.

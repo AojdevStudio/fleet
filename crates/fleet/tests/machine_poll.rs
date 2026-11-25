@@ -4,6 +4,7 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+use fleet::add_machine::AddMachineView;
 use fleet::desired::model::Host;
 use fleet::desired::remote::RemoteError;
 use fleet::engine::desired::{DesiredIo, SshTransportIdentity};
@@ -276,7 +277,7 @@ async fn tailnet_devices_outside_the_inventory_are_never_contacted_listed_or_lab
     let (_dir, engine) = fixture(fake.clone(), INVENTORY);
     engine.poll_tailscale().await;
     // Until `mini-alias` resolves, the `mini` peer may be the inventory's, so nothing is offered.
-    assert!(engine.view().tailnet_devices.is_empty());
+    assert!(matches!(engine.view().add_machine, AddMachineView::Waiting { .. }));
     engine.poll_machines().await;
     engine.poll_machines().await;
     assert_eq!(*fake.calls.lock().unwrap(), ["mini-alias", "mini-alias"]);
@@ -285,8 +286,11 @@ async fn tailnet_devices_outside_the_inventory_are_never_contacted_listed_or_lab
         view.machines.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
         ["ts:nMini"]
     );
+    let AddMachineView::Ready { devices } = &view.add_machine else {
+        panic!("{:?}", view.add_machine)
+    };
     assert_eq!(
-        view.tailnet_devices.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
+        devices.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
         ["family-pc"]
     );
     assert!(

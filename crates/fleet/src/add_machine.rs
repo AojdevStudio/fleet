@@ -1,13 +1,52 @@
 //! Add machine: the inventory entry for a tailnet device outside the inventory.
 //! Built from the tailnet snapshot alone. Nothing here contacts the device.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::desired::model::{Platform, SshTransport};
+use crate::desired::model::{Host, Platform, SshTransport};
 use crate::model::TailnetPeer;
+
+/// What Add machine can offer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(tag = "state", rename_all = "camelCase")]
+pub enum AddMachineView {
+    /// No inventory is loaded, so nothing says which devices are already in it.
+    NoInventory,
+    /// Offers wait until the app knows which tailnet device each of these hosts is.
+    /// Until then an entry could add a machine that is already in the inventory.
+    Waiting { hosts: Vec<AddMachineWait> },
+    /// Tailnet devices no inventory host claims.
+    Ready { devices: Vec<TailnetDeviceView> },
+}
+
+/// An inventory host whose tailnet device isn't known yet, and what to do about it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct AddMachineWait {
+    pub host_id: String,
+    pub reason: String,
+}
+
+/// Why `host`'s tailnet device isn't known yet, or `None` when it is. `ssh_hosts` maps each
+/// SSH target to the host name OpenSSH resolves it to. Disabled hosts count too: their device
+/// is still in the inventory, so an offer for it would add the machine twice.
+pub(crate) fn wait_reason(host: &Host, ssh_hosts: &BTreeMap<String, String>) -> Option<String> {
+    let Some(target) = &host.ssh_target else {
+        return Some(format!(
+            "ssh = \"{}\" is unset in the app's environment. Set the variable and restart the app, \
+             or write the SSH target in the inventory.",
+            host.ssh_setting
+        ));
+    };
+    (host.ssh_transport == SshTransport::Openssh && !ssh_hosts.contains_key(target)).then(|| {
+        format!("SSH hasn't resolved {target} yet. If this lasts, check that `ssh -G {target}` works on this Mac.")
+    })
+}
 
 /// A tailnet device no inventory host claims, with the `[[hosts]]` entry that adds it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]

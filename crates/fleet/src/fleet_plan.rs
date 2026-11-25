@@ -8,7 +8,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::desired::model::{DoctorCheck, FleetSnapshot, Host, Inventory, Organization, PlanItem, StatusRow};
+use crate::desired::model::{
+    DoctorCheck, FleetSnapshot, Host, Inventory, Organization, PlanItem, SshTransport, StatusRow,
+};
 use crate::model::TailnetPeer;
 
 /// A change the user can review and run.
@@ -158,11 +160,16 @@ pub struct FleetPlanInputs {
 
 /// The tailnet machine an inventory host's SSH target names. `ssh_hostname`
 /// is what SSH resolves the target to (`ssh -G`), which matters for aliases
-/// like `mini` → `mac-mini.<tailnet>.ts.net`.
+/// like `mini` → `mac-mini.<tailnet>.ts.net`. `tailscale ssh` never reads the
+/// OpenSSH config, so a Tailscale host is the peer its written name names.
 pub fn peer_for_host<'a>(host: &Host, ssh_hostname: Option<&str>, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPeer> {
     let target = host.ssh_target.as_deref()?;
     let written = target.rsplit('@').next()?;
-    ssh_hostname
+    let resolved = match host.ssh_transport {
+        SshTransport::Openssh => ssh_hostname,
+        SshTransport::Tailscale => None,
+    };
+    resolved
         .into_iter()
         .chain([written])
         .find_map(|name| peer_named(&name.to_ascii_lowercase(), peers))
