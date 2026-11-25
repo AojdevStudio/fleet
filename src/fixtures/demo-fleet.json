@@ -44,7 +44,7 @@
       "category": "inventory",
       "title": "mac-mini-02: runner plan needs attention",
       "detail": "mini-02: add macos-build; remove old-label",
-      "action": "mini-02: Add the listed labels to the runner, or remove them from the inventory.",
+      "action": "mini-02: Apply the plan to add and remove the listed labels, or change the labels in the inventory.",
       "machineId": "ts:nMini",
       "runnerKey": null,
       "stale": false,

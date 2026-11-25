@@ -625,7 +625,9 @@ pub(crate) mod rules {
         use FleetPlanAction::*;
         match action {
             Install => "Review and apply the plan to install it.",
-            ReconcileLabels => "Add the listed labels to the runner, or remove them from the inventory.",
+            ReconcileLabels => {
+                "Apply the plan to add and remove the listed labels, or change the labels in the inventory."
+            }
             AssignGroup => "Apply the plan to move it into the runner group.",
             StartService => "Apply the plan to start its service.",
             RetireLegacy => "Retire the legacy runner from the machine pane.",
