@@ -293,6 +293,32 @@ fn unreadable_history_does_not_count_as_an_alert_going_away() {
 
 #[cfg(unix)]
 #[test]
+fn history_advice_moves_the_file_aside_only_when_it_cannot_be_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut view = one_machine();
+    let broken = dir.path().join("monitoring.json");
+    std::fs::write(&broken, "not json").unwrap();
+    let unreadable = crate::monitoring::MonitorStore::load(broken).storage_error.unwrap();
+    let blocked = dir.path().join("history.json");
+    let mut store = crate::monitoring::MonitorStore::load(blocked.clone());
+    // A directory at the destination makes the save fail.
+    std::fs::create_dir(&blocked).unwrap();
+    store.maintenance(&view.machines[0], None, Utc::now()).unwrap_err();
+    let unwritable = store.storage_error.unwrap();
+    assert!(unwritable.contains(&blocked.display().to_string()), "{unwritable}");
+
+    for (error, advice) in [
+        (unreadable, "Move the history file"),
+        (unwritable, "Fix the write error"),
+    ] {
+        view.monitoring.storage_error = Some(error);
+        attach(&mut view, |_| false);
+        let action = &issue(&view, "monitoring-storage").action;
+        assert!(action.starts_with(advice), "{action}");
+    }
+}
+
+#[test]
 fn a_failed_save_changes_nothing() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();

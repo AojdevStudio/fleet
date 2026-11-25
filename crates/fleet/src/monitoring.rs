@@ -7,7 +7,7 @@ use ts_rs::TS;
 pub(crate) mod demo;
 mod state;
 mod store;
-pub(crate) use store::{EVENT_PAGE_SIZE, EVENT_RETENTION, MAX_EVENTS, MonitorStore};
+pub(crate) use store::{EVENT_PAGE_SIZE, EVENT_RETENTION, MAX_EVENTS, MonitorStore, UNREADABLE_HISTORY};
 
 /// Events retained on this Mac for up to 30 days (at most 5,000 entries).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]

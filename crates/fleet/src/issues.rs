@@ -176,17 +176,19 @@ fn fleet_issues(view: &FleetView) -> Vec<FleetIssue> {
             Tailnet,
             rules::TAILNET_ERROR,
         ),
-        (
-            "monitoring-storage",
-            "History storage has a problem",
-            &view.monitoring.storage_error,
-            Storage,
-            rules::HISTORY_STORAGE,
-        ),
     ] {
         if let Some(error) = error {
             issues.push(FleetIssue::new(id, category, title, error, rules::error(action, error)));
         }
+    }
+    if let Some(error) = &view.monitoring.storage_error {
+        issues.push(FleetIssue::new(
+            "monitoring-storage",
+            Storage,
+            "History storage has a problem",
+            error,
+            rules::history_storage(error),
+        ));
     }
     if view.tailnet.local_online == Some(false) && view.tailnet.error.is_none() {
         issues.push(FleetIssue::new(
@@ -487,14 +489,24 @@ pub(crate) mod rules {
     pub(super) const PLAN_GITHUB: &str = "Check this Mac's network and GitHub sign-in, then select Check now.";
     pub(super) const CHECKS_FAILED: &str = "Fix the error in the detail, then run Runner checks again.";
     pub(super) const TAILNET_ERROR: &str = "Check that Tailscale is installed and running on this Mac.";
-    pub(super) const HISTORY_STORAGE: &str =
-        "Move the history file named in the detail out of the way, then restart the app.";
     pub(super) const WATCH_ORG: &str = "Add the organization in Settings for live status and jobs.";
     pub(super) const ORG_SIGN_IN: &str = "Sign in to this organization again in Settings.";
     pub(super) const OPERATION_FAILED: &str = "Fix what the error names, then review the change again.";
 
     /// A finding whose fingerprint is its error text.
     pub(super) fn error(action: &str, error: &str) -> Advice {
+        advice(action, error)
+    }
+
+    /// History that can't be read is kept as is, so it has to be moved aside. A failed save
+    /// is about a file that reads fine, so the write error is the thing to fix.
+    pub(super) fn history_storage(error: &str) -> Advice {
+        let action = if error.starts_with(crate::monitoring::UNREADABLE_HISTORY) {
+            "Move the history file named in the detail out of the way, then restart the app."
+        } else {
+            "Fix the write error on the history file named in the detail, for example its permissions or a full disk. \
+             Keep the file where it is. The app tries to save again every few seconds."
+        };
         advice(action, error)
     }
 

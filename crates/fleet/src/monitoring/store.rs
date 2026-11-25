@@ -55,6 +55,9 @@ impl Default for Journal {
     }
 }
 
+/// How a storage error for history that can't be read starts. A failed save names the file too.
+pub(crate) const UNREADABLE_HISTORY: &str = "Couldn't read machine history";
+
 /// Writes only this dashboard's local file; malformed existing files are preserved.
 #[derive(Debug)]
 pub(crate) struct MonitorStore {
@@ -86,7 +89,7 @@ impl MonitorStore {
             Err(e) => (
                 Journal::default(),
                 Some(format!(
-                    "Couldn't read machine history at {}: {e} The existing file has been preserved; new events cannot be saved.",
+                    "{UNREADABLE_HISTORY} at {}: {e} The existing file has been preserved; new events cannot be saved.",
                     path.display()
                 )),
             ),
@@ -385,7 +388,7 @@ impl MonitorStore {
             crate::atomic_write::atomic_write(&self.path, &serde_json::to_vec(&self.journal)?)?;
             Ok(())
         };
-        save().map_err(|e| format!("Couldn't save machine history: {e}"))
+        save().map_err(|e| format!("Couldn't save machine history at {}: {e}", self.path.display()))
     }
 }
 
