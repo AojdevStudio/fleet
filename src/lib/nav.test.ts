@@ -12,6 +12,7 @@ describe("navigation search", () => {
     expect(flattenNav(filtered, new Set(), { unlinked: true, pools: true }).map((i) => selectionId(i.selection))).toEqual([
       "overview", "queue", "moving", "retiring", "machine:ts:nStudio", "runner:gh:acme-demo:101",
     ]);
+    expect(flattenNav(filterNavView(view, "spare"), new Set(), closed).map((i) => selectionId(i.selection)).at(-1)).toBe("add-machine");
     expect(view.machines.find((m) => m.id === "ts:nStudio")?.runners).toHaveLength(3);
   });
 
@@ -28,7 +29,7 @@ describe("navigation search", () => {
 });
 
 describe("flattenNav", () => {
-  it("lists overview, queue, rollout views, then machines with their runners", () => {
+  it("lists overview, queue, rollout views, machines with their runners, then Add machine", () => {
     const ids = flattenNav(view, new Set(), closed).map((i) => selectionId(i.selection));
     expect(ids.slice(0, 6)).toEqual(["overview", "queue", "moving", "retiring", "machine:ts:nLinux", "runner:gh:acme-demo:301"]);
     // Without a rollout list the two views are left out.
@@ -38,6 +39,8 @@ describe("flattenNav", () => {
     expect(ids).toContain("runner:inv:mac-mini-03:mini-03-01");
     expect(ids).not.toContain("runner:gh:acme-demo:501"); // unlinked group is closed
     expect(ids).not.toContain("machine:ts:nSpare"); // tailnet devices are not machines
+    expect(ids.at(-1)).toBe("add-machine");
+    expect(flattenNav({ ...view, tailnetDevices: [] }, new Set(), closed).map((i) => selectionId(i.selection))).not.toContain("add-machine");
   });
 
   it("hides runners of collapsed machines and shows the open groups", () => {
@@ -46,7 +49,7 @@ describe("flattenNav", () => {
     expect(ids).toContain("runner:gh:acme-demo:501");
     expect(ids).not.toContain("runner:gh:acme-demo:601");
     const pools = flattenNav(view, new Set(), { unlinked: false, pools: true }).map((i) => selectionId(i.selection));
-    expect(pools.slice(-2)).toEqual(["runner:gh:acme-demo:602", "runner:gh:acme-demo:601"]);
+    expect(pools.slice(-3)).toEqual(["runner:gh:acme-demo:602", "runner:gh:acme-demo:601", "add-machine"]);
   });
 });
 
@@ -55,8 +58,7 @@ describe("moveSelection", () => {
   it("steps and clamps", () => {
     expect(moveSelection(items, { kind: "overview" }, -1)).toEqual({ kind: "overview" });
     expect(moveSelection(items, { kind: "overview" }, 1)).toEqual({ kind: "queue" });
-    const last = items[items.length - 1].selection;
-    expect(moveSelection(items, last, 1)).toEqual(last);
+    expect(moveSelection(items, { kind: "add-machine" }, 1)).toEqual({ kind: "add-machine" });
   });
 });
 
@@ -64,6 +66,8 @@ describe("reconcileSelection", () => {
   it("keeps valid selections and falls back for vanished ones", () => {
     expect(reconcileSelection(view, { kind: "machine", id: "ts:nMini" })).toEqual({ kind: "machine", id: "ts:nMini" });
     expect(reconcileSelection(view, { kind: "machine", id: "ts:nSpare" })).toEqual({ kind: "overview" });
+    expect(reconcileSelection(view, { kind: "add-machine" })).toEqual({ kind: "add-machine" });
+    expect(reconcileSelection({ ...view, tailnetDevices: [] }, { kind: "add-machine" })).toEqual({ kind: "overview" });
     expect(reconcileSelection(view, { kind: "machine", id: "gone" })).toEqual({ kind: "overview" });
     expect(reconcileSelection(view, { kind: "runner", key: "gh:acme-demo:501" })).toEqual({ kind: "runner", key: "gh:acme-demo:501" });
     expect(reconcileSelection(view, { kind: "runner", key: "gone" })).toEqual({ kind: "overview" });

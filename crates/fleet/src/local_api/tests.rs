@@ -564,6 +564,8 @@ async fn schema_has_every_route_and_resolves_all_model_references() {
             .unwrap()
             .contains(&json!("queue"))
     );
+    let devices = &schema["components"]["schemas"]["FleetView"]["properties"]["tailnetDevices"];
+    assert_eq!(devices["items"]["$ref"], "#/components/schemas/TailnetDeviceView");
     for route in super::schema::endpoint_descriptions().as_object().unwrap().keys() {
         let (method, path) = route.split_once(' ').unwrap();
         assert!(

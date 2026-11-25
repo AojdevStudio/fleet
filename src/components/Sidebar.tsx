@@ -72,7 +72,10 @@ export function Sidebar({ view, filtered, selection }: { view: FleetView; filter
           <Heading title="Not linked to a machine" count={filtered.unmatchedRunners.length} open={searching || open.unlinked} onToggle={() => setOpen("unlinked", !open.unlinked)} />
           {(searching || open.unlinked) && filtered.unmatchedRunners.map((r) => <RunnerRow key={r.key} r={r} isSelected={isSelected} />)}
         </>}
-        {searching && !filtered.machines.length && !filtered.poolRunners.length && !filtered.unmatchedRunners.length && <EmptyLine>No machines or runners match “{query}”.</EmptyLine>}
+        {filtered.tailnetDevices.length > 0 && <div className="mt-2">
+          <Row sel={{ kind: "add-machine" }} selected={isSelected({ kind: "add-machine" })} icon={<Icon name="plus" />} label="Add machine" title="Tailnet devices that no inventory host names" trailing={filtered.tailnetDevices.length} />
+        </div>}
+        {searching && !filtered.machines.length && !filtered.poolRunners.length && !filtered.unmatchedRunners.length && !filtered.tailnetDevices.length && <EmptyLine>No machines or runners match “{query}”.</EmptyLine>}
       </nav>
       <Footer view={view} />
     </aside>

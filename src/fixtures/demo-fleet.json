@@ -2062,6 +2062,18 @@
       "desired": null
     }
   ],
+  "tailnetDevices": [
+    {
+      "nodeId": "nNas",
+      "name": "home-nas",
+      "inventoryEntry": "[[hosts]]\nid = \"home-nas\"\nplatform = \"linux-x64\"\nssh = \"home-nas.demo.ts.net\"\nssh_transport = \"tailscale\"\nroot = \"~/gh-runners/acme-demo\"\nservice_mode = \"systemd\"\n"
+    },
+    {
+      "nodeId": "nSpare",
+      "name": "spare-ubuntu",
+      "inventoryEntry": "[[hosts]]\nid = \"spare-ubuntu\"\nplatform = \"linux-x64\"\nssh = \"spare-ubuntu.demo.ts.net\"\nssh_transport = \"tailscale\"\nroot = \"~/gh-runners/acme-demo\"\nservice_mode = \"systemd\"\n"
+    }
+  ],
   "queue": {
     "jobs": [
       {

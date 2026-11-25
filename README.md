@@ -71,7 +71,11 @@ always uses demo data.
    over SSH (a `localhost` host for the Mac the app runs on is read locally instead), and
    alerted on. A tailnet device outside the inventory is never contacted. A machine joins the
    fleet when you add a `[[hosts]]` entry for it to the inventory
-   ([docs/FLEET.md](docs/FLEET.md) describes the format).
+   ([docs/FLEET.md](docs/FLEET.md) describes the format). Add the first host by hand. After
+   that, **Add machine** in the sidebar lists your other tailnet devices by name and shows the
+   `[[hosts]]` entry to paste for each. Phones and TVs are left out, and so is this Mac and any
+   device an inventory host appears to name. Check that a device isn't already in the inventory
+   under another name before you paste its entry.
 4. Make each inventory host the app reads over SSH reachable through your existing SSH setup,
    with its `ssh` target and `ssh_transport`. OpenSSH host keys must already be trusted.
    Tailscale SSH uses the tailnet's SSH policy. A `localhost` host for the Mac the app runs on

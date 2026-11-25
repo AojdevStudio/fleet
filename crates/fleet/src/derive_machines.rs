@@ -1,8 +1,10 @@
 //! Assembling machines. Each inventory host becomes one machine, joined with
 //! its tailnet peer, SSH observations and GitHub runners. A tailnet peer no
-//! host claims is never observed.
+//! host claims is only offered to Add machine, never observed.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+
+use crate::add_machine::TailnetDeviceView;
 
 use crate::machine::{MachineReport, OsFamily};
 use chrono::{DateTime, Utc};
@@ -16,6 +18,11 @@ use crate::fleet_plan::{
     peer_for_host,
 };
 use crate::model::*;
+
+pub(super) struct Machines {
+    pub fleet: Vec<MachineView>,
+    pub devices: Vec<TailnetDeviceView>,
+}
 
 /// One inventory host before it's turned into a view.
 struct Slot<'a> {
@@ -73,7 +80,7 @@ pub(super) fn assemble(
     gh: &GithubIndex,
     matched: &mut HashSet<String>,
     now: DateTime<Utc>,
-) -> Vec<MachineView> {
+) -> Machines {
     let snapshot = obs.tailscale.as_ref().map(|t| &t.value);
     let self_node = snapshot.and_then(|s| s.self_node_id.as_deref());
     let peers: Vec<TailnetPeer> = snapshot
@@ -85,9 +92,12 @@ pub(super) fn assemble(
                 .collect()
         })
         .unwrap_or_default();
-    // Without a loaded inventory there are no machines.
+    // Without a loaded inventory nothing says which devices are already in it.
     let Some(inventory) = plan.inventory.as_ref().and_then(|r| r.as_ref().ok()) else {
-        return Vec::new();
+        return Machines {
+            fleet: Vec::new(),
+            devices: Vec::new(),
+        };
     };
     let ctx = DeriveCtx {
         obs,
@@ -117,7 +127,10 @@ pub(super) fn assemble(
         fleet.push(view);
     }
     fleet.sort_by_key(|m| (m.display_name.to_lowercase(), m.id.clone()));
-    fleet
+    Machines {
+        fleet,
+        devices: crate::add_machine::tailnet_devices(&peers, inventory, &plan.ssh_hosts),
+    }
 }
 
 /// One slot per inventory host, matched to its tailnet peer.

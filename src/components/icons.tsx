@@ -57,6 +57,12 @@ export function Icon({ name, size = 14 }: { name: IconName; size?: number }) {
           <path d="M7 5.8l2.6 2.2L7 10.2z" fill="currentColor" stroke="none" />
         </svg>
       );
+    case "plus":
+      return (
+        <svg {...common}>
+          <path d="M8 3v10M3 8h10" />
+        </svg>
+      );
     case "alert":
       return (
         <svg {...common}>
@@ -115,6 +121,7 @@ type IconName =
   | "refresh"
   | "machine"
   | "runner"
+  | "plus"
   | "alert"
   | "external"
   | "settings"

@@ -135,8 +135,21 @@ Windows:     C:\gh-runners\acme\runner-01
 Machines are the inventory's hosts. Each one is matched to its tailnet machine (as `ssh -G`
 resolves its target) and listed with its runners: declared runners, legacy runners
 still present, runners pending decommission, and GitHub runners carrying its `host-*` label.
-A tailnet device outside the inventory is never listed, contacted or alerted on. A machine joins
-the fleet when you add a `[[hosts]]` entry for it, in the format described above.
+A tailnet device outside the inventory is never a machine, and is never contacted or alerted on.
+A machine joins the fleet when you add a `[[hosts]]` entry for it, in the format described above.
+The inventory needs at least one host, so add the first one by hand.
+
+**Add machine** in the sidebar lists the other macOS, Linux and Windows devices on your tailnet
+by name and shows the `[[hosts]]` entry to paste for each. It reads only the tailnet snapshot the
+app already holds and never contacts a listed device. Tailscale doesn't report a machine's CPU,
+so check `platform` before you save: a Windows entry may need `windows-arm64`, and an Intel Mac
+can't be added, since only `darwin-arm64` is supported. Add machine leaves out this Mac, the
+device each machine row shows, and a device whose MagicDNS name or tailnet IP is already a
+host's SSH target. For a host matched to no device, it also leaves out any device whose name or
+tailnet IP matches the host's `id`, `ssh` target or resolved SSH hostname, disabled hosts
+included. It hides a device on any sign of a match, so a hidden device can still be added by
+hand. An alias that resolves to a LAN address doesn't match, so check that a device isn't
+already in the inventory under another name before you paste its entry.
 
 - **Check now** (overview) or **Check** (a machine) reads GitHub with `gh` and probes hosts over
   SSH (`tailscale ssh` for `ssh_transport = "tailscale"`). The app checks once at launch, then

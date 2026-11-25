@@ -47,6 +47,16 @@ Inventory SSH aliases resolve through `ssh -G`. Machines are the inventory's hos
 device no host claims gets no machine view, no SSH read, no issue and no monitoring state. A
 machine joins the fleet only when the inventory gets a `[[hosts]]` entry for it
 ([FLEET.md](FLEET.md)). Without a loaded inventory there are no machines.
+Add machine (`add_machine.rs`) lists desktop and server devices by name from the tailnet
+snapshot, in `FleetView.tailnetDevices`, each with a `[[hosts]]` entry whose ID no inventory host
+or other entry uses. `tailnet_devices` holds the whole matching rule in one function. This Mac's
+own node is never a peer, so it is never offered. A host that `peer_for_host` matches leaves out
+the device its machine row shows. A device whose exact MagicDNS name or tailnet IP is already a
+host's SSH target is never offered, so a pasted entry can't repeat one. For a host matched to no
+device, any device the host plausibly names (by `id`, written SSH target or `ssh -G` hostname,
+also by first DNS label) is left out. Disabled hosts count. The rule hides on any sign of a
+match, and an alias that resolves to a LAN name unlike the device's names doesn't hide it, so the
+pane asks the user to check before pasting. Nothing is offered without a loaded inventory.
 Monitoring keys history by inventory host. History that older versions saved under a tailnet key
 (`ts:<node id>`) belonged to devices outside the inventory, so it is dropped from memory when the
 history loads and from the file at the next history save.

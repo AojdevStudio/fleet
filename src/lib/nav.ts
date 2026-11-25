@@ -9,7 +9,8 @@ export type Selection =
   | { kind: "moving" }
   | { kind: "retiring" }
   | { kind: "machine"; id: string }
-  | { kind: "runner"; key: string };
+  | { kind: "runner"; key: string }
+  | { kind: "add-machine" };
 
 export function selectionId(s: Selection): string {
   switch (s.kind) {
@@ -17,6 +18,7 @@ export function selectionId(s: Selection): string {
     case "queue":
     case "moving":
     case "retiring":
+    case "add-machine":
       return s.kind;
     case "machine":
       return `machine:${s.id}`;
@@ -68,6 +70,7 @@ export function filterNavView(view: FleetView, query: string): FleetView {
     }),
     poolRunners: view.poolRunners.filter((r) => runnerMatches(r) || matches([r.place])),
     unmatchedRunners: view.unmatchedRunners.filter(runnerMatches),
+    tailnetDevices: view.tailnetDevices.filter((d) => matches([d.name])),
   };
 }
 
@@ -87,6 +90,7 @@ export function flattenNav(view: FleetView, collapsed: ReadonlySet<string>, open
   if (open.unlinked) {
     for (const r of view.unmatchedRunners) items.push({ selection: { kind: "runner", key: r.key } });
   }
+  if (view.tailnetDevices.length > 0) items.push({ selection: { kind: "add-machine" } });
   return items;
 }
 
@@ -106,6 +110,8 @@ export function reconcileSelection(view: FleetView, s: Selection): Selection {
       return findMachine(view, s.id) ? s : { kind: "overview" };
     case "runner":
       return findRunner(view, s.key) ? s : { kind: "overview" };
+    case "add-machine":
+      return view.tailnetDevices.length > 0 ? s : { kind: "overview" };
     case "moving":
     case "retiring":
       return view.rollout.length > 0 ? s : { kind: "overview" };

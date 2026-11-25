@@ -380,6 +380,8 @@ pub struct FleetView {
     /// GitHub runners in a runner-up place, each with its `place`.
     #[serde(default)]
     pub pool_runners: Vec<RunnerView>,
+    /// Tailnet devices no inventory host names, offered by Add machine. Never contacted.
+    pub tailnet_devices: Vec<crate::add_machine::TailnetDeviceView>,
     pub queue: QueueView,
     /// Desired state from `inventory/fleet.toml`: errors, last check, the current change.
     pub plan: crate::fleet_plan::FleetPlanStatus,

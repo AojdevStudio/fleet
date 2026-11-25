@@ -29,7 +29,7 @@ pub(super) async fn index(Extension(s): Extension<Snapshot>, Parameters(_): Para
             "stale": "Last known observations, not current facts. Missing data never means zero or recovered.",
             "activity": "busy | idle | offline | unknown; busy and idle require fresh GitHub data.",
             "currentJob": "Only populated when GitHub links the job to the runner; repo filters on runners inspect this field.",
-            "machines": "Machines are the inventory's hosts. Tailnet devices outside the inventory are never machines and are never contacted.",
+            "machines": "Machines are the inventory's hosts. Tailnet devices outside the inventory are never machines, are never contacted, and appear only in tailnetDevices on /v1/fleet.",
             "identifiers": "Exact IDs take precedence, followed by inventory aliases, then names. Ambiguous names return 409 with candidate IDs.",
             "pagination": "Lists are sorted by stable ID with exclusive after and nextCursor. Events are newest first with exclusive before. Restart list pagination if revision changes.",
             "revision": "Opaque fingerprint of the fleet snapshot excluding generatedAt. ETags describe each response. Poll /v1/changes?since=revision or use If-None-Match on GET.",

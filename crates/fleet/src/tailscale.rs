@@ -151,6 +151,8 @@ mod tests {
         );
         assert_eq!(snap.tailnet_name.as_deref(), Some("example.github"));
         assert_eq!(snap.peers.len(), 3);
+        // This Mac is never one of its own peers, so Add machine can't offer it.
+        assert!(snap.peers.iter().all(|p| p.node_id != "nSelf"));
         let mini = snap.peers.iter().find(|p| p.node_id == "nMini").unwrap();
         assert_eq!(mini.dns_name.as_deref(), Some("mac-mini.tail1.ts.net"));
         assert_eq!(mini.last_seen, None);
