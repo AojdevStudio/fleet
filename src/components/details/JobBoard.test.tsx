@@ -23,7 +23,7 @@ describe("job board", () => {
     for (const q of view.queue.jobs) expect(html).toContain(`${q.job.name}`);
     expect(html.split(stuck.stuck!.detail).length - 1).toBe(7);
     for (const title of ["Running now", "Up next", "Stuck"]) {
-      expect(html).toMatch(new RegExp(`<div role="region" aria-label="${title}" tabindex="0" class="max-h-\\[360px\\][^"]*overflow-y-auto`));
+      expect(html).toMatch(new RegExp(`<div role="region" aria-label="${title}" tabindex="0" data-arrow-scroll="true" class="max-h-\\[360px\\][^"]*overflow-y-auto`));
     }
   });
 

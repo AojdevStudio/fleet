@@ -70,7 +70,7 @@ function Column({ title, tone, count, note, empty, children }: {
       </div>
       {count === 0 ? <EmptyLine>{empty}</EmptyLine> : (
         // Bounded so a long backlog keeps the rest of the overview in reach. Focusable so arrow keys scroll it.
-        <div role="region" aria-label={title} tabIndex={0}
+        <div role="region" aria-label={title} tabIndex={0} data-arrow-scroll
           className={`max-h-[360px] divide-y overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${alert ? "divide-warn/15" : "divide-line"}`}>
           {children}
         </div>

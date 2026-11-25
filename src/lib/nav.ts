@@ -107,3 +107,8 @@ export function reconcileSelection(view: FleetView, s: Selection): Selection {
       return s;
   }
 }
+
+/** True when the focused element uses arrow keys itself: a text field, or a list that scrolls, such as a job board column. */
+export function keepsArrowKeys(target: EventTarget | null): boolean {
+  return target !== null && "closest" in target && (target as Element).closest("input, textarea, [data-arrow-scroll]") !== null;
+}
