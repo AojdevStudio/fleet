@@ -128,3 +128,32 @@ fn read_script_quotes_paths_and_only_reads() {
     }
     assert!(!read_script(&config, false).contains("tart"));
 }
+
+fn place(id: &str) -> PlaceView {
+    PlaceView {
+        id: id.into(),
+        machine: "ci-linux".into(),
+        provider: "docker".into(),
+        pools: vec!["central-linux".into()],
+        state: PlaceState::Busy,
+        detail: None,
+    }
+}
+
+#[test]
+fn a_pool_runner_links_to_the_place_its_name_names() {
+    let places = [place("ci-linux-1"), place("ci-linux-10")];
+    let id = |name: &str| place_for_runner(name, &places).map(|p| p.id.as_str());
+    assert_eq!(id("runner-up-ci-linux-1-1795573483"), Some("ci-linux-1"));
+    // The longest place id wins: ci-linux-1 never claims ci-linux-10's runners.
+    assert_eq!(id("runner-up-ci-linux-10-1795573483"), Some("ci-linux-10"));
+    assert_eq!(id("runner-up-ci-linux-4-1795573483"), None, "unknown place id");
+    assert_eq!(id("runner-up-ci-linux-1-"), None, "no number");
+    assert_eq!(id("runner-up-ci-linux-1-12a"), None, "not a number");
+    assert_eq!(id("ci-linux-1-1795573483"), None, "no runner-up prefix");
+    assert_eq!(
+        place_for_runner("runner-up-ci-linux-1-1795573483", &[]),
+        None,
+        "no coordinator read"
+    );
+}

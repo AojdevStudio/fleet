@@ -3,7 +3,7 @@ import { diagnosticSummary, diagnosticWarnings } from "../../lib/diagnostics";
 import { formatBytes, formatPercent, formatUptime, timeAgo } from "../../lib/format";
 import { diskUsedFraction, memoryUsedFraction, primaryDisk } from "../../lib/health";
 import { useNow } from "../../hooks";
-import { machineDot, machineSummary, machineTooltip } from "../../lib/status";
+import { machineDot, machineSummary, machineTooltip, THIS_MAC } from "../../lib/status";
 import { useUi } from "../../store";
 import { LinkRow, LinkTable } from "../Table";
 import { EmptyLine, Meter, StatusDot } from "../ui";
@@ -40,6 +40,7 @@ export function MachineTable({ machines }: { machines: MachineView[] }) {
               <span className="min-w-0">
                 <span className="block truncate font-medium">{m.displayName}</span>
                 <span className="block truncate font-mono text-[11px] text-ink-2">{m.desired?.host.platform ?? m.os ?? m.host}</span>
+                {m.thisMac && <span className="block truncate text-[11px] text-accent">{THIS_MAC}</span>}
                 {h?.stale && <span className="block text-[11px] text-warn">as of {timeAgo(h.asOf, now)}</span>}
               </span>
             </>}

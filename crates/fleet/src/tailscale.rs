@@ -89,27 +89,24 @@ pub fn parse_status(json: &str) -> Result<TailnetSnapshot, String> {
     {
         return Err(format!("Tailscale is not connected (state: {state})"));
     }
-    let peers = s
-        .peer
-        .into_values()
-        .map(|n| TailnetPeer {
-            node_id: n.id,
-            hostname: n.host_name,
-            dns_name: Some(n.dns_name.trim_end_matches('.').to_string()).filter(|d| !d.is_empty()),
-            os: n.os,
-            ips: n.tailscale_i_ps,
-            online: n.online,
-            // Tailscale reports the zero time for peers it has never seen offline.
-            last_seen: n.last_seen.filter(|t| t.timestamp() > 0),
-            tags: n.tags,
-            ssh_host_keys: n.ssh_host_keys,
-        })
-        .collect();
+    let to_peer = |n: Node| TailnetPeer {
+        node_id: n.id,
+        hostname: n.host_name,
+        dns_name: Some(n.dns_name.trim_end_matches('.').to_string()).filter(|d| !d.is_empty()),
+        os: n.os,
+        ips: n.tailscale_i_ps,
+        online: n.online,
+        // Tailscale reports the zero time for peers it has never seen offline.
+        last_seen: n.last_seen.filter(|t| t.timestamp() > 0),
+        tags: n.tags,
+        ssh_host_keys: n.ssh_host_keys,
+    };
+    // This Mac's own node is listed too, so an inventory host can match it.
     Ok(TailnetSnapshot {
         local_online: s.self_.as_ref().map(|n| n.online),
-        self_node_id: s.self_.map(|n| n.id),
+        self_node_id: s.self_.as_ref().map(|n| n.id.clone()),
         tailnet_name: s.current_tailnet.and_then(|t| t.name),
-        peers,
+        peers: s.self_.into_iter().chain(s.peer.into_values()).map(to_peer).collect(),
     })
 }
 
@@ -138,7 +135,9 @@ mod tests {
         let snap = parse_status(json).unwrap();
         assert_eq!(snap.self_node_id.as_deref(), Some("nSelf"));
         assert_eq!(snap.tailnet_name.as_deref(), Some("example.github"));
-        assert_eq!(snap.peers.len(), 3);
+        assert_eq!(snap.peers.len(), 4);
+        let this_mac = snap.peers.iter().find(|p| p.node_id == "nSelf").unwrap();
+        assert_eq!(this_mac.dns_name.as_deref(), Some("dev-laptop.tail1.ts.net"));
         let mini = snap.peers.iter().find(|p| p.node_id == "nMini").unwrap();
         assert_eq!(mini.dns_name.as_deref(), Some("mac-mini.tail1.ts.net"));
         assert_eq!(mini.last_seen, None);

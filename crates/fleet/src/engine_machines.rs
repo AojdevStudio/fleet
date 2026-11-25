@@ -57,7 +57,14 @@ impl Engine {
         self
     }
 
+    /// Replace the local runner for the host that is this Mac (tests).
+    pub fn with_this_mac_source(mut self, source: Arc<dyn crate::this_mac::LocalSource>) -> Self {
+        self.this_mac = source;
+        self
+    }
+
     /// Read health and runner state of enabled inventory hosts, with at most four concurrent SSH sessions.
+    /// The host that is this Mac is read locally instead.
     /// Concurrent refresh requests coalesce; failures preserve the last good data.
     pub async fn poll_machines(&self) {
         let Ok(_poll) = self.machine_poll.try_lock() else {
@@ -86,13 +93,16 @@ impl Engine {
             .into_iter()
             .filter(|m| machine.is_none_or(|id| m.id == id || m.preferences_key() == id))
             .filter(|m| m.tailnet.as_ref().is_none_or(|p| p.online))
-            .filter_map(|m| m.desired.map(|d| d.host))
-            .filter(|host| host.enabled)
-            .map(|host| (inventory_machine_key(&host.id), host))
+            .filter_map(|m| m.desired.map(|d| (d.host, m.this_mac)))
+            .filter(|(host, _)| host.enabled)
+            .map(|(host, this_mac)| (inventory_machine_key(&host.id), host, this_mac))
             .collect::<Vec<_>>();
-        let source = &self.machine_source;
-        let mut reads = stream::iter(targets.into_iter().map(|(id, target)| {
-            let source = source.clone();
+        let mut reads = stream::iter(targets.into_iter().map(|(id, target, this_mac)| {
+            let source: Arc<dyn MachineSource> = if this_mac {
+                self.this_mac.clone()
+            } else {
+                self.machine_source.clone()
+            };
             async move {
                 let inspected = target.clone();
                 let result = tokio::task::spawn_blocking(move || source.inspect(&inspected))

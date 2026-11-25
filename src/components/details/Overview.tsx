@@ -54,7 +54,7 @@ export function Overview({ view }: { view: FleetView }) {
         <MachineTable machines={machines} />
       </Section>
 
-      {view.pools && <Pools pools={view.pools} />}
+      {view.pools && <Pools pools={view.pools} view={view} />}
       {view.unmatchedRunners.length > 0 && <Unlinked view={view} />}
       <EventTimeline key={view.source} view={view} latest={view.monitoring.events} />
       {(view.plan.organization || view.plan.controlChecks.length > 0) && (

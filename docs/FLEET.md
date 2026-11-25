@@ -284,6 +284,26 @@ are verified. Don't also enable `services.github-runners` for inventory runners.
 
 3. In the app: **Check now**, then **Run checks** for the new host, then **Review apply…**.
 
+### The Mac the app runs on
+
+The app can list the Mac it runs on as a fleet machine without SSH to itself, so Remote Login
+can stay off. A host is this Mac when its written `ssh` target is `localhost`, `127.0.0.1` or
+`::1`, or when its SSH target names this Mac's own tailnet node. A Windows host never is. For
+that host the app runs the same health probe, runner probe, checks and runner scripts as local
+processes (`/bin/bash -s`) instead of over SSH. Its runners link by their `host-<id>` label as
+on any host.
+
+```toml
+[[hosts]]
+id = "macbook"
+platform = "darwin-arm64"
+ssh = "localhost"
+root = "~/gh-runners/acme"
+service_mode = "launchagent"
+labels = ["fleet", "macos-build", "host-macbook"]
+runners = []
+```
+
 ## Replace and retire a runner
 
 Never move or rename a configured runner directory: LaunchAgent plists hold absolute paths.
@@ -369,6 +389,14 @@ file over the host's SSH path. On a Mac it also runs `tart list`. The overview s
 pool's places and how many are free, busy or unavailable, the waiting jobs and the running
 tart VMs. `GET /v1/pools` on the local API returns the same data. Nothing here changes the
 coordinator.
+
+runner-up registers each one-job runner on GitHub as `runner-up-<place id>-<number>`. The app
+shows such a runner under its place in the pools section, not under **Not linked to a
+machine**. The place id is the text between `runner-up-` and the last dash, and it must be a
+place the coordinator reported, so `ci-linux-1` never claims `runner-up-ci-linux-10-…`. Before
+the coordinator's first read there are no places, and these runners stay unlinked. A pool
+runner still counts in the runner totals and shows under **Running now** while it works.
+`GET /v1/runners` gives each one a `place`.
 
 ## Rollout to the central pools
 

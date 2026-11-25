@@ -98,6 +98,7 @@ mod tests {
             name: name.into(),
             org: org.map(str::to_string),
             machine_id: None,
+            place: None,
             installed: Tri::Unknown,
             connected: Tri::Unknown,
             activity: RunnerActivity::Idle,

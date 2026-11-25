@@ -12,6 +12,13 @@ describe("job board", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it("shows a busy pool runner under Running now", () => {
+    const view = previewFleet();
+    const pool = view.poolRunners.find((r) => r.place === "ci-linux-1")!;
+    expect(view.unmatchedRunners).not.toContainEqual(pool);
+    expect(jobBoard(view).running.map((r) => r.key)).toContain(pool.key);
+  });
+
   it("covers every stuck reason in the demo data", () => {
     const reasons = jobBoard(previewFleet()).stuck.map((q) => q.stuck?.reason).sort();
     expect(reasons).toEqual(["noLabelMatch", "otherRepository", "runnersOffline", "waitedPastLimit"]);

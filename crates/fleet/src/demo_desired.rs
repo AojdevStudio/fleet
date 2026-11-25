@@ -69,6 +69,16 @@ service_mode = "launchagent"
 labels = ["fleet", "macos-build"]
 runners = [{ name = "mini-03-01", directory = "runner-01" }]
 
+# The Mac the app runs on: read locally, without SSH.
+[[hosts]]
+id = "dev-laptop"
+platform = "darwin-arm64"
+ssh = "dev-laptop"
+root = "~/gh-runners/acme-demo"
+service_mode = "launchagent"
+labels = ["fleet", "macos-build"]
+runners = []
+
 [[rollout]]
 repo = "acme-demo/web"
 state = "merged"

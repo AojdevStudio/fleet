@@ -4,7 +4,7 @@ import type { MachineView } from "../../bindings/MachineView";
 import { useNow } from "../../hooks";
 import { operationRunning, requestTargetsMachine } from "../../lib/desired";
 import { timeAgo } from "../../lib/format";
-import { activityCounts, machineStatus } from "../../lib/status";
+import { activityCounts, machineStatus, THIS_MAC } from "../../lib/status";
 import { isLive } from "../../lib/tauri";
 import { Button, Callout, Card, Pill, Section } from "../ui";
 import { Icon } from "../icons";
@@ -37,7 +37,7 @@ export function MachineDetail({ machine: m, view }: { machine: MachineView; view
   const os = m.osVersion ?? (m.os ? OS_NAME[m.os] : null);
   const subtitle = <>
     {hostname && <><CopyValue value={hostname} label="Hostname" /> · </>}
-    <CopyValue value={address} label="Address" />{os && ` · ${os}`}
+    <CopyValue value={address} label="Address" />{os && ` · ${os}`}{m.thisMac && ` · ${THIS_MAC}`}
   </>;
 
   return (
@@ -80,12 +80,14 @@ export function MachineDetail({ machine: m, view }: { machine: MachineView; view
           checkedAt={d.checksAt}
           running={view.plan.doctorRunning}
           live={live}
-          notRun="Read-only over SSH: identity, prerequisites, disk and power settings (and auto-logon for logon-task hosts)."
+          notRun={m.thisMac
+            ? "Read-only on this Mac, without SSH: identity, prerequisites, disk and power settings."
+            : "Read-only over SSH: identity, prerequisites, disk and power settings (and auto-logon for logon-task hosts)."}
         />
       )}
 
       {m.warnings.length > 0 && (
-        <Section title="SSH check notes" count={m.warnings.length}>
+        <Section title={m.thisMac ? "Check notes" : "SSH check notes"} count={m.warnings.length}>
           <Card className="px-4 py-3 text-[12px] text-ink-2 selectable">
             {m.warnings.map((w) => (
               <div key={w}>{w}</div>
@@ -109,7 +111,7 @@ function ConnectionNotice({ m, action }: { m: MachineView; action?: string }) {
   switch (c.kind) {
     case "stale":
       return (
-        <Callout tone="warn" title={`Showing the last SSH read, from ${timeAgo(c.checkedAt, now)}`}>
+        <Callout tone="warn" title={`Showing the last ${m.thisMac ? "local" : "SSH"} read, from ${timeAgo(c.checkedAt, now)}`}>
           {c.reason} Health below is not current.
           {action && <ActionText action={action} />}
         </Callout>
@@ -124,7 +126,7 @@ function ConnectionNotice({ m, action }: { m: MachineView; action?: string }) {
     case "error":
       // The inventory check reports the same failure above.
       if (m.desired?.error === c.detail) return null;
-      return <Callout tone="bad" title="Couldn't read this machine over SSH">{c.detail}{action && <ActionText action={action} />}</Callout>;
+      return <Callout tone="bad" title={m.thisMac ? "Couldn't read this Mac" : "Couldn't read this machine over SSH"}>{c.detail}{action && <ActionText action={action} />}</Callout>;
     default:
       return null;
   }

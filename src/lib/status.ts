@@ -95,10 +95,13 @@ export function machineDot(m: MachineView): StatusLabel {
   return working ? { ...status, tone: "busy" } : status;
 }
 
-/** Hover text for a machine: its name and personal description. */
+/** Hover text for a machine: its name, personal description, and whether it runs the app. */
 export function machineTooltip(m: MachineView): string {
-  return [m.displayName, m.description].filter(Boolean).join("\n");
+  return [m.displayName, m.description, m.thisMac && THIS_MAC].filter(Boolean).join("\n");
 }
+
+/** Shown wherever the machine the app runs on is named. */
+export const THIS_MAC = "This Mac runs the app";
 
 /** Tailscale state for display: "checking" until the first result arrives. */
 export function tailnetState(t: TailnetStatusView): { kind: "ok" | "checking" | "error"; text: string } {

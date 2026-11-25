@@ -22,6 +22,7 @@ struct Slot<'a> {
     peer: Option<&'a TailnetPeer>,
     host: &'a Host,
     identity_error: Option<String>,
+    this_mac: bool,
 }
 
 /// The last check's status rows and plan items, by runner and by host.
@@ -73,16 +74,7 @@ pub(super) fn assemble(
     now: DateTime<Utc>,
 ) -> Vec<MachineView> {
     let snapshot = obs.tailscale.as_ref().map(|t| &t.value);
-    let self_node = snapshot.and_then(|s| s.self_node_id.as_deref());
-    let peers: Vec<TailnetPeer> = snapshot
-        .map(|s| {
-            s.peers
-                .iter()
-                .filter(|p| Some(p.node_id.as_str()) != self_node)
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default();
+    let peers: &[TailnetPeer] = snapshot.map_or(&[], |s| &s.peers);
     // Without a loaded inventory there are no machines.
     let Some(inventory) = plan.inventory.as_ref().and_then(|r| r.as_ref().ok()) else {
         return Vec::new();
@@ -96,7 +88,7 @@ pub(super) fn assemble(
         now,
     };
 
-    let slots = slots(&peers, inventory, &plan.ssh_hosts);
+    let slots = slots(snapshot, peers, inventory, &plan.ssh_hosts);
     let mut fleet = Vec::new();
     for slot in &slots {
         let mut view = machine_view(slot, &ctx, matched);
@@ -119,6 +111,7 @@ pub(super) fn assemble(
 
 /// One slot per inventory host, matched to its tailnet peer.
 fn slots<'a>(
+    tailnet: Option<&TailnetSnapshot>,
     peers: &'a [TailnetPeer],
     inventory: &'a Inventory,
     ssh_hosts: &BTreeMap<String, String>,
@@ -137,6 +130,7 @@ fn slots<'a>(
             peer,
             host,
             identity_error: None,
+            this_mac: crate::this_mac::is_this_mac(host, resolved, tailnet),
         });
     }
 
@@ -224,6 +218,7 @@ fn machine_view(slot: &Slot<'_>, ctx: &DeriveCtx<'_>, matched: &mut HashSet<Stri
         ),
         os_version: report.and_then(|r| r.value.os_version.clone()),
         tailnet: slot.peer.cloned(),
+        this_mac: slot.this_mac,
         connection,
         health,
         diagnostics: report.map(|r| crate::machine_diagnostics::MachineDiagnostics {

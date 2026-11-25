@@ -12,7 +12,11 @@ export type RunnerView = {
  * `gh:<owner>/<repo>:<id>` for a repository's runner, or
  * `inv:<host>:<runner>` for an inventory runner GitHub doesn't list.
  */
-key: string, name: string, org: string | null, machineId: string | null, installed: Tri, connected: Tri, activity: RunnerActivity, github: GithubRunnerFacts | null, local: LocalRunnerFacts | null, 
+key: string, name: string, org: string | null, machineId: string | null, 
+/**
+ * The runner-up place this pool runner runs in.
+ */
+place: string | null, installed: Tri, connected: Tri, activity: RunnerActivity, github: GithubRunnerFacts | null, local: LocalRunnerFacts | null, 
 /**
  * Only set when the GitHub jobs API actually links a job to this runner.
  */

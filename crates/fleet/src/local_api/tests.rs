@@ -43,15 +43,20 @@ async fn index_and_reads() {
     assert_eq!(body["source"], "demo");
 
     let (_, body) = call(&e, get("/v1/summary")).await;
-    assert_eq!(body["summary"]["machines"], 5);
+    assert_eq!(body["summary"]["machines"], 6);
 
     let (_, body) = call(&e, get("/v1/machines/studio")).await;
     assert_eq!(body["displayName"], "studio");
 
     let (_, body) = call(&e, get("/v1/runners")).await;
     let runners = body["runners"].as_array().unwrap();
-    // Inventory runners, a retained legacy runner, and one hosted pool runner.
-    assert_eq!(runners.len(), 9);
+    // Inventory runners, a retained legacy runner, two runner-up pool runners and one unlinked runner.
+    assert_eq!(runners.len(), 11);
+    assert!(
+        runners
+            .iter()
+            .any(|r| r["place"] == "ci-linux-1" && r["machineName"].is_null())
+    );
     assert!(
         runners
             .iter()
@@ -328,7 +333,7 @@ async fn metadata_scopes_filters_and_host_plans_are_complete() {
     let (_, all) = call(&engine, get("/v1/machines")).await;
     assert_eq!(
         (all["machines"].as_array().unwrap().len(), all["total"].as_u64()),
-        (5, Some(5))
+        (6, Some(6))
     );
     // Machines are the inventory's hosts only; the discovered scope and endpoint are gone.
     assert_eq!(

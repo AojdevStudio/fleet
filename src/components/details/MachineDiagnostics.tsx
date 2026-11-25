@@ -20,7 +20,7 @@ export function MachineDiagnostics({ machine: m }: { machine: MachineView }) {
   const d = m.diagnostics;
   return <Section title="Machine diagnostics" action={<span className="text-[12px] text-ink-2">{diagnosticSummary(m)}</span>}>
     <p className={`mb-3 text-[12px] ${d?.stale ? "text-warn" : "text-ink-2"}`}>
-      {d ? `${d.stale ? "Last successful read" : "Checked"} ${timeAgo(d.asOf, now)}. ${d.stale ? "These findings may have changed. " : ""}Read automatically over SSH; Check now refreshes them.`
+      {d ? `${d.stale ? "Last successful read" : "Checked"} ${timeAgo(d.asOf, now)}. ${d.stale ? "These findings may have changed. " : ""}Read automatically ${m.thisMac ? "on this Mac" : "over SSH"}; Check now refreshes them.`
         : m.connection.kind === "disabled" ? "Automatic inspection is disabled for this machine in the inventory."
         : "Diagnostics will appear after a successful SSH check. They also work on machines without runners."}
     </p>

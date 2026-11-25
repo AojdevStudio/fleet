@@ -155,6 +155,23 @@ impl Engine {
             .map_err(|e| EngineError::Invalid(e.0))
     }
 
+    /// The `gh` and SSH boundaries. The host that is this Mac goes to the local runner instead of SSH.
+    fn boundaries(&self, inventory: &Inventory) -> (Arc<dyn FleetGithub>, Arc<dyn FleetRemote>) {
+        let (github, ssh) = (self.desired_io.boundaries)(inventory);
+        let ssh_hosts = self.desired.locked().ssh_hosts.clone();
+        let local_hosts = crate::this_mac::hosts(
+            inventory,
+            &ssh_hosts,
+            self.obs.read_locked().tailscale.as_ref().map(|t| &t.value),
+        );
+        let remote = crate::this_mac::LocalOrSsh {
+            ssh,
+            local: self.this_mac.clone(),
+            local_hosts,
+        };
+        (github, Arc::new(remote))
+    }
+
     fn host_identity_conflict(&self, inventory: &Inventory, host_id: &str) -> Option<String> {
         let ssh_hosts = self.desired.locked().ssh_hosts.clone();
         let peers = self
@@ -238,7 +255,7 @@ impl Engine {
     }
 
     async fn fresh_snapshot(&self, inventory: &Inventory, host: Option<&str>) -> Result<FleetSnapshot, EngineError> {
-        let (github, remote) = (self.desired_io.boundaries)(inventory);
+        let (github, remote) = self.boundaries(inventory);
         let inventory = inventory.clone();
         let host = host.map(str::to_string);
         run_blocking("check the fleet", move || {
@@ -268,7 +285,7 @@ impl Engine {
         let inventory = self.read_inventory().await?;
         self.desired.locked().doctor_running = true;
         self.view_changed();
-        let (github, remote) = (self.desired_io.boundaries)(&inventory);
+        let (github, remote) = self.boundaries(&inventory);
         let scope = host.clone();
         let result = run_blocking("run the host checks", move || {
             operations::doctor(&inventory, github.as_ref(), remote.as_ref(), scope.as_deref())
@@ -298,7 +315,7 @@ impl Engine {
     pub async fn desired_logs(&self, runner: String, lines: u32) -> Result<String, EngineError> {
         self.ensure_live_desired()?;
         let inventory = self.read_inventory().await?;
-        let (github, remote) = (self.desired_io.boundaries)(&inventory);
+        let (github, remote) = self.boundaries(&inventory);
         let sleep = self.desired_io.sleep;
         run_blocking("read the runner log", move || {
             let ops = Ops {
@@ -482,7 +499,7 @@ impl Engine {
     fn spawn_change(self: &Arc<Self>, inventory: Inventory, request: ChangeRequest, host_id: String, secrets: Secrets) {
         let engine = self.clone();
         tokio::spawn(async move {
-            let (github, remote) = (engine.desired_io.boundaries)(&inventory);
+            let (github, remote) = engine.boundaries(&inventory);
             let sleep = engine.desired_io.sleep;
             let result = run_blocking("finish the change", move || {
                 let ops = Ops {
