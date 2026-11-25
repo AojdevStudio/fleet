@@ -670,4 +670,7 @@ pub struct TailnetStatusView {
     pub tailnet_name: Option<String>,
     pub as_of: Option<DateTime<Utc>>,
     pub error: Option<String>,
+    /// Whether Tailscale reports MagicDNS on. Add machine offers entries only then.
+    #[serde(default)]
+    pub magic_dns: bool,
 }

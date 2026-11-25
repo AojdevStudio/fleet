@@ -103,6 +103,7 @@ pub(crate) fn derive_without_issues(
             tailnet_name: obs.tailscale.as_ref().and_then(|t| t.value.tailnet_name.clone()),
             as_of: obs.tailscale.as_ref().map(|t| t.at),
             error: obs.tailscale_error.as_ref().map(|e| e.value.clone()),
+            magic_dns: obs.tailscale.as_ref().is_some_and(|t| t.value.magic_dns),
         },
         plan: plan_status(plan, checked.as_ref()),
         monitoring: crate::monitoring::FleetMonitoring::default(),

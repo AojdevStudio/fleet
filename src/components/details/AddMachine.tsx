@@ -18,6 +18,11 @@ export function AddMachine({ view }: { view: FleetView }) {
       <div className="mt-5">
         {view.tailnet.error !== null ? (
           <p className="text-[12.5px] text-ink-2">Tailscale couldn't be read just now, so no devices are listed.</p>
+        ) : !view.tailnet.magicDns ? (
+          <p className="text-[12.5px] text-ink-2">
+            MagicDNS is off on this tailnet, so no entries are offered. Turn MagicDNS on in the Tailscale admin console, or
+            add a machine to the inventory by hand.
+          </p>
         ) : (
           <List>
             {view.tailnetDevices.map((d) => (

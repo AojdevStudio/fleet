@@ -48,6 +48,7 @@ impl MachineSource for FakeMachine {
 /// This Mac's tailnet: the inventory's `mini` and a household computer outside the inventory.
 fn tailnet() -> TailnetSnapshot {
     TailnetSnapshot {
+        magic_dns: true,
         peers: vec![
             TailnetPeer {
                 node_id: "nMini".into(),

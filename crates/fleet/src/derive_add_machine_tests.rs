@@ -189,7 +189,7 @@ fn a_host_at_this_macs_name_still_hides_the_devices_it_names() {
 }
 
 #[test]
-fn an_entry_uses_the_tailnet_ip_unless_magic_dns_is_on() {
+fn add_machine_offers_entries_only_with_magic_dns_on() {
     let ssh = |magic_dns: bool| {
         let mut f = fixture(&[host("seed", "seed.lan", "")], []);
         let status = format!(
@@ -218,12 +218,8 @@ fn an_entry_uses_the_tailnet_ip_unless_magic_dns_is_on() {
             .collect::<Vec<_>>()
     };
     let pairs = |rows: [(&str, &str); 2]| rows.map(|(a, b)| (a.to_string(), b.to_string())).to_vec();
-    // With MagicDNS off, every entry is OpenSSH to the tailnet IP: `tailscale ssh` on macOS would
-    // rewrite the target to a name that doesn't resolve.
-    assert_eq!(
-        ssh(false),
-        pairs([("100.64.0.3", "openssh"), ("100.64.0.4", "openssh")])
-    );
+    // Without MagicDNS no target works for both transports, so nothing is offered.
+    assert!(ssh(false).is_empty());
     assert_eq!(
         ssh(true),
         pairs([("box.tail1.ts.net", "openssh"), ("keyed.tail1.ts.net", "tailscale")])

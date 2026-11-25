@@ -20,4 +20,12 @@ describe("Add machine", () => {
     expect(html).toContain("Tailscale couldn&#x27;t be read just now, so no devices are listed.");
     expect(html).not.toContain("Copy entry");
   });
+
+  it("says MagicDNS is off and offers no entry", () => {
+    const view = previewFleet();
+    const off = { ...view, tailnetDevices: [], tailnet: { ...view.tailnet, magicDns: false } };
+    const html = renderToStaticMarkup(<AddMachine view={off} />);
+    expect(html).toContain("MagicDNS is off on this tailnet, so no entries are offered.");
+    expect(html).not.toContain("Copy entry");
+  });
 });

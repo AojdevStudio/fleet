@@ -11,8 +11,8 @@ use crate::desired::model::{Host, Inventory, Platform, SshTransport};
 use crate::model::TailnetPeer;
 
 /// The rule for which tailnet devices Add machine offers, sorted by name, each with its entry.
-/// `rows` pairs each inventory host with the device its machine row shows, if any. `magic_dns` is
-/// whether Tailscale reports MagicDNS on.
+/// `rows` pairs each inventory host with the device its machine row shows, if any. The caller
+/// offers nothing unless Tailscale reports MagicDNS on, so every entry can use a MagicDNS name.
 ///
 /// What it covers:
 /// - `peers` never holds this Mac's own node: Tailscale reports it apart from its peers, and
@@ -38,7 +38,6 @@ pub(crate) fn tailnet_devices(
     inventory: &Inventory,
     ssh_hosts: &BTreeMap<String, String>,
     rows: &[(&Host, Option<&TailnetPeer>)],
-    magic_dns: bool,
 ) -> Vec<TailnetDeviceView> {
     let shown: HashSet<&str> = rows
         .iter()
@@ -59,7 +58,7 @@ pub(crate) fn tailnet_devices(
     let mut taken = inventory.hosts.iter().map(|h| h.id.clone()).collect();
     offered
         .into_iter()
-        .filter_map(|p| device_view(p, &inventory.organization.name, magic_dns, &mut taken))
+        .filter_map(|p| device_view(p, &inventory.organization.name, &mut taken))
         .collect()
 }
 
@@ -143,12 +142,7 @@ pub struct TailnetDeviceView {
 /// `None` for a device no inventory platform fits, such as a phone, and for a device with no `ssh`
 /// target that resolves. `taken` holds the host IDs already in use, so a pasted entry never
 /// duplicates one. This entry's ID is added to it.
-fn device_view(
-    peer: &TailnetPeer,
-    organization: &str,
-    magic_dns: bool,
-    taken: &mut HashSet<String>,
-) -> Option<TailnetDeviceView> {
+fn device_view(peer: &TailnetPeer, organization: &str, taken: &mut HashSet<String>) -> Option<TailnetDeviceView> {
     let platform = match peer.os.to_ascii_lowercase().as_str() {
         "macos" => Platform::DarwinArm64,
         "linux" => Platform::LinuxX64,
@@ -160,16 +154,12 @@ fn device_view(
     } else {
         format!("~/gh-runners/{organization}")
     };
-    // Without MagicDNS a peer name doesn't resolve, and `tailscale ssh` on macOS rewrites even an IP
-    // target to that name. So Tailscale SSH and the MagicDNS name are offered only with MagicDNS on.
-    // Otherwise the entry is plain OpenSSH to the tailnet IP.
-    let transport = if magic_dns && !peer.ssh_host_keys.is_empty() {
-        SshTransport::Tailscale
-    } else {
+    let transport = if peer.ssh_host_keys.is_empty() {
         SshTransport::Openssh
+    } else {
+        SshTransport::Tailscale
     };
-    let name = peer.dns_name.as_ref().filter(|_| magic_dns);
-    let ssh = name.or(peer.ips.first()).cloned()?;
+    let ssh = peer.dns_name.as_ref().or(peer.ips.first()).cloned()?;
     let platform_note = match platform {
         Platform::WindowsX64 => " # Tailscale doesn't report the CPU: use windows-arm64 on an ARM machine.",
         Platform::DarwinArm64 => " # Tailscale doesn't report the CPU: an Intel Mac isn't supported.",
@@ -266,7 +256,7 @@ mod tests {
                 Vec::new(),
             ),
         ] {
-            let device = device_view(&peer("Dev Box", os, keys), "acme", true, &mut HashSet::new()).unwrap();
+            let device = device_view(&peer("Dev Box", os, keys), "acme", &mut HashSet::new()).unwrap();
             assert_eq!(device.name, "Dev Box");
             let inventory = parse_inventory(
                 &format!("{ORGANIZATION}{}", device.inventory_entry),
@@ -285,14 +275,14 @@ mod tests {
 
     #[test]
     fn devices_no_platform_fits_or_without_an_ssh_target_are_not_offered() {
-        assert!(device_view(&peer("phone", "iOS", Vec::new()), "acme", true, &mut HashSet::new()).is_none());
-        assert!(device_view(&peer("tv", "android", Vec::new()), "acme", true, &mut HashSet::new()).is_none());
+        assert!(device_view(&peer("phone", "iOS", Vec::new()), "acme", &mut HashSet::new()).is_none());
+        assert!(device_view(&peer("tv", "android", Vec::new()), "acme", &mut HashSet::new()).is_none());
         let bare = TailnetPeer {
             dns_name: None,
             ips: Vec::new(),
             ..peer("bare", "linux", Vec::new())
         };
-        assert!(device_view(&bare, "acme", true, &mut HashSet::new()).is_none());
+        assert!(device_view(&bare, "acme", &mut HashSet::new()).is_none());
     }
 
     #[test]
@@ -307,7 +297,7 @@ mod tests {
             peer("BOX", "linux", Vec::new()),
         ]
         .iter()
-        .map(|p| device_view(p, "acme", true, &mut taken).unwrap().inventory_entry)
+        .map(|p| device_view(p, "acme", &mut taken).unwrap().inventory_entry)
         .collect();
         let combined = parse_inventory(&format!("{example}\n{}", entries.join("\n")), &Default::default())
             .unwrap_or_else(|e| panic!("{e}"));
