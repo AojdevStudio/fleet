@@ -245,26 +245,25 @@ impl GithubIndex {
     /// jobs from its own repository only, and a job's runner name must match
     /// when GitHub gives one. Two matching jobs leave the runner unlinked.
     fn current_job(&self, entry: &GhEntry) -> Option<&GhJob> {
-        let mut matching = self.scanned_jobs_on(entry);
+        let mut matching = self
+            .jobs_by_runner
+            .get(&(entry.org.clone(), entry.runner.id))?
+            .iter()
+            .filter(|job| ran_on(&entry.runner, job));
         let job = matching.next()?;
         matching.next().is_none().then_some(job)
     }
+}
 
-    /// In-progress jobs the last job scan saw on this runner.
-    fn scanned_jobs_on<'a, 'e>(&'a self, entry: &'e GhEntry) -> impl Iterator<Item = &'a GhJob> + use<'a, 'e> {
-        let runner = &entry.runner;
-        self.jobs_by_runner
-            .get(&(entry.org.clone(), runner.id))
-            .into_iter()
-            .flatten()
-            .filter(|job| {
-                takes_jobs_from(runner, &job.repo)
-                    && job
-                        .runner_name
-                        .as_deref()
-                        .is_none_or(|name| name.eq_ignore_ascii_case(&runner.name))
-            })
-    }
+/// Whether an in-progress job ran on this runner. Repository runners share IDs,
+/// so the job's repository and, when GitHub gives one, its runner name must agree.
+fn ran_on(runner: &GhRunner, job: &GhJob) -> bool {
+    job.runner_id == Some(runner.id)
+        && takes_jobs_from(runner, &job.repo)
+        && job
+            .runner_name
+            .as_deref()
+            .is_none_or(|name| name.eq_ignore_ascii_case(&runner.name))
 }
 
 /// A repository runner takes only its own repository's jobs. An organization
@@ -441,6 +440,8 @@ fn queue_view(
         }
         view.as_of = Some(view.as_of.map_or(jobs.at, |a: DateTime<Utc>| a.min(jobs.at)));
         let runners_known = obs.github.get(&org).is_some_and(|o| o.runners.is_some());
+        let working: Vec<&GhJob> = jobs.value.jobs.iter().filter(|j| j.status == "in_progress").collect();
+        let scan_saw_working = |r: &GhEntry| working.iter().any(|j| ran_on(&r.runner, j));
 
         for job in jobs.value.jobs.iter().filter(|j| j.status == "queued") {
             let by_label: Vec<&GhEntry> = gh
@@ -470,13 +471,15 @@ fn queue_view(
                         && by_key
                             .get(r.key.as_str())
                             .is_none_or(|v| !matches!(v.activity, RunnerActivity::Busy { .. }))
+                        // A job scan newer than the runner list that saw the runner working wins.
+                        && !(r.at <= jobs.at && scan_saw_working(r))
                 })
                 .collect();
             // A runner that went idle after the scan began may have taken this job since,
             // and one the scan saw working wasn't free for it.
-            let idle_at_scan = idle.iter().any(|r| {
-                r.idle_since.is_some_and(|at| at <= jobs.value.started_at) && gh.scanned_jobs_on(r).next().is_none()
-            });
+            let idle_at_scan = idle
+                .iter()
+                .any(|r| r.idle_since.is_some_and(|at| at <= jobs.value.started_at) && !scan_saw_working(r));
             let reason = if !runners_known {
                 None
             } else if by_label.is_empty() {

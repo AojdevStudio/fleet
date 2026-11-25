@@ -240,8 +240,11 @@ impl OrgObservation {
             .filter(|r| r.status == "online" && !r.busy)
             .map(|r| {
                 let key = idle_key(r);
-                let unchanged =
-                    previous.is_some_and(|p| p.value.iter().any(|old| idle_key(old) == key && old.labels == r.labels));
+                let unchanged = previous.is_some_and(|p| {
+                    p.value
+                        .iter()
+                        .any(|old| idle_key(old) == key && crate::labels::same_labels(&old.labels, &r.labels))
+                });
                 let since = self
                     .idle_since
                     .get(&key)

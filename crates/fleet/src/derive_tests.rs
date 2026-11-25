@@ -380,7 +380,47 @@ fn an_idle_run_restarts_after_a_gap_a_label_change_or_a_job_the_scan_saw() {
             vec![waiting(), job(11, Some(1), "in_progress", MAC, Some(ago(40)))],
         );
     assert_eq!(stuck(&f), None);
-    f.jobs(ago(10), vec![waiting()]);
+    let idle = |f: &Fixture| {
+        f.view()
+            .queue
+            .jobs
+            .iter()
+            .find(|q| q.job.id == 10)
+            .unwrap()
+            .compatible_idle
+    };
+    assert_eq!(idle(&f), 0, "the newer scan saw it working");
+    f.gh_runners(ago(10), vec![gh(1, "mac", "online", false, MAC)]);
+    assert_eq!(idle(&f), 1, "a newer runner list sees it idle again");
+    assert_eq!(stuck(&f), None);
+    f.jobs(ago(5), vec![waiting()]);
+    assert_eq!(stuck(&f), Some(QueueStuckReason::WaitedPastLimit));
+
+    // The scan that saw the runner working stays the evidence after it goes stale.
+    for scanned in [200, 400] {
+        let mut f = Fixture::new();
+        for at in [450, 330, 210, 90, 10] {
+            f.gh_runners(ago(at), vec![gh(1, "mac", "online", false, MAC)]);
+        }
+        f.jobs(
+            ago(scanned),
+            vec![
+                created(STUCK_AFTER.num_minutes() + 15, job(10, None, "queued", MAC, None)),
+                job(11, Some(1), "in_progress", MAC, Some(ago(scanned + 10))),
+            ],
+        );
+        assert_eq!(stuck(&f), None, "scan {scanned} s old");
+    }
+
+    // The same labels in another order or case keep the idle time.
+    let mut f = Fixture::new();
+    f.gh_runners(ago(100), vec![gh(1, "mac", "online", false, MAC)])
+        .jobs(ago(40), vec![waiting()]);
+    assert_eq!(stuck(&f), Some(QueueStuckReason::WaitedPastLimit));
+    f.gh_runners(
+        ago(20),
+        vec![gh(1, "mac", "online", false, &["arm64", "MACOS", "self-hosted"])],
+    );
     assert_eq!(stuck(&f), Some(QueueStuckReason::WaitedPastLimit));
 }
 
