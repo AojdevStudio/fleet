@@ -54,7 +54,8 @@ hosts count. An alias that resolves to a
 LAN name unlike the device's names doesn't exclude it, so the pane asks the user to check before
 pasting. It offers nothing without a loaded inventory.
 Monitoring keys history by inventory host. History that older versions saved under a tailnet key
-(`ts:<node id>`) belonged to devices outside the inventory, so it is dropped when the history loads.
+(`ts:<node id>`) belonged to devices outside the inventory, so it is dropped from memory when the
+history loads and from the file at the next history save.
 When the inventory fails to load, the overview says why, with the error and the inventory path.
 
 The UI receives fleet-updated events after polls and every five seconds so ages advance.
