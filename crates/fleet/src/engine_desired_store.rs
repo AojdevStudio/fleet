@@ -1,14 +1,14 @@
 //! What the engine keeps between desired-state calls: the cached inventory,
 //! the last check, doctor results, pending reviews and the running change.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 
 use super::super::Engine;
-use super::ReviewView;
 use super::ssh::SshTransportIdentity;
+use super::{ReviewView, SshResolution};
 use crate::desired::inventory::load_inventory_from_env;
 use crate::desired::model::{FleetSnapshot, Host, Inventory};
 use crate::fleet_plan::{DoctorView, FleetPlanInputs, OperationStatus, OperationView};
@@ -27,10 +27,9 @@ pub struct DesiredStore {
     pub(super) operation: Option<OperationView>,
     /// An execute is between taking its review and starting its operation.
     pub(super) starting: bool,
-    /// SSH target → the hostname SSH resolves it to, from the last check.
-    pub(super) ssh_hosts: BTreeMap<String, String>,
-    /// Inventory hosts that are this Mac, from the same `ssh -G` results.
-    pub(super) this_mac_hosts: BTreeSet<String>,
+    /// The last SSH resolution. Its `this_mac` set belongs to the inventory it
+    /// resolved, so the view classifies the inventory it shows again.
+    pub(super) ssh: SshResolution,
     /// The parsed inventory, re-read when the file changes.
     inventory: Option<InventoryCache>,
 }
@@ -186,9 +185,15 @@ impl Engine {
                 value,
             });
         }
+        let inventory = store.inventory.as_ref().map(|c| c.value.clone());
+        let this_mac_hosts = inventory
+            .as_ref()
+            .and_then(|loaded| loaded.as_ref().ok())
+            .map(|inventory| crate::this_mac::hosts(inventory, &store.ssh.transports, store.ssh.account))
+            .unwrap_or_default();
         FleetPlanInputs {
             inventory_path: path.display().to_string(),
-            inventory: store.inventory.as_ref().map(|c| c.value.clone()),
+            inventory,
             snapshot: store.snapshot.as_ref().map(|s| s.value.clone()),
             checked_at: store.snapshot.as_ref().map(|s| s.checked_at),
             host_checked_at: store
@@ -196,8 +201,8 @@ impl Engine {
                 .as_ref()
                 .map(|s| s.host_checked_at.clone())
                 .unwrap_or_default(),
-            ssh_hosts: store.ssh_hosts.clone(),
-            this_mac_hosts: store.this_mac_hosts.clone(),
+            ssh_hosts: store.ssh.hostnames(),
+            this_mac_hosts,
             doctor: store.doctor.clone(),
             refreshing: store.refreshing,
             doctor_running: store.doctor_running,

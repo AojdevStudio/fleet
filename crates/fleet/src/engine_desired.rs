@@ -72,7 +72,7 @@ impl Default for DesiredIo {
 }
 
 /// One SSH resolution: every target's `ssh -G` result and the hosts that are this Mac by it.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(super) struct SshResolution {
     pub(super) transports: BTreeMap<String, SshTransportIdentity>,
     pub(super) this_mac: BTreeSet<String>,
@@ -279,10 +279,7 @@ impl Engine {
             transports: resolved,
             account,
         };
-        let mut store = self.desired.locked();
-        store.ssh_hosts = resolution.hostnames();
-        store.this_mac_hosts = resolution.this_mac.clone();
-        drop(store);
+        self.desired.locked().ssh = resolution.clone();
         resolution
     }
 

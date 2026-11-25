@@ -135,8 +135,7 @@ fn slots<'a>(
             .as_deref()
             .and_then(|t| plan.ssh_hosts.get(t))
             .map(String::as_str);
-        // The saved set may predate an inventory edit, so the written value must still be loopback.
-        let this_mac = plan.this_mac_hosts.contains(&host.id) && crate::this_mac::written_loopback(host);
+        let this_mac = plan.this_mac_hosts.contains(&host.id);
         let peer = if this_mac {
             None
         } else {

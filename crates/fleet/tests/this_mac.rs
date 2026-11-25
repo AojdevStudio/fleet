@@ -1,6 +1,7 @@
 #![expect(clippy::unwrap_used, reason = "tests fail at the assertion site")]
 //! The inventory host that is this Mac: read locally, never over SSH, and never changed.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -127,6 +128,8 @@ struct Fixture {
     ssh_pools: Arc<FakePools>,
     local: Arc<RecordingRunner>,
     ssh_config: Arc<Mutex<SshConfig>>,
+    /// How many times the fake `ssh -G` ran.
+    ssh_resolves: Arc<AtomicUsize>,
     tailnet: Arc<Mutex<TailnetSnapshot>>,
 }
 
@@ -157,6 +160,8 @@ fn fixture_answering(inventory: &str, local_output: String) -> Fixture {
     }));
     let boundaries = ssh_fleet.clone();
     let config = ssh_config.clone();
+    let ssh_resolves = Arc::new(AtomicUsize::new(0));
+    let resolves = ssh_resolves.clone();
     let snapshot = tailnet.clone();
     let engine = Engine::load(dir.path().join("config.json"), Arc::new(MemorySecrets::default()))
         .unwrap()
@@ -167,6 +172,7 @@ fn fixture_answering(inventory: &str, local_output: String) -> Fixture {
             boundaries: Arc::new(move |_| (Arc::new(boundaries.clone()) as _, Arc::new(boundaries.clone()) as _)),
             sleep: no_sleep,
             resolve_ssh_transport: Arc::new(move |target| {
+                resolves.fetch_add(1, Ordering::SeqCst);
                 let config = config.lock().unwrap().clone();
                 let written = target.rsplit('@').next().unwrap_or(target);
                 let hostname = config.hostname.as_deref().unwrap_or(written);
@@ -189,6 +195,7 @@ fn fixture_answering(inventory: &str, local_output: String) -> Fixture {
         ssh_pools,
         local,
         ssh_config,
+        ssh_resolves,
         tailnet,
     }
 }
@@ -330,17 +337,40 @@ async fn a_runner_change_on_this_mac_is_refused() {
     assert_nothing_changed(&f);
 }
 
+fn identity_error(machine: &MachineView) -> Option<String> {
+    machine.desired.as_ref().and_then(|d| d.error.clone())
+}
+
 #[tokio::test]
 async fn an_entry_edited_away_from_localhost_stops_being_this_mac_before_the_next_resolve() {
-    let f = fixture(&format!("{ORGANIZATION}{}{MINI}", laptop("localhost")));
+    let local_pair = format!(
+        "{ORGANIZATION}{}{}{MINI}",
+        laptop("localhost"),
+        host("spare", "127.0.0.1")
+    );
+    let f = fixture(&local_pair);
     check_everything(&f).await;
-    assert!(machine(&f.engine, "laptop").this_mac);
+    for id in ["laptop", "spare"] {
+        let conflict = identity_error(&machine(&f.engine, id)).unwrap_or_default();
+        assert!(conflict.contains("share the same machine"), "{id}: {conflict}");
+    }
+    let resolves = f.ssh_resolves.load(Ordering::SeqCst);
     let path = f._dir.path().join("fleet.toml");
-    std::fs::write(&path, format!("{ORGANIZATION}{}{MINI}", laptop("laptop-remote"))).unwrap();
-    // The view reloads the edited file before any new SSH resolution and drops the old route.
+    let edited = format!(
+        "{ORGANIZATION}{}{}{MINI}",
+        laptop("laptop-remote"),
+        host("spare", "127.0.0.1")
+    );
+    std::fs::write(&path, edited).unwrap();
+    // The view reloads the edited file before any new SSH resolution, drops the old route and clears the conflict.
     let laptop = machine(&f.engine, "laptop");
-    assert_eq!(laptop.desired.unwrap().host.ssh_setting, "laptop-remote");
+    let spare = machine(&f.engine, "spare");
+    assert_eq!(f.ssh_resolves.load(Ordering::SeqCst), resolves);
+    assert_eq!(laptop.desired.as_ref().unwrap().host.ssh_setting, "laptop-remote");
     assert!(!laptop.this_mac);
+    assert!(spare.this_mac);
+    assert_eq!(identity_error(&laptop), None);
+    assert_eq!(identity_error(&spare), None);
 }
 
 #[tokio::test]
