@@ -99,6 +99,11 @@ fn app_user() -> String {
         .to_string()
 }
 
+/// A login that is never the app's own account.
+fn other_user() -> String {
+    format!("{}-runner", app_user())
+}
+
 /// What the fake `ssh -G` prints for every target: its login, and a
 /// `HostName` from ~/.ssh/config when one is set.
 #[derive(Clone)]
@@ -236,21 +241,21 @@ async fn a_loopback_host_is_read_locally() {
 
 #[tokio::test]
 async fn any_other_target_is_checked_over_ssh() {
-    let cases: [(&str, Option<&str>, Option<&str>); 5] = [
-        ("ci@localhost", None, None),
+    // (target, ~/.ssh/config gives another login, ~/.ssh/config `HostName`)
+    let cases: [(&str, bool, Option<&str>); 5] = [
+        ("ci@localhost", false, None),
         // The self node's name and its MagicDNS name.
-        ("laptop", None, None),
-        ("laptop.demo.ts.net", None, None),
-        // ~/.ssh/config gives localhost another login, or another machine.
-        ("localhost", Some("runner"), None),
-        ("localhost", None, Some("builder.example")),
+        ("laptop", false, None),
+        ("laptop.demo.ts.net", false, None),
+        ("localhost", true, None),
+        ("localhost", false, Some("builder.example")),
     ];
-    for (target, user, hostname) in cases {
+    for (target, other_login, hostname) in cases {
         let f = fixture(&format!("{ORGANIZATION}{}{MINI}", laptop(target)));
         {
             let mut config = f.ssh_config.lock().unwrap();
-            if let Some(user) = user {
-                config.user = user.into();
+            if other_login {
+                config.user = other_user();
             }
             config.hostname = hostname.map(str::to_string);
         }
@@ -333,7 +338,7 @@ async fn a_remote_peer_that_shares_this_macs_hostname_still_matches() {
 #[tokio::test]
 async fn a_host_that_becomes_this_mac_after_review_is_refused_at_execute() {
     let f = fixture(&format!("{ORGANIZATION}{LAPTOP_WITH_RUNNER}{MINI}"));
-    f.ssh_config.lock().unwrap().user = "runner".into();
+    f.ssh_config.lock().unwrap().user = other_user();
     {
         let mut world = f.ssh_fleet.world();
         let labels = ["fleet", "macos-build", "host-laptop"];

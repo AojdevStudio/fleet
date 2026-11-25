@@ -28,7 +28,7 @@ pub use store::DesiredStore;
 
 use crate::desired::github::FleetGithub;
 use crate::desired::inventory::{default_inventory_path, load_inventory_from_env};
-use crate::desired::model::{FleetSnapshot, Inventory, PlanItem, SshTransport};
+use crate::desired::model::{FleetSnapshot, Host, Inventory, PlanItem, SshTransport};
 use crate::desired::operations::{self, Ops, Secrets};
 use crate::desired::remote::{FleetRemote, Transient};
 use crate::desired::state::collect_snapshot;
@@ -78,9 +78,19 @@ pub(super) struct SshResolution {
     pub(super) this_mac: BTreeSet<String>,
 }
 
-/// Refuses every runner change on this Mac.
-fn refuse_this_mac(this_mac: &BTreeSet<String>, host_id: &str) -> Result<(), EngineError> {
-    if this_mac.contains(host_id) {
+impl SshResolution {
+    /// SSH target → the hostname SSH resolves it to.
+    fn hostnames(&self) -> BTreeMap<String, String> {
+        self.transports
+            .iter()
+            .map(|(target, identity)| (target.clone(), identity.hostname().to_string()))
+            .collect()
+    }
+}
+
+/// Refuses every runner change on this Mac, and on a loopback host while the app's account is unknown.
+fn refuse_this_mac(this_mac: &BTreeSet<String>, host: &Host) -> Result<(), EngineError> {
+    if crate::this_mac::change_refused(host, this_mac, crate::this_mac::app_user()) {
         return Err(EngineError::Invalid(crate::this_mac::CHANGE_REFUSED.into()));
     }
     Ok(())
@@ -185,13 +195,7 @@ impl Engine {
         (github, Arc::new(remote))
     }
 
-    fn host_identity_conflict(
-        &self,
-        inventory: &Inventory,
-        host_id: &str,
-        this_mac: &BTreeSet<String>,
-    ) -> Option<String> {
-        let ssh_hosts = self.desired.locked().ssh_hosts.clone();
+    fn host_identity_conflict(&self, inventory: &Inventory, host_id: &str, ssh: &SshResolution) -> Option<String> {
         let peers = self
             .obs
             .read_locked()
@@ -199,7 +203,7 @@ impl Engine {
             .as_ref()
             .map(|snapshot| snapshot.value.peers.clone())
             .unwrap_or_default();
-        host_identity_conflicts(inventory, &ssh_hosts, &peers, this_mac).remove(host_id)
+        host_identity_conflicts(inventory, &ssh.hostnames(), &peers, &ssh.this_mac).remove(host_id)
     }
 
     fn ensure_live_desired(&self) -> Result<(), EngineError> {
@@ -267,18 +271,15 @@ impl Engine {
                 return SshResolution::default();
             }
         };
-        let this_mac = crate::this_mac::hosts(inventory, &resolved, crate::this_mac::app_user());
-        let mut store = self.desired.locked();
-        store.ssh_hosts = resolved
-            .iter()
-            .map(|(target, identity)| (target.clone(), identity.hostname().to_string()))
-            .collect();
-        store.this_mac_hosts = this_mac.clone();
-        drop(store);
-        SshResolution {
+        let resolution = SshResolution {
+            this_mac: crate::this_mac::hosts(inventory, &resolved, crate::this_mac::app_user()),
             transports: resolved,
-            this_mac,
-        }
+        };
+        let mut store = self.desired.locked();
+        store.ssh_hosts = resolution.hostnames();
+        store.this_mac_hosts = resolution.this_mac.clone();
+        drop(store);
+        resolution
     }
 
     async fn fresh_snapshot(
@@ -371,11 +372,11 @@ impl Engine {
         let inventory = self.read_inventory().await?;
         let host_id = request_host(&request, &inventory)?;
         let host = inventory.find_host(&host_id).map_err(|e| EngineError::NotFound(e.0))?;
-        let SshResolution { transports, this_mac } = self.resolve_ssh_hosts(&inventory).await;
-        refuse_this_mac(&this_mac, &host_id)?;
+        let ssh = self.resolve_ssh_hosts(&inventory).await;
+        refuse_this_mac(&ssh.this_mac, host)?;
         self.refuse_disabled(&request)?;
         let snapshot = self
-            .fresh_snapshot(&inventory, Some(&host_id), this_mac.clone())
+            .fresh_snapshot(&inventory, Some(&host_id), ssh.this_mac.clone())
             .await?;
         self.desired
             .locked()
@@ -386,7 +387,7 @@ impl Engine {
         let ssh_transport = host
             .ssh_target
             .as_ref()
-            .and_then(|target| transports.get(target))
+            .and_then(|target| ssh.transports.get(target))
             .cloned();
         if host.ssh_transport == SshTransport::Openssh && ssh_transport.is_none() {
             review.blockers.push(
@@ -394,7 +395,7 @@ impl Engine {
                     .into(),
             );
         }
-        if let Some(conflict) = self.host_identity_conflict(&inventory, &host_id, &this_mac) {
+        if let Some(conflict) = self.host_identity_conflict(&inventory, &host_id, &ssh) {
             review.blockers.push(conflict);
         }
         if matches!(request, ChangeRequest::Apply { .. })
@@ -408,14 +409,12 @@ impl Engine {
         review.ready = review.blockers.is_empty();
         let identities = runner_identities(host, &snapshot);
         let inventory_path = self.inventory_path();
-        let mut store = self.desired.locked();
-        let ssh_hosts = store.ssh_hosts.clone();
-        store.add_review(Review {
+        self.desired.locked().add_review(Review {
             view: review.clone(),
             created_at: Utc::now(),
             inventory_path,
             inventory,
-            ssh_hosts,
+            ssh_hosts: ssh.hostnames(),
             ssh_transport,
             identities,
         });
@@ -481,10 +480,10 @@ impl Engine {
         }
         let host_id = request_host(&reviewed.request, &inventory)?;
         let host = inventory.find_host(&host_id).map_err(|e| EngineError::NotFound(e.0))?;
-        let SshResolution { transports, this_mac } = self.resolve_ssh_hosts(&inventory).await;
-        refuse_this_mac(&this_mac, &host_id)?;
+        let ssh = self.resolve_ssh_hosts(&inventory).await;
+        refuse_this_mac(&ssh.this_mac, host)?;
         if host.ssh_transport == SshTransport::Openssh {
-            let transport = host.ssh_target.as_ref().and_then(|target| transports.get(target));
+            let transport = host.ssh_target.as_ref().and_then(|target| ssh.transports.get(target));
             if transport.is_none() || transport != review.ssh_transport.as_ref() {
                 self.view_changed();
                 return Err(EngineError::Invalid(format!(
@@ -494,24 +493,23 @@ impl Engine {
             }
         }
         let snapshot = self
-            .fresh_snapshot(&inventory, Some(&host_id), this_mac.clone())
+            .fresh_snapshot(&inventory, Some(&host_id), ssh.this_mac.clone())
             .await?;
         self.desired
             .locked()
             .merge_snapshot(&inventory, snapshot.clone(), Some(&host_id));
         let mut now = build_review(&inventory, host, &reviewed.request, &snapshot)?;
-        if let Some(conflict) = self.host_identity_conflict(&inventory, &host_id, &this_mac) {
+        if let Some(conflict) = self.host_identity_conflict(&inventory, &host_id, &ssh) {
             now.blockers.push(conflict);
             now.ready = false;
         }
-        let ssh_hosts = self.desired.locked().ssh_hosts.clone();
         if !now.ready
             || now.items != reviewed.items
             || now.confirm_phrase != reviewed.confirm_phrase
             || now.needs_service_password != reviewed.needs_service_password
             || now.accepts_sudo_password != reviewed.accepts_sudo_password
             || runner_identities(host, &snapshot) != review.identities
-            || ssh_hosts != review.ssh_hosts
+            || ssh.hostnames() != review.ssh_hosts
         {
             self.view_changed();
             return Err(EngineError::Invalid(format!(

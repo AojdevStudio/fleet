@@ -302,8 +302,9 @@ hosts that are both this Mac are an identity conflict.
 The app only reads this Mac. It runs the same health probe, runner probe, checks, runner logs
 and runner-up reads as local processes (`/bin/bash -s`), and Tailscale's own status never hides
 it. It refuses every runner change there (apply, restart, retire, decommission) with "The app
-doesn't change runners on the Mac it runs on. Use Runner Fleet on this Mac." Its runners link by
-their `host-<id>` label as on any host.
+doesn't change runners on the Mac it runs on. Use Runner Fleet on this Mac." When the app can't
+read its own account, it refuses changes on any host written as a loopback target too. Its
+runners link by their `host-<id>` label as on any host.
 
 ```toml
 [[hosts]]

@@ -20,9 +20,9 @@ export function MachineDiagnostics({ machine: m }: { machine: MachineView }) {
   const d = m.diagnostics;
   return <Section title="Machine diagnostics" action={<span className="text-[12px] text-ink-2">{diagnosticSummary(m)}</span>}>
     <p className={`mb-3 text-[12px] ${d?.stale ? "text-warn" : "text-ink-2"}`}>
-      {d ? `${d.stale ? "Last successful read" : "Checked"} ${timeAgo(d.asOf, now)}. ${d.stale ? "These findings may have changed. " : ""}Read automatically ${m.thisMac ? "on this Mac" : "over SSH"}; Check now refreshes them.`
+      {d ? `${d.stale ? "Last successful read" : "Checked"} ${timeAgo(d.asOf, now)}. ${d.stale ? "These findings may have changed. " : ""}Read automatically ${m.thisMac ? "on this Mac" : "over SSH"}. Check now refreshes them.`
         : m.connection.kind === "disabled" ? "Automatic inspection is disabled for this machine in the inventory."
-        : "Diagnostics will appear after a successful SSH check. They also work on machines without runners."}
+        : `Diagnostics will appear after a successful ${m.thisMac ? "local read" : "SSH check"}. They also work on machines without runners.`}
     </p>
     {d && <div className="grid grid-cols-1 items-start gap-3 min-[1100px]:grid-cols-2">
       {GROUPS.map(([group, title]) => {

@@ -77,6 +77,25 @@ fn this_mac_is_only_a_plain_loopback_target_that_ssh_keeps_local() {
 }
 
 #[test]
+fn changes_on_a_loopback_host_are_refused_while_the_account_is_unknown() {
+    let inventory = inventory(&[
+        ("laptop", "darwin-arm64", "localhost"),
+        ("mini", "darwin-arm64", "mini"),
+    ]);
+    let (laptop, mini) = (&inventory.hosts[0], &inventory.hosts[1]);
+    let none = BTreeSet::new();
+    assert!(change_refused(laptop, &none, None));
+    assert!(!change_refused(mini, &none, None));
+    // With the account known, only the routed set decides.
+    assert!(!change_refused(laptop, &none, Some("ci")));
+    assert!(change_refused(
+        laptop,
+        &BTreeSet::from(["laptop".to_string()]),
+        Some("ci")
+    ));
+}
+
+#[test]
 fn a_target_from_an_environment_variable_is_never_this_mac() {
     let text = "[organization]\nname = \"example\"\nurl = \"https://github.com/example\"\nrunner_group = \"trusted\"\n\
                 [[hosts]]\nid = \"env\"\nplatform = \"darwin-arm64\"\nssh = \"${FLEET_TARGET}\"\n\

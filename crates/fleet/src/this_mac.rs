@@ -32,18 +32,20 @@ pub const CHANGE_REFUSED: &str = "The app doesn't change runners on the Mac it r
 /// The account the app's process runs as, which local scripts run as too.
 /// It comes from the OS (`id -un`), like the login `ssh` picks by default,
 /// because `$USER` can name another account.
+/// A failed lookup is tried again next time.
 pub fn app_user() -> Option<&'static str> {
-    static USER: OnceLock<Option<String>> = OnceLock::new();
-    USER.get_or_init(|| {
-        let command = ["/usr/bin/id".to_string(), "-un".into()];
-        SubprocessRunner
-            .run(&command, None, Duration::from_secs(5), NonZeroExit::Error)
-            .map(|result| result.stdout.trim().to_string())
-            .inspect_err(|e| tracing::warn!("couldn't read the app's account: {e}"))
-            .ok()
-            .filter(|user| !user.is_empty())
-    })
-    .as_deref()
+    static USER: OnceLock<String> = OnceLock::new();
+    if let Some(user) = USER.get() {
+        return Some(user);
+    }
+    let command = ["/usr/bin/id".to_string(), "-un".into()];
+    let user = SubprocessRunner
+        .run(&command, None, Duration::from_secs(5), NonZeroExit::Error)
+        .map(|result| result.stdout.trim().to_string())
+        .inspect_err(|e| tracing::warn!("couldn't read the app's account: {e}"))
+        .ok()
+        .filter(|user| !user.is_empty())?;
+    Some(USER.get_or_init(|| user))
 }
 
 /// `localhost` or any loopback IP address, as `ssh -G` prints a hostname.
@@ -64,6 +66,13 @@ pub fn is_this_mac(host: &Host, resolved: Option<&SshTransportIdentity>, app_use
         && LOOPBACK.contains(&host.ssh_setting.as_str())
         && is_loopback(resolved.hostname())
         && app_user.is_some_and(|user| resolved.user() == Some(user))
+}
+
+/// Whether a runner change on `host` is refused: it is this Mac, or its
+/// written `ssh` value is loopback and the app's account is unknown, so it
+/// might be.
+pub fn change_refused(host: &Host, this_mac: &BTreeSet<String>, app_user: Option<&str>) -> bool {
+    this_mac.contains(&host.id) || (app_user.is_none() && LOOPBACK.contains(&host.ssh_setting.as_str()))
 }
 
 /// The ids of the inventory hosts that are this Mac. `resolved` maps each
