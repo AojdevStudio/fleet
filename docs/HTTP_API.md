@@ -68,7 +68,7 @@ Unknown query fields and invalid enum values are errors. The enums are:
 | `os` | `macos`, `linux`, `windows`, `other` |
 | `connection` | `connected`, `stale`, `offline`, `error`, `disabled`, `pending` |
 | `activity` | `busy`, `idle`, `offline`, `unknown` (busy and idle need fresh GitHub data) |
-| `category` | `alert`, `diagnostic`, `inventory`, `connection`, `runner`, `queue`, `github`, `tailnet`, `storage`, `operation` |
+| `category` | `alert`, `diagnostic`, `inventory`, `connection`, `runner`, `github`, `tailnet`, `storage`, `operation` |
 
 `q` is a case-insensitive substring of a machine's ID, display name or host. Runner `label`
 matches observed GitHub labels; `repo` matches the runner's linked current job, not repository
@@ -79,7 +79,32 @@ is never contacted over SSH and never raises an alert. A machine joins the fleet
 inventory gets a `[[hosts]]` entry for it ([FLEET.md](FLEET.md)). The `otherMachines` and
 `ignored` fields, `GET /v1/discovered` and the `scope` filter of `/v1/machines` were
 removed. A request that still sends `scope` gets 400, and `/v1/discovered` gets 404. Queue scope
-metadata (`complete`, `asOf`, `otherQueued`) stays fleet-wide when jobs are filtered.
+metadata (`complete`, `asOf`, `otherQueued`, `stuckAfterSecs`) stays fleet-wide when jobs are
+filtered.
+
+## Queued jobs
+
+Each queued job lists `compatibleRunners`: runners with every label the job asks for. A runner
+registered to a repository counts only for that repository's jobs. An organization runner counts
+for any repository. `compatibleOnline` and `compatibleIdle` count the online and idle ones.
+
+`stuck` is null while a job waits normally. Otherwise it holds a `reason` and a `detail` sentence:
+
+| `reason` | When |
+| --- | --- |
+| `otherRepository` | Runners have the job's labels, but each is registered to another repository |
+| `noLabelMatch` | No observed runner has every label the job asks for |
+| `runnersOffline` | Every runner that can take the job is offline or has no recent status |
+| `waitedPastLimit` | A runner that can take it is idle, and it has waited over `stuckAfterSecs` (30 minutes) |
+
+A job waiting while every runner that can take it is working is not stuck. A job without a
+creation time is never `waitedPastLimit`. Runner-group access isn't in the API, so a job can
+still wait on a runner the group doesn't allow. `otherQueued` counts jobs no self-hosted runner
+matches by label, such as `ubuntu-latest`. A job that matches only another repository's runner
+stays in `jobs` as `otherRepository`.
+
+Stuck jobs are not attention findings. The `queue` issue category was removed, so
+`/v1/issues?category=queue` gets 400.
 
 `/v1/desired` returns each selected host's declaration, plan, blocked reasons, errors, check
 timestamps, runner check findings and per-runner desired status. Its global `plan` stays

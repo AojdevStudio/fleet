@@ -7,11 +7,10 @@ use crate::desired::model::{CheckStatus, FleetPlanAction};
 use crate::machine_diagnostics::DiagnosticStatus;
 use crate::model::{DataSource, FleetView, MachineConnection, MachineView, count_u32};
 use crate::monitoring::FleetAlertKind;
-use FleetIssueCategory::{
-    Alert, Connection, Diagnostic, Github, Inventory, Operation, Queue, Runner, Storage, Tailnet,
-};
+use FleetIssueCategory::{Alert, Connection, Diagnostic, Github, Inventory, Operation, Runner, Storage, Tailnet};
 
-/// The observation responsible for a finding.
+/// The observation responsible for a finding. Stuck queued jobs aren't
+/// findings: they show once, with their reason, on the queue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
@@ -21,7 +20,6 @@ pub enum FleetIssueCategory {
     Inventory,
     Connection,
     Runner,
-    Queue,
     Github,
     Tailnet,
     Storage,
@@ -83,7 +81,6 @@ pub(crate) fn attach(view: &mut FleetView) {
         fleet_issues(view),
         machine_issues(view),
         runner_issues(view),
-        queue_issues(view),
         github_issues(view),
         control_check_issues(view),
         operation_issues(view),
@@ -305,28 +302,6 @@ fn runner_issues(view: &FleetView) -> Vec<FleetIssue> {
             );
             issue.runner_key = Some(runner.key.clone());
             issue.machine_id.clone_from(&runner.machine_id);
-            issue
-        })
-        .collect()
-}
-
-fn queue_issues(view: &FleetView) -> Vec<FleetIssue> {
-    view.queue
-        .jobs
-        .iter()
-        .filter(|q| q.compatible_online == 0)
-        .map(|job| {
-            let mut issue = FleetIssue::new(
-                format!("queue:{}:{}", job.org, job.job.id),
-                Queue,
-                format!("{}: no compatible online runner observed", job.job.name),
-                if job.compatible_runners.is_empty() {
-                    format!("No observed runner has labels {}", job.job.labels.join(", "))
-                } else {
-                    "All observed label-compatible runners are offline or unknown".into()
-                },
-            );
-            issue.stale = !view.queue.complete;
             issue
         })
         .collect()

@@ -88,9 +88,15 @@ history is fictional, generated separately, and never touches the journal or sen
   their original timestamp. A changed SSH target never inherits the previous target's health.
 - GitHub runners become stale after 150 seconds; jobs after 300 seconds. Without fresh GitHub
   runner data, activity is unknown. Current jobs require an actual runner_id match in the jobs API.
-- Elapsed time never labels a job stuck. Machines and runners sort by name, independent of status.
-- Queued jobs list label-compatible runners, not a promise of scheduling; group access can also
-  affect eligibility.
+- Elapsed time never labels a running job stuck. Machines and runners sort by name, independent
+  of status.
+- A runner can take a queued job when it has every label the job asks for and, for a repository
+  runner, belongs to the job's repository. That isn't a promise of scheduling, because group
+  access can also affect eligibility.
+- A queued job is stuck when no runner can take it, when every runner that can is offline, or
+  when it has waited over 30 minutes while one that can take it is idle. A job waiting while
+  every runner that can take it is working is not stuck. Stuck jobs show on the overview's job
+  board and the Queued jobs page, not under Needs attention.
 - Fresh SSH runner facts update displayed inventory drift. Every change still re-reads the host
   through the desired-state engine before review and again before execution.
 

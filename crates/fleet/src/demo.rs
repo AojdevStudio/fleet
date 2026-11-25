@@ -48,7 +48,16 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
         gh(102, "studio-2", false, &["self-hosted", "macOS", "ARM64", "xcode-16"]),
         gh(201, "mini-02", true, &["self-hosted", "macOS", "ARM64"]),
         gh(301, "linux-01-a", false, &["self-hosted", "Linux", "X64", "docker"]),
-        gh(302, "linux-01-b", false, &["self-hosted", "Linux", "X64", "docker"]),
+        // Registered to one repository, so other repositories' jobs can't use it.
+        GhRunner {
+            repository: Some("acme-demo/infra".into()),
+            ..gh(
+                302,
+                "linux-01-b",
+                false,
+                &["self-hosted", "Linux", "X64", "docker", "dependabot"],
+            )
+        },
         offline(gh(401, "win-builder", false, &["self-hosted", "Windows", "X64"])),
         gh(501, "cloud-gpu-1", false, &["self-hosted", "Linux", "X64", "gpu"]),
     ];
@@ -109,6 +118,50 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
             None,
             ago(20),
         ),
+        job(
+            9006,
+            0,
+            "integration",
+            "CI",
+            "acme-demo/infra",
+            "queued",
+            &["self-hosted", "Linux", "docker"],
+            None,
+            ago(6 * 60 + 40),
+        ),
+        job(
+            9007,
+            0,
+            "Dependabot",
+            "Dependabot Updates",
+            "acme-demo/web",
+            "queued",
+            &["dependabot"],
+            None,
+            ago(18 * 3600 + 12 * 60),
+        ),
+        job(
+            9008,
+            0,
+            "package (windows)",
+            "Release",
+            "acme-demo/desktop",
+            "queued",
+            &["self-hosted", "Windows"],
+            None,
+            ago(14 * 60),
+        ),
+        job(
+            9009,
+            0,
+            "migrate-check",
+            "Deploy",
+            "acme-demo/infra",
+            "queued",
+            &["self-hosted", "Linux", "X64"],
+            None,
+            ago(52 * 60),
+        ),
     ];
 
     let mut obs = Observations {
@@ -143,7 +196,13 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
             jobs: Some(Timed::new(
                 ago(21),
                 JobScan {
-                    repos_scanned: vec!["ios-app".into(), "web".into(), "ml".into(), "infra".into()],
+                    repos_scanned: vec![
+                        "ios-app".into(),
+                        "web".into(),
+                        "ml".into(),
+                        "infra".into(),
+                        "desktop".into(),
+                    ],
                     truncated: false,
                     jobs,
                 },

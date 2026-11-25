@@ -9,8 +9,8 @@
     "runnersBusy": 2,
     "runnersOffline": 1,
     "runnersUnknown": 2,
-    "queuedJobs": 2,
-    "attention": 7
+    "queuedJobs": 6,
+    "attention": 6
   },
   "issues": [
     {
@@ -74,17 +74,6 @@
       "title": "win-builder couldn't be checked",
       "detail": "Host unreachable.",
       "machineId": "ts:nWin",
-      "runnerKey": null,
-      "stale": false,
-      "muted": false,
-      "fix": null
-    },
-    {
-      "id": "queue:acme-demo:9004",
-      "category": "queue",
-      "title": "train-small: no compatible online runner observed",
-      "detail": "No observed runner has labels self-hosted, gpu, a100",
-      "machineId": null,
       "runnerKey": null,
       "stale": false,
       "muted": false,
@@ -329,7 +318,7 @@
           }
         },
         {
-          "key": "gh:acme-demo:302",
+          "key": "gh:acme-demo/infra:302",
           "name": "linux-01-b",
           "org": "acme-demo",
           "machineId": "ts:nLinux",
@@ -346,7 +335,8 @@
               "self-hosted",
               "Linux",
               "X64",
-              "docker"
+              "docker",
+              "dependabot"
             ],
             "os": "Linux",
             "version": "2.329.0",
@@ -1752,6 +1742,58 @@
       {
         "org": "acme-demo",
         "job": {
+          "id": 9007,
+          "name": "Dependabot",
+          "workflowName": "Dependabot Updates",
+          "repo": "acme-demo/web",
+          "branch": "main",
+          "startedAt": null,
+          "htmlUrl": "https://github.com/acme-demo/web/actions/runs/90070/job/9007",
+          "labels": [
+            "dependabot"
+          ]
+        },
+        "createdAt": "2026-10-02T17:48:00Z",
+        "compatibleRunners": [],
+        "compatibleOnline": 0,
+        "compatibleIdle": 0,
+        "stuck": {
+          "reason": "otherRepository",
+          "detail": "No runner is registered to this repository."
+        }
+      },
+      {
+        "org": "acme-demo",
+        "job": {
+          "id": 9009,
+          "name": "migrate-check",
+          "workflowName": "Deploy",
+          "repo": "acme-demo/infra",
+          "branch": "main",
+          "startedAt": null,
+          "htmlUrl": "https://github.com/acme-demo/infra/actions/runs/90090/job/9009",
+          "labels": [
+            "self-hosted",
+            "Linux",
+            "X64"
+          ]
+        },
+        "createdAt": "2026-10-03T11:08:00Z",
+        "compatibleRunners": [
+          "gh:acme-demo:301",
+          "gh:acme-demo/infra:302",
+          "gh:acme-demo:501"
+        ],
+        "compatibleOnline": 3,
+        "compatibleIdle": 3,
+        "stuck": {
+          "reason": "waitedPastLimit",
+          "detail": "An idle runner can take it, but it has waited over 30 min."
+        }
+      },
+      {
+        "org": "acme-demo",
+        "job": {
           "id": 9004,
           "name": "train-small",
           "workflowName": "Nightly",
@@ -1768,7 +1810,62 @@
         "createdAt": "2026-10-03T11:34:00Z",
         "compatibleRunners": [],
         "compatibleOnline": 0,
-        "compatibleIdle": 0
+        "compatibleIdle": 0,
+        "stuck": {
+          "reason": "noLabelMatch",
+          "detail": "No runner has the labels self-hosted, gpu, a100."
+        }
+      },
+      {
+        "org": "acme-demo",
+        "job": {
+          "id": 9008,
+          "name": "package (windows)",
+          "workflowName": "Release",
+          "repo": "acme-demo/desktop",
+          "branch": "main",
+          "startedAt": null,
+          "htmlUrl": "https://github.com/acme-demo/desktop/actions/runs/90080/job/9008",
+          "labels": [
+            "self-hosted",
+            "Windows"
+          ]
+        },
+        "createdAt": "2026-10-03T11:46:00Z",
+        "compatibleRunners": [
+          "gh:acme-demo:401"
+        ],
+        "compatibleOnline": 0,
+        "compatibleIdle": 0,
+        "stuck": {
+          "reason": "runnersOffline",
+          "detail": "Every runner that can take it is offline or has no recent status."
+        }
+      },
+      {
+        "org": "acme-demo",
+        "job": {
+          "id": 9006,
+          "name": "integration",
+          "workflowName": "CI",
+          "repo": "acme-demo/infra",
+          "branch": "main",
+          "startedAt": null,
+          "htmlUrl": "https://github.com/acme-demo/infra/actions/runs/90060/job/9006",
+          "labels": [
+            "self-hosted",
+            "Linux",
+            "docker"
+          ]
+        },
+        "createdAt": "2026-10-03T11:53:20Z",
+        "compatibleRunners": [
+          "gh:acme-demo:301",
+          "gh:acme-demo/infra:302"
+        ],
+        "compatibleOnline": 2,
+        "compatibleIdle": 2,
+        "stuck": null
       },
       {
         "org": "acme-demo",
@@ -1792,12 +1889,14 @@
           "gh:acme-demo:102"
         ],
         "compatibleOnline": 2,
-        "compatibleIdle": 1
+        "compatibleIdle": 1,
+        "stuck": null
       }
     ],
     "otherQueued": 1,
     "complete": true,
-    "asOf": "2026-10-03T11:59:39Z"
+    "asOf": "2026-10-03T11:59:39Z",
+    "stuckAfterSecs": 1800
   },
   "plan": {
     "inventoryPath": "demo: inventory/fleet.toml",
@@ -1824,7 +1923,7 @@
       "hasToken": true,
       "runnersAsOf": "2026-10-03T11:59:51Z",
       "jobsAsOf": "2026-10-03T11:59:39Z",
-      "reposScanned": 4,
+      "reposScanned": 5,
       "jobsTruncated": false,
       "error": null,
       "rateLimit": {
@@ -2066,7 +2165,7 @@
       "oldRunners": [
         {
           "name": "linux-01-b",
-          "runnerKey": "gh:acme-demo:302",
+          "runnerKey": "gh:acme-demo/infra:302",
           "activity": {
             "kind": "idle"
           }

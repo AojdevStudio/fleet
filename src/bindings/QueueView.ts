@@ -10,4 +10,8 @@ otherQueued: number,
 /**
  * False when job data is missing or stale for some org.
  */
-complete: boolean, asOf: string | null, };
+complete: boolean, asOf: string | null, 
+/**
+ * How long a job may wait while an idle runner can take it before it counts as stuck.
+ */
+stuckAfterSecs: number, };

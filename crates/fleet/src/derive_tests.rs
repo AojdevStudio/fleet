@@ -152,8 +152,166 @@ fn queue_counts_label_compatible_runners() {
     assert!(gpu_job.compatible_runners.is_empty());
     // Oldest first.
     assert_eq!(v.queue.jobs[0].job.id, 11);
-    // A self-hosted job no online runner can take needs attention.
-    assert_eq!(v.summary.attention, 1);
+    assert_eq!(mac_job.stuck, None);
+    assert_eq!(
+        gpu_job.stuck.as_ref().map(|s| (s.reason, s.detail.as_str())),
+        Some((
+            QueueStuckReason::NoLabelMatch,
+            "No runner has the labels self-hosted, gpu."
+        ))
+    );
+    // A stuck job shows on the queue only, never again as an attention item.
+    assert_eq!(v.summary.attention, 0);
+}
+
+fn in_repo(repository: &str, runner: GhRunner) -> GhRunner {
+    GhRunner {
+        repository: Some(repository.into()),
+        ..runner
+    }
+}
+
+fn created(minutes: i64, job: GhJob) -> GhJob {
+    GhJob {
+        created_at: Some(ago(minutes * 60)),
+        ..job
+    }
+}
+
+#[test]
+fn a_repository_runner_takes_only_its_own_repositorys_jobs() {
+    let mut f = Fixture::new();
+    let homelab = &["self-hosted", "homelab-ci"];
+    f.gh_runners(
+        ago(10),
+        vec![
+            in_repo("acme/api", gh(1, "api-deps", "online", false, &["dependabot"])),
+            in_repo("Acme/Web", gh(2, "web-ci", "online", false, homelab)),
+            in_repo("acme/api", gh(3, "api-ci", "online", false, homelab)),
+            in_repo("acme/api", gh(4, "api-ci-2", "online", false, homelab)),
+        ],
+    )
+    .jobs(
+        ago(20),
+        vec![
+            created(18 * 60, job(10, None, "queued", &["dependabot"], None)),
+            job(11, None, "queued", homelab, None),
+        ],
+    );
+    let v = f.view();
+    let dependabot = v.queue.jobs.iter().find(|q| q.job.id == 10).unwrap();
+    assert!(dependabot.compatible_runners.is_empty());
+    assert_eq!(
+        dependabot.stuck.as_ref().map(|s| (s.reason, s.detail.as_str())),
+        Some((
+            QueueStuckReason::OtherRepository,
+            "No runner is registered to this repository."
+        ))
+    );
+    assert_eq!(
+        v.queue.other_queued, 0,
+        "a label match before the repository check keeps the job on the queue"
+    );
+    let homelab_job = v.queue.jobs.iter().find(|q| q.job.id == 11).unwrap();
+    assert_eq!(
+        homelab_job.compatible_runners,
+        ["gh:acme/web:2"],
+        "repository case is ignored"
+    );
+    assert_eq!((homelab_job.compatible_online, homelab_job.compatible_idle), (1, 1));
+    assert_eq!(homelab_job.stuck, None);
+}
+
+#[test]
+fn an_organization_runner_matches_any_repository_by_labels() {
+    let mut f = Fixture::new();
+    f.gh_runners(
+        ago(10),
+        vec![gh(1, "org-ci", "online", false, &["self-hosted", "linux"])],
+    )
+    .jobs(ago(20), vec![job(10, None, "queued", &["self-hosted", "Linux"], None)]);
+    let v = f.view();
+    assert_eq!(v.queue.jobs[0].compatible_runners, ["gh:acme:1"]);
+    assert_eq!(v.queue.jobs[0].compatible_idle, 1);
+    assert_eq!(v.queue.jobs[0].stuck, None);
+}
+
+#[test]
+fn a_job_is_stuck_after_waiting_past_the_limit_only_while_a_runner_that_can_take_it_is_idle() {
+    let limit = STUCK_AFTER.num_minutes();
+    let mut f = Fixture::new();
+    f.gh_runners(ago(10), vec![gh(1, "mac-idle", "online", false, MAC)])
+        .jobs(
+            ago(20),
+            vec![
+                created(limit - 1, job(10, None, "queued", MAC, None)),
+                created(limit + 1, job(11, None, "queued", MAC, None)),
+            ],
+        );
+    let v = f.view();
+    assert_eq!(v.queue.stuck_after_secs, 30 * 60);
+    let stuck = |v: &FleetView, id| v.queue.jobs.iter().find(|q| q.job.id == id).unwrap().stuck.clone();
+    assert_eq!(stuck(&v, 10), None);
+    assert_eq!(
+        stuck(&v, 11).map(|s| (s.reason, s.detail)),
+        Some((
+            QueueStuckReason::WaitedPastLimit,
+            "An idle runner can take it, but it has waited over 30 min.".into()
+        ))
+    );
+
+    // Every runner that can take it is working: the job waits its turn.
+    f.gh_runners(ago(10), vec![gh(1, "mac-busy", "online", true, MAC)]);
+    assert_eq!(stuck(&f.view(), 11), None);
+    // The runner is offline: nothing can take the job.
+    f.gh_runners(ago(10), vec![gh(1, "mac-off", "offline", false, MAC)]);
+    assert_eq!(
+        stuck(&f.view(), 10).map(|s| s.reason),
+        Some(QueueStuckReason::RunnersOffline)
+    );
+}
+
+#[test]
+fn the_board_counts_each_runner_and_job_once() {
+    let (config, obs, plan) = demo();
+    let view = derive(&config, &obs, &plan, now(), DataSource::Demo);
+    let running = view
+        .machines
+        .iter()
+        .flat_map(|m| &m.runners)
+        .chain(&view.unmatched_runners)
+        .filter(|r| matches!(r.activity, RunnerActivity::Busy { .. }))
+        .count();
+    assert_eq!(running, view.summary.runners_busy as usize);
+    let (stuck, up_next): (Vec<_>, Vec<_>) = view.queue.jobs.iter().partition(|q| q.stuck.is_some());
+    assert_eq!(up_next.len() + stuck.len(), view.summary.queued_jobs as usize);
+    assert!(!up_next.is_empty());
+
+    let reason = |id| {
+        view.queue
+            .jobs
+            .iter()
+            .find(|q| q.job.id == id)
+            .unwrap()
+            .stuck
+            .as_ref()
+            .map(|s| s.reason)
+    };
+    assert_eq!(reason(9003), None);
+    assert_eq!(reason(9006), None);
+    assert_eq!(reason(9004), Some(QueueStuckReason::NoLabelMatch));
+    assert_eq!(reason(9007), Some(QueueStuckReason::OtherRepository));
+    assert_eq!(reason(9008), Some(QueueStuckReason::RunnersOffline));
+    assert_eq!(reason(9009), Some(QueueStuckReason::WaitedPastLimit));
+
+    let issues = serde_json::to_string(&view.issues).unwrap();
+    for q in &stuck {
+        assert!(
+            !issues.contains(&q.job.name),
+            "{} is also an attention item",
+            q.job.name
+        );
+    }
 }
 
 #[test]
@@ -437,7 +595,7 @@ fn discovery_and_demo_cover_current_stale_offline_and_failed_ssh() {
     assert!(kinds.iter().any(|c| matches!(c, MachineConnection::Offline { .. })));
     assert!(kinds.iter().any(|c| matches!(c, MachineConnection::Error { .. })));
     assert_eq!(view.unmatched_runners.len(), 1);
-    assert_eq!(view.queue.jobs.len(), 2);
+    assert_eq!(view.queue.jobs.len(), 6);
     assert!(view.machines.iter().all(|m| m.desired.is_some()));
     let names: Vec<_> = view.machines.iter().map(|m| m.display_name.as_str()).collect();
     assert_eq!(

@@ -5,7 +5,9 @@
 //! - Old data is kept and flagged `stale`; it is never replaced by zeros.
 //! - "Installed" comes from SSH; "connected" and "doing work" come from GitHub.
 //! - A current job is shown only when GitHub's jobs API links it to the runner.
-//! - Elapsed time alone never marks anything as stuck.
+//! - Elapsed time alone never marks a running job as stuck. A queued job is
+//!   stuck when no runner can take it, or when it has waited past
+//!   [`STUCK_AFTER`] while a runner that can take it is idle.
 
 use std::collections::{HashMap, HashSet};
 
@@ -22,6 +24,9 @@ mod machines;
 pub const SSH_STALE_AFTER: Duration = Duration::seconds(150);
 pub const GITHUB_STALE_AFTER: Duration = Duration::seconds(150);
 pub const JOBS_STALE_AFTER: Duration = Duration::seconds(300);
+/// A queued job that waits this long while an idle runner can take it is stuck.
+pub const STUCK_AFTER_SECS: u32 = 30 * 60;
+pub const STUCK_AFTER: Duration = Duration::seconds(STUCK_AFTER_SECS as i64);
 
 pub fn derive(
     config: &AppConfig,
@@ -391,6 +396,7 @@ fn queue_view(
 ) -> QueueView {
     let mut view = QueueView {
         complete: true,
+        stuck_after_secs: STUCK_AFTER_SECS,
         ..Default::default()
     };
     let by_key: HashMap<&str, &RunnerView> = runners.iter().map(|r| (r.key.as_str(), *r)).collect();
@@ -422,15 +428,26 @@ fn queue_view(
         view.as_of = Some(view.as_of.map_or(jobs.at, |a: DateTime<Utc>| a.min(jobs.at)));
 
         for job in jobs.value.jobs.iter().filter(|j| j.status == "queued") {
-            let compatible: Vec<&GhEntry> = gh
+            let by_label: Vec<&GhEntry> = gh
                 .runners
                 .iter()
                 .filter(|r| r.org == org && labels::is_compatible(&job.labels, &r.runner.labels))
                 .collect();
-            if compatible.is_empty() && !labels::targets_self_hosted(&job.labels) {
+            if by_label.is_empty() && !labels::targets_self_hosted(&job.labels) {
                 view.other_queued += 1;
                 continue;
             }
+            // A repository runner takes only its own repository's jobs.
+            let compatible: Vec<&GhEntry> = by_label
+                .iter()
+                .copied()
+                .filter(|r| {
+                    r.runner
+                        .repository
+                        .as_deref()
+                        .is_none_or(|repository| repository.eq_ignore_ascii_case(&job.repo))
+                })
+                .collect();
             let online: Vec<&&GhEntry> = compatible
                 .iter()
                 .filter(|r| !r.stale && r.runner.status == "online")
@@ -444,6 +461,17 @@ fn queue_view(
                             .is_none_or(|v| !matches!(v.activity, RunnerActivity::Busy { .. }))
                 })
                 .count();
+            let reason = if by_label.is_empty() {
+                Some(QueueStuckReason::NoLabelMatch)
+            } else if compatible.is_empty() {
+                Some(QueueStuckReason::OtherRepository)
+            } else if online.is_empty() {
+                Some(QueueStuckReason::RunnersOffline)
+            } else if idle > 0 && job.created_at.is_some_and(|at| now - at > STUCK_AFTER) {
+                Some(QueueStuckReason::WaitedPastLimit)
+            } else {
+                None
+            };
             view.jobs.push(QueuedJobView {
                 org: org.clone(),
                 job: job_view(job),
@@ -451,11 +479,27 @@ fn queue_view(
                 compatible_runners: compatible.iter().map(|r| r.key.clone()).collect(),
                 compatible_online: count_u32(online.len()),
                 compatible_idle: count_u32(idle),
+                stuck: reason.map(|reason| QueueStuck {
+                    reason,
+                    detail: stuck_detail(reason, job),
+                }),
             });
         }
     }
     view.jobs.sort_by_key(|q| (q.created_at, q.job.id));
     view
+}
+
+fn stuck_detail(reason: QueueStuckReason, job: &GhJob) -> String {
+    match reason {
+        QueueStuckReason::OtherRepository => "No runner is registered to this repository.".into(),
+        QueueStuckReason::NoLabelMatch => format!("No runner has the labels {}.", job.labels.join(", ")),
+        QueueStuckReason::RunnersOffline => "Every runner that can take it is offline or has no recent status.".into(),
+        QueueStuckReason::WaitedPastLimit => format!(
+            "An idle runner can take it, but it has waited over {} min.",
+            STUCK_AFTER.num_minutes()
+        ),
+    }
 }
 
 fn summarize(machines: &[MachineView], runners: &[&RunnerView], queue: &QueueView) -> FleetSummary {

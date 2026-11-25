@@ -512,6 +512,8 @@ pub struct QueueView {
     /// False when job data is missing or stale for some org.
     pub complete: bool,
     pub as_of: Option<DateTime<Utc>>,
+    /// How long a job may wait while an idle runner can take it before it counts as stuck.
+    pub stuck_after_secs: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -521,10 +523,36 @@ pub struct QueuedJobView {
     pub org: String,
     pub job: JobView,
     pub created_at: Option<DateTime<Utc>>,
-    /// Runner keys whose labels are a superset of the job's labels.
+    /// Runners that can take the job: every job label is on the runner, and a
+    /// repository runner belongs to the job's repository.
     pub compatible_runners: Vec<String>,
     pub compatible_online: u32,
     pub compatible_idle: u32,
+    /// Why the job isn't moving. None while it waits normally for a runner.
+    pub stuck: Option<QueueStuck>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueStuck {
+    pub reason: QueueStuckReason,
+    /// The reason as a sentence for people.
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub enum QueueStuckReason {
+    /// Runners have the job's labels, but each is registered to another repository.
+    OtherRepository,
+    /// No observed runner has every label the job asks for.
+    NoLabelMatch,
+    /// Every runner that can take the job is offline or has no fresh data.
+    RunnersOffline,
+    /// A runner that can take the job is idle, and the job has waited past the limit.
+    WaitedPastLimit,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
