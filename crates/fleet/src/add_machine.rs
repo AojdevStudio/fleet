@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::desired::model::{Host, Platform, SshTransport};
-use crate::fleet_plan::{connected_hostname, proven_peer};
+use crate::fleet_plan::{connected_hostname, proof_candidates};
 use crate::model::TailnetPeer;
 
 /// What Add machine can offer.
@@ -33,32 +33,45 @@ pub struct AddMachineWait {
     pub reason: String,
 }
 
-/// Why `host`'s tailnet device isn't known yet, or `None` when it is. `ssh_hosts` maps each
-/// SSH target to the host name OpenSSH resolves it to. Disabled hosts count too: their device
-/// is still in the inventory, so an offer for it would add the machine twice.
-pub(crate) fn wait_reason(host: &Host, ssh_hosts: &BTreeMap<String, String>, peers: &[TailnetPeer]) -> Option<String> {
+/// The tailnet device `host` provably is, `None` when there are no devices to prove it against,
+/// or why it isn't known. `ssh_hosts` maps each SSH target to the host name OpenSSH resolves it
+/// to. Disabled hosts count too: their device is still in the inventory, so an offer for it
+/// would add the machine twice.
+pub(crate) fn host_proof<'a>(
+    host: &Host,
+    ssh_hosts: &BTreeMap<String, String>,
+    peers: &'a [TailnetPeer],
+) -> Result<Option<&'a TailnetPeer>, String> {
     let Some(target) = &host.ssh_target else {
-        return Some(format!(
+        return Err(format!(
             "ssh = \"{}\" is unset in the app's environment. Set the variable and restart the app, \
              or write the SSH target in the inventory.",
             host.ssh_setting
         ));
     };
-    let resolved = ssh_hosts.get(target);
+    let resolved = ssh_hosts.get(target).map(String::as_str);
     if host.ssh_transport == SshTransport::Openssh && resolved.is_none() {
-        return Some(format!(
+        return Err(format!(
             "SSH hasn't resolved {target} yet. If this lasts, check that `ssh -G {target}` works on this Mac."
         ));
     }
-    // With no tailnet devices there is nothing to offer, so nothing to prove.
-    let resolved = resolved.map(String::as_str);
-    (!peers.is_empty() && proven_peer(host, resolved, peers).is_none()).then(|| {
-        let name = connected_hostname(host, resolved).unwrap_or_default();
-        format!(
-            "SSH connects to {name}, and no tailnet device has that MagicDNS name or tailnet IP, so the app \
-             can't tell which device this host is. Write the device's MagicDNS name or tailnet IP in ssh."
-        )
-    })
+    if peers.is_empty() {
+        return Ok(None);
+    }
+    let name = connected_hostname(host, resolved).unwrap_or_default();
+    match proof_candidates(host, resolved, peers)[..] {
+        [peer] => Ok(Some(peer)),
+        [] => Err(format!(
+            "SSH connects to {name}, and no device on this tailnet has that MagicDNS name or tailnet IP, so \
+             the app can't tell which device this host is. If the device is on the tailnet, write its MagicDNS \
+             name or tailnet IP in ssh. If it isn't, add new machines to the inventory by hand."
+        )),
+        ref several => Err(format!(
+            "{name} names more than one device on this tailnet ({}). Write the full MagicDNS name or \
+             tailnet IP in ssh.",
+            several.iter().map(|p| p.address()).collect::<Vec<_>>().join(", ")
+        )),
+    }
 }
 
 /// A tailnet device no inventory host claims, with the `[[hosts]]` entry that adds it.

@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::add_machine::{AddMachineView, AddMachineWait, TailnetDeviceView, device_view, wait_reason};
+use crate::add_machine::{AddMachineView, AddMachineWait, TailnetDeviceView, device_view, host_proof};
 use crate::machine::{MachineReport, OsFamily};
 use chrono::{DateTime, Utc};
 
@@ -79,16 +79,9 @@ pub(super) fn assemble(
     now: DateTime<Utc>,
 ) -> Machines {
     let snapshot = obs.tailscale.as_ref().map(|t| &t.value);
-    let self_node = snapshot.and_then(|s| s.self_node_id.as_deref());
-    let peers: Vec<TailnetPeer> = snapshot
-        .map(|s| {
-            s.peers
-                .iter()
-                .filter(|p| Some(p.node_id.as_str()) != self_node)
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default();
+    // This Mac proves a host that is this Mac, but is never a machine's peer or an offer.
+    let all_peers = snapshot.map_or(&[][..], |s| s.peers.as_slice());
+    let peers: Vec<TailnetPeer> = snapshot.map(|s| s.others().cloned().collect()).unwrap_or_default();
     // Without a loaded inventory nothing says which peers are already enrolled.
     let Some(inventory) = plan.inventory.as_ref().and_then(|r| r.as_ref().ok()) else {
         return Machines {
@@ -105,17 +98,19 @@ pub(super) fn assemble(
         now,
     };
 
-    let (slots, claimed) = slots(&peers, inventory, &plan.ssh_hosts);
-    let waiting: Vec<AddMachineWait> = inventory
-        .hosts
-        .iter()
-        .filter_map(|h| {
-            wait_reason(h, &plan.ssh_hosts, &peers).map(|reason| AddMachineWait {
-                host_id: h.id.clone(),
+    let (slots, mut claimed) = slots(&peers, inventory, &plan.ssh_hosts);
+    // With nothing to offer there is nothing to prove.
+    let proof_peers = if peers.is_empty() { &[][..] } else { all_peers };
+    let mut waiting = Vec::new();
+    for host in &inventory.hosts {
+        match host_proof(host, &plan.ssh_hosts, proof_peers) {
+            Ok(proven) => claimed.extend(proven.map(|p| p.node_id.as_str())),
+            Err(reason) => waiting.push(AddMachineWait {
+                host_id: host.id.clone(),
                 reason,
-            })
-        })
-        .collect();
+            }),
+        }
+    }
     let mut fleet = Vec::new();
     for slot in &slots {
         let mut view = machine_view(slot, &ctx, matched);

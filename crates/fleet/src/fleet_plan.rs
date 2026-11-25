@@ -171,21 +171,25 @@ pub fn peer_for_host<'a>(host: &Host, ssh_hostname: Option<&str>, peers: &'a [Ta
         .chain([written])
         .map(normalized)
         .find_map(|name| {
-            proven_named(&name, host.ssh_transport, peers).or_else(|| {
-                let short = name.split('.').next().unwrap_or(&name);
-                peers.iter().find(|p| {
-                    label(p).is_some_and(|l| l.eq_ignore_ascii_case(short)) || p.hostname.eq_ignore_ascii_case(short)
+            named_exactly(&name, host.ssh_transport, peers)
+                .first()
+                .copied()
+                .or_else(|| {
+                    let short = name.split('.').next().unwrap_or(&name);
+                    peers.iter().find(|p| {
+                        label(p).is_some_and(|l| l.eq_ignore_ascii_case(short))
+                            || p.hostname.eq_ignore_ascii_case(short)
+                    })
                 })
-            })
         })
 }
 
-/// The tailnet machine the host's transport provably connects to: the name it connects to is
-/// a full MagicDNS name or a tailnet IP, or a bare MagicDNS label for `tailscale ssh`. The
-/// guesses `peer_for_host` falls back to don't count, so Add machine can't duplicate a host.
-pub fn proven_peer<'a>(host: &Host, ssh_hostname: Option<&str>, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPeer> {
-    let name = connected_hostname(host, ssh_hostname)?;
-    proven_named(&name, host.ssh_transport, peers)
+/// The tailnet machines the name the host's transport connects to names exactly: a full
+/// MagicDNS name or a tailnet IP, or a bare MagicDNS label for `tailscale ssh`. Exactly one
+/// proves the host's device. The guesses `peer_for_host` falls back to don't count, so Add
+/// machine can't duplicate a host.
+pub fn proof_candidates<'a>(host: &Host, ssh_hostname: Option<&str>, peers: &'a [TailnetPeer]) -> Vec<&'a TailnetPeer> {
+    connected_hostname(host, ssh_hostname).map_or_else(Vec::new, |name| named_exactly(&name, host.ssh_transport, peers))
 }
 
 /// The normalized name the host's transport connects to.
@@ -222,14 +226,18 @@ fn label(peer: &TailnetPeer) -> Option<&str> {
 
 /// OpenSSH may resolve a bare name through the hosts file or LAN DNS, so only `tailscale ssh`
 /// proves a device by its bare MagicDNS label.
-fn proven_named<'a>(name: &str, transport: SshTransport, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPeer> {
+/// A shared device from another tailnet can carry the same label, so a label can name several.
+fn named_exactly<'a>(name: &str, transport: SshTransport, peers: &'a [TailnetPeer]) -> Vec<&'a TailnetPeer> {
     let ip = name.parse::<IpAddr>().ok();
     let bare_label = transport == SshTransport::Tailscale && !name.contains('.');
-    peers.iter().find(|p| {
-        p.dns_name.as_deref().is_some_and(|d| normalized(d) == name)
-            || ip.is_some_and(|ip| p.ips.iter().any(|i| i.parse::<IpAddr>().ok() == Some(ip)))
-            || (bare_label && label(p).is_some_and(|l| l.eq_ignore_ascii_case(name)))
-    })
+    peers
+        .iter()
+        .filter(|p| {
+            p.dns_name.as_deref().is_some_and(|d| normalized(d) == name)
+                || ip.is_some_and(|ip| p.ips.iter().any(|i| i.parse::<IpAddr>().ok() == Some(ip)))
+                || (bare_label && label(p).is_some_and(|l| l.eq_ignore_ascii_case(name)))
+        })
+        .collect()
 }
 
 /// Hosts that share a tailnet peer or SSH destination must not own independent execution targets.

@@ -496,7 +496,9 @@ fn inventory_hosts_match_tailnet_machines_by_their_ssh_target() {
     // Add machine trusts only a proven device. OpenSSH may send a bare `builder` to A through
     // the hosts file, while `tailscale ssh builder` reaches B's MagicDNS label.
     let proven = |host: &fleet::desired::model::Host, lan: &[TailnetPeer]| {
-        fleet::fleet_plan::proven_peer(host, None, lan).map(|p| p.node_id.clone())
+        fleet::fleet_plan::proof_candidates(host, None, lan)
+            .first()
+            .map(|p| p.node_id.clone())
     };
     assert_eq!(proven(&openssh, &lan), None, "builder.lan is a guess");
     openssh.ssh_target = Some("builder".into());

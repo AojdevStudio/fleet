@@ -178,7 +178,17 @@ pub struct TailnetSnapshot {
     pub self_node_id: Option<String>,
     pub local_online: Option<bool>,
     pub tailnet_name: Option<String>,
+    /// Every node on the tailnet, this Mac (`self_node_id`) included.
     pub peers: Vec<TailnetPeer>,
+}
+
+impl TailnetSnapshot {
+    /// The nodes other than this Mac, which machines and offers draw from.
+    pub fn others(&self) -> impl Iterator<Item = &TailnetPeer> {
+        self.peers
+            .iter()
+            .filter(|p| Some(p.node_id.as_str()) != self.self_node_id.as_deref())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]

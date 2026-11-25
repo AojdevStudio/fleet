@@ -547,11 +547,55 @@ labels = ["fleet", "linux-build"]
         assert_eq!(wait.host_id, "builder");
         assert!(
             wait.reason
-                .contains("SSH connects to builder.lan, and no tailnet device has"),
+                .contains("SSH connects to builder.lan, and no device on this tailnet has"),
             "{}",
             wait.reason
         );
     }
+}
+
+#[test]
+fn this_mac_proves_its_own_host_and_a_shared_label_proves_nothing() {
+    let text = |ssh: &str, transport: &str| {
+        format!(
+            "[organization]\nname = \"acme\"\nurl = \"https://github.com/acme\"\nrunner_group = \"trusted\"\n\n\
+             [[hosts]]\nid = \"here\"\nplatform = \"darwin-arm64\"\nssh = \"{ssh}\"\nssh_transport = \"{transport}\"\n\
+             root = \"~/gh-runners/acme\"\nservice_mode = \"launchagent\"\nlabels = [\"fleet\", \"macos-build\"]\n"
+        )
+    };
+    let view = |text: &str, peers: Vec<TailnetPeer>| {
+        let mut f = Fixture::new();
+        f.plan.inventory = Some(Ok(crate::desired::inventory::parse_inventory(
+            text,
+            &Default::default(),
+        )
+        .unwrap()));
+        f.plan.ssh_hosts.insert("my-mac.ts.net".into(), "my-mac.ts.net".into());
+        f.obs.tailscale.as_mut().unwrap().value.peers.extend(peers);
+        f.view()
+    };
+    // The inventory lists this Mac (nSelf, my-mac.ts.net). It is proven, and it is never offered.
+    let other = peer("nOther", "other", "linux", true);
+    let here = view(&text("my-mac.ts.net", "openssh"), vec![other.clone()]);
+    assert_eq!(offered(&here), Some(vec!["nOther"]));
+    // `tailscale ssh builder` could reach either device named builder, so offers wait.
+    let shared = TailnetPeer {
+        dns_name: Some("builder.other.ts.net".into()),
+        ..peer("nShared", "builder", "linux", true)
+    };
+    let mine = TailnetPeer {
+        dns_name: Some("builder.mine.ts.net".into()),
+        ..peer("nMine", "builder", "linux", true)
+    };
+    let ambiguous = view(&text("builder", "tailscale"), vec![shared, mine, other]);
+    let crate::add_machine::AddMachineView::Waiting { hosts } = &ambiguous.add_machine else {
+        panic!("{:?}", ambiguous.add_machine)
+    };
+    assert!(
+        hosts[0].reason.contains("names more than one device"),
+        "{}",
+        hosts[0].reason
+    );
 }
 
 #[test]
