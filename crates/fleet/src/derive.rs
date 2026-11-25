@@ -5,7 +5,10 @@
 //! - Old data is kept and flagged `stale`; it is never replaced by zeros.
 //! - "Installed" comes from SSH; "connected" and "doing work" come from GitHub.
 //! - A current job is shown only when GitHub's jobs API links it to the runner.
-//! - Elapsed time alone never marks anything as stuck.
+//! - Elapsed time alone never marks a running job as stuck. A queued job is
+//!   stuck when no runner matches it, when every match is offline or has no
+//!   fresh status, or when it had waited past [`STUCK_AFTER`] when the last
+//!   job scan began while a matching runner is idle.
 
 use std::collections::{HashMap, HashSet};
 
@@ -22,6 +25,9 @@ mod machines;
 pub const SSH_STALE_AFTER: Duration = Duration::seconds(150);
 pub const GITHUB_STALE_AFTER: Duration = Duration::seconds(150);
 pub const JOBS_STALE_AFTER: Duration = Duration::seconds(300);
+/// A queued job that waits this long while a matching runner is idle is stuck.
+pub const STUCK_AFTER_SECS: u32 = 30 * 60;
+pub const STUCK_AFTER: Duration = Duration::seconds(STUCK_AFTER_SECS as i64);
 
 pub fn derive(
     config: &AppConfig,
@@ -166,6 +172,7 @@ struct GhEntry {
     runner: GhRunner,
     at: DateTime<Utc>,
     stale: bool,
+    idle_since: Option<DateTime<Utc>>,
 }
 
 struct GithubIndex {
@@ -208,6 +215,7 @@ impl GithubIndex {
                         runner: r.clone(),
                         at: runners.at,
                         stale,
+                        idle_since: o.idle_since(r),
                     });
                 }
             }
@@ -237,24 +245,34 @@ impl GithubIndex {
     /// jobs from its own repository only, and a job's runner name must match
     /// when GitHub gives one. Two matching jobs leave the runner unlinked.
     fn current_job(&self, entry: &GhEntry) -> Option<&GhJob> {
-        let runner = &entry.runner;
         let mut matching = self
             .jobs_by_runner
-            .get(&(entry.org.clone(), runner.id))?
+            .get(&(entry.org.clone(), entry.runner.id))?
             .iter()
-            .filter(|job| {
-                runner
-                    .repository
-                    .as_deref()
-                    .is_none_or(|repository| job.repo.eq_ignore_ascii_case(repository))
-                    && job
-                        .runner_name
-                        .as_deref()
-                        .is_none_or(|name| name.eq_ignore_ascii_case(&runner.name))
-            });
+            .filter(|job| ran_on(&entry.runner, job));
         let job = matching.next()?;
         matching.next().is_none().then_some(job)
     }
+}
+
+/// Whether an in-progress job ran on this runner. Repository runners share IDs,
+/// so the job's repository and, when GitHub gives one, its runner name must agree.
+pub(crate) fn ran_on(runner: &GhRunner, job: &GhJob) -> bool {
+    job.runner_id == Some(runner.id)
+        && takes_jobs_from(runner, &job.repo)
+        && job
+            .runner_name
+            .as_deref()
+            .is_none_or(|name| name.eq_ignore_ascii_case(&runner.name))
+}
+
+/// A repository runner takes only its own repository's jobs. An organization
+/// runner takes jobs from any repository its group allows.
+fn takes_jobs_from(runner: &GhRunner, repo: &str) -> bool {
+    runner
+        .repository
+        .as_deref()
+        .is_none_or(|repository| repository.eq_ignore_ascii_case(repo))
 }
 
 fn connection(
@@ -391,6 +409,7 @@ fn queue_view(
 ) -> QueueView {
     let mut view = QueueView {
         complete: true,
+        stuck_after_secs: STUCK_AFTER_SECS,
         ..Default::default()
     };
     let by_key: HashMap<&str, &RunnerView> = runners.iter().map(|r| (r.key.as_str(), *r)).collect();
@@ -420,42 +439,91 @@ fn queue_view(
             view.complete = false;
         }
         view.as_of = Some(view.as_of.map_or(jobs.at, |a: DateTime<Utc>| a.min(jobs.at)));
+        let runners_known = obs.github.get(&org).is_some_and(|o| o.runners.is_some());
 
         for job in jobs.value.jobs.iter().filter(|j| j.status == "queued") {
-            let compatible: Vec<&GhEntry> = gh
+            let by_label: Vec<&GhEntry> = gh
                 .runners
                 .iter()
                 .filter(|r| r.org == org && labels::is_compatible(&job.labels, &r.runner.labels))
                 .collect();
-            if compatible.is_empty() && !labels::targets_self_hosted(&job.labels) {
+            if by_label.is_empty() && !labels::targets_self_hosted(&job.labels) {
                 view.other_queued += 1;
                 continue;
             }
-            let online: Vec<&&GhEntry> = compatible
+            let compatible: Vec<&GhEntry> = by_label
                 .iter()
+                .copied()
+                .filter(|r| takes_jobs_from(&r.runner, &job.repo))
+                .collect();
+            let online: Vec<&GhEntry> = compatible
+                .iter()
+                .copied()
                 .filter(|r| !r.stale && r.runner.status == "online")
                 .collect();
-            let idle = online
+            let idle: Vec<&GhEntry> = online
                 .iter()
+                .copied()
                 .filter(|r| {
                     !r.runner.busy
                         && by_key
                             .get(r.key.as_str())
                             .is_none_or(|v| !matches!(v.activity, RunnerActivity::Busy { .. }))
                 })
-                .count();
+                .collect();
+            // A runner that went idle after the scan began may have taken this job since.
+            // One a scan saw working has no idle time until a later runner list.
+            let idle_at_scan = idle
+                .iter()
+                .any(|r| r.idle_since.is_some_and(|at| at <= jobs.value.started_at));
+            let reason = if !runners_known {
+                None
+            } else if by_label.is_empty() {
+                Some(QueueStuckReason::NoLabelMatch)
+            } else if compatible.is_empty() {
+                Some(QueueStuckReason::OtherRepository)
+            } else if online.is_empty() {
+                Some(QueueStuckReason::RunnersOffline)
+            } else if idle_at_scan
+                && job
+                    .created_at
+                    .is_some_and(|at| jobs.value.started_at - at > STUCK_AFTER)
+            {
+                Some(QueueStuckReason::WaitedPastLimit)
+            } else {
+                None
+            };
             view.jobs.push(QueuedJobView {
                 org: org.clone(),
                 job: job_view(job),
                 created_at: job.created_at,
                 compatible_runners: compatible.iter().map(|r| r.key.clone()).collect(),
                 compatible_online: count_u32(online.len()),
-                compatible_idle: count_u32(idle),
+                compatible_idle: count_u32(idle.len()),
+                runners_known,
+                stuck: reason.map(|reason| QueueStuck {
+                    reason,
+                    detail: stuck_detail(reason, job),
+                }),
             });
         }
     }
-    view.jobs.sort_by_key(|q| (q.created_at, q.job.id));
+    // Oldest first. Jobs with no creation time go last.
+    view.jobs
+        .sort_by_key(|q| (q.created_at.is_none(), q.created_at, q.job.id));
     view
+}
+
+fn stuck_detail(reason: QueueStuckReason, job: &GhJob) -> String {
+    match reason {
+        QueueStuckReason::OtherRepository => "Only runners registered to other repositories have its labels.".into(),
+        QueueStuckReason::NoLabelMatch => format!("No runner has the labels {}.", job.labels.join(", ")),
+        QueueStuckReason::RunnersOffline => "Every runner that matches it is offline or has no recent status.".into(),
+        QueueStuckReason::WaitedPastLimit => format!(
+            "An idle runner matches it, but it has waited over {} min.",
+            STUCK_AFTER.num_minutes()
+        ),
+    }
 }
 
 fn summarize(machines: &[MachineView], runners: &[&RunnerView], queue: &QueueView) -> FleetSummary {

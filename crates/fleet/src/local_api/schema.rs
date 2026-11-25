@@ -21,7 +21,7 @@ pub(super) fn endpoint_descriptions() -> Value {
         "GET /v1/machines/{id}": "Machine by exact ID, inventory alias, or unambiguous name",
         "GET /v1/runners": "Runner list, filtered by machine, org, activity, label, or current-job repo",
         "GET /v1/runners/{key}": "Runner by exact key or unambiguous name; optional org",
-        "GET /v1/queue": "Self-hosted queue filtered by org, repo and label; scope metadata stays fleet-wide",
+        "GET /v1/queue": "Self-hosted queue filtered by org, repo and label; each job lists its matching runners and why it is stuck; scope metadata stays fleet-wide",
         "GET /v1/desired": "Global plan plus per-host plans, runner status, blocked reasons and doctor checks; optional machine",
         "GET /v1/monitoring": format!("Current alerts and latest {EVENT_PAGE_SIZE} events; optional machine"),
         "GET /v1/pools": "runner-up central pools: place counts per pool, places and tart VMs; null without a coordinator",

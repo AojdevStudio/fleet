@@ -104,7 +104,13 @@ async fn link_pagination_survives_conditional_cached_responses() {
     let second = client.scan_jobs("acme", &scope()).await.unwrap();
     assert_eq!(first.jobs.iter().map(|job| job.id).collect::<Vec<_>>(), vec![1, 2]);
     assert!(!first.truncated);
-    assert_eq!(first, second);
+    assert_eq!(
+        first,
+        fleet::model::JobScan {
+            started_at: first.started_at,
+            ..second
+        }
+    );
     assert_eq!(hits.load(Ordering::SeqCst), 6);
 }
 
@@ -141,12 +147,16 @@ async fn repository_scopes_are_read_whole_without_a_cap() {
         offline.scan_jobs("acme", &RepoScope::None).await.unwrap(),
         Default::default()
     );
+    let empty = offline
+        .scan_jobs("acme", &RepoScope::Recent { max_repos: 0 })
+        .await
+        .unwrap();
     assert_eq!(
-        offline
-            .scan_jobs("acme", &RepoScope::Recent { max_repos: 0 })
-            .await
-            .unwrap(),
-        Default::default()
+        empty,
+        fleet::model::JobScan {
+            started_at: empty.started_at,
+            ..Default::default()
+        }
     );
 }
 

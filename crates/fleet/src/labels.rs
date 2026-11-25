@@ -16,6 +16,12 @@ pub fn is_compatible(job_labels: &[String], runner_labels: &[String]) -> bool {
     job_labels.iter().all(|l| have.contains(&l.to_lowercase()))
 }
 
+/// Whether two label lists name the same labels, in any order and case.
+pub fn same_labels(a: &[String], b: &[String]) -> bool {
+    let set = |labels: &[String]| labels.iter().map(|l| l.to_lowercase()).collect::<HashSet<_>>();
+    set(a) == set(b)
+}
+
 /// Jobs that ask for `self-hosted` are clearly ours even if nothing matches now.
 pub fn targets_self_hosted(job_labels: &[String]) -> bool {
     job_labels.iter().any(|l| l.eq_ignore_ascii_case("self-hosted"))
@@ -44,6 +50,18 @@ mod tests {
     #[test]
     fn empty_job_labels_never_match() {
         assert!(!is_compatible(&[], &v(&["self-hosted"])));
+    }
+
+    #[test]
+    fn same_labels_ignores_order_and_case() {
+        assert!(same_labels(
+            &v(&["self-hosted", "macOS"]),
+            &v(&["MACOS", "Self-Hosted"])
+        ));
+        assert!(!same_labels(
+            &v(&["self-hosted", "macOS"]),
+            &v(&["self-hosted", "macOS", "ARM64"])
+        ));
     }
 
     #[test]

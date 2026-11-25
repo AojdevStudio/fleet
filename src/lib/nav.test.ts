@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterNavView, findRunner, flattenNav, moveSelection, reconcileSelection, selectionId } from "./nav";
+import { filterNavView, findRunner, flattenNav, keepsArrowKeys, moveSelection, reconcileSelection, selectionId } from "./nav";
 import { previewFleet } from "./preview";
 
 const view = previewFleet();
@@ -69,5 +69,30 @@ describe("reconcileSelection", () => {
   it("finds runners on machines and those not linked to one", () => {
     expect(findRunner(view, "gh:acme-demo:101")?.name).toBe("studio-1");
     expect(findRunner(view, "gh:acme-demo:501")?.name).toBe("cloud-gpu-1");
+  });
+});
+
+/** A stand-in element: a tag, its attributes and a parent, with `closest` over tag and `[attribute]` selectors. */
+function fakeElement(tag: string, attrs: string[] = [], parent: unknown = null): EventTarget {
+  const el = {
+    tag, attrs, parent,
+    closest(selector: string): unknown {
+      const matches = selector.split(",").map((s) => s.trim()).some((s) => s === tag || attrs.includes(s.replace(/^\[|\]$/g, "")));
+      return matches ? el : (parent as { closest?: (s: string) => unknown } | null)?.closest?.(selector) ?? null;
+    },
+  };
+  return el as unknown as EventTarget;
+}
+
+describe("keepsArrowKeys", () => {
+  it("lets text fields and scrolling job columns keep arrow keys, and the sidebar take them elsewhere", () => {
+    const column = fakeElement("div", ["data-arrow-scroll"]);
+    expect(keepsArrowKeys(column)).toBe(true);
+    expect(keepsArrowKeys(fakeElement("button", [], column))).toBe(true);
+    expect(keepsArrowKeys(fakeElement("input"))).toBe(true);
+    expect(keepsArrowKeys(fakeElement("textarea"))).toBe(true);
+    expect(keepsArrowKeys(fakeElement("button", [], fakeElement("div")))).toBe(false);
+    expect(keepsArrowKeys(null)).toBe(false);
+    expect(keepsArrowKeys({} as EventTarget)).toBe(false);
   });
 });

@@ -64,7 +64,23 @@ async fn index_and_reads() {
     assert_eq!(body["currentJob"]["name"], "build (macOS)");
 
     let (_, body) = call(&e, get("/v1/queue")).await;
-    assert_eq!(body["queue"]["jobs"].as_array().unwrap().len(), 2);
+    assert_eq!(body["queue"]["jobs"].as_array().unwrap().len(), 6);
+    // v1 scripts still read queued jobs no online runner can take as queue findings.
+    let (s, body) = call(&e, get("/v1/issues?category=queue")).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(body["total"], 3);
+    let detail = |id: &str| {
+        body["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["id"] == id)
+            .map(|i| i["detail"].clone())
+    };
+    assert_eq!(
+        detail("queue:acme-demo:9007"),
+        Some(json!("Only runners registered to other repositories have its labels."))
+    );
 
     let (s, _) = call(&e, get("/v1/machines/nope")).await;
     assert_eq!(s, StatusCode::NOT_FOUND);
@@ -499,6 +515,12 @@ async fn schema_has_every_route_and_resolves_all_model_references() {
         }
     }
     refs(&schema, &schema);
+    assert!(
+        schema["components"]["schemas"]["FleetIssueCategory"]["enum"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("queue"))
+    );
     for route in super::schema::endpoint_descriptions().as_object().unwrap().keys() {
         let (method, path) = route.split_once(' ').unwrap();
         assert!(

@@ -3,16 +3,14 @@ import type { FleetIssueCategory } from "../../bindings/FleetIssueCategory";
 import type { FleetView } from "../../bindings/FleetView";
 import { useNow } from "../../hooks";
 import { plural, timeAgo } from "../../lib/format";
-import { allRunners } from "../../lib/nav";
-import { activityCounts } from "../../lib/status";
 import { emitEvent, isLive } from "../../lib/tauri";
 import { useUi } from "../../store";
-import { calloutSurface, Card, EmptyLine, Section, Stat, StatStrip } from "../ui";
+import { calloutSurface, Card, Section } from "../ui";
 import { Icon } from "../icons";
 import { OperationCard } from "./changes";
-import { InventoryProblem, List, PageHeader, RunnerLine } from "./shared";
+import { InventoryProblem, PageHeader } from "./shared";
+import { JobBoard } from "./JobBoard";
 import { MachineTable } from "./MachineTable";
-import { QueueList } from "./QueueDetail";
 import { ActiveAlerts, EventTimeline, MonitoringError } from "./Monitoring";
 import { RunnerChecks } from "./RunnerChecks";
 import { Pools } from "./Pools";
@@ -22,9 +20,6 @@ import { Welcome } from "./Welcome";
 export function Overview({ view }: { view: FleetView }) {
   const s = view.summary;
   const machines = view.machines;
-  const runners = allRunners(view);
-  const working = runners.filter((r) => r.activity.kind === "busy");
-  const idle = activityCounts(runners).idle;
 
   if (view.orgs.length === 0 && machines.length === 0 && view.source === "live") {
     return <Welcome view={view} />;
@@ -40,38 +35,13 @@ export function Overview({ view }: { view: FleetView }) {
       <PlanLine view={view} />
       <InventoryProblem view={view} />
       {view.plan.operation && <OperationCard op={view.plan.operation} />}
-      <div className="mt-8"><StatStrip>
-        <Stat label="Working" value={s.runnersBusy} tone="busy" sub={`of ${s.runners} runners`}>
-          <div className="flex h-1 overflow-hidden rounded-full bg-sunken" aria-hidden="true">
-            <span className="bg-busy" style={{ width: `${s.runners ? s.runnersBusy / s.runners * 100 : 0}%` }} />
-            <span className="bg-ok/80" style={{ width: `${s.runners ? idle / s.runners * 100 : 0}%` }} />
-          </div>
-        </Stat>
-        <Stat label="Idle" value={idle} tone="ok" sub="online, ready for jobs" />
-        <Stat label="Offline" value={s.runnersOffline} tone="muted" sub={s.runnersUnknown ? `${s.runnersUnknown} unknown` : "per GitHub"} />
-        <Stat
-          label="Queued jobs"
-          value={view.queue.jobs.length}
-          sub={view.queue.complete ? "self-hosted, scanned repos" : "partial: some data missing"}
-        />
-      </StatStrip></div>
+      <JobBoard view={view} />
 
+      <Attention issues={view.issues.filter((i) => i.id !== "inventory")} />
       <MonitoringError view={view} />
       {view.monitoring.alerts.length > 0 && <Section title="Active alerts" count={view.monitoring.alerts.length}>
         <ActiveAlerts alerts={view.monitoring.alerts} view={view} showMachine />
       </Section>}
-      <Attention issues={view.issues.filter((i) => i.id !== "inventory")} />
-
-      <div className="grid grid-cols-1 gap-x-6 min-[1100px]:grid-cols-2">
-        <Section title="Working now" count={working.length}>
-          <List>
-            {working.length === 0 ? <EmptyLine>No runner is working right now.</EmptyLine> : working.map((r) => <RunnerLine key={r.key} r={r} view={view} />)}
-          </List>
-        </Section>
-        <Section title="Queued" count={view.queue.jobs.length}>
-          <QueueList view={view} limit={5} compact />
-        </Section>
-      </div>
 
       <Section title="Machines" count={machines.length} action={
         <div className="flex items-center gap-3 text-[12px] text-ink-2">
@@ -101,8 +71,8 @@ export function Overview({ view }: { view: FleetView }) {
   );
 }
 
-/** Findings shown elsewhere on the overview: alerts, history storage and the running change. */
-const SHOWN_ELSEWHERE: FleetIssueCategory[] = ["alert", "storage", "operation"];
+/** Findings shown elsewhere on the overview: alerts, stuck jobs, history storage and the running change. */
+const SHOWN_ELSEWHERE: FleetIssueCategory[] = ["alert", "queue", "storage", "operation"];
 
 export function Attention({ issues }: { issues: FleetIssue[] }) {
   const select = useUi((s) => s.select);
@@ -118,7 +88,6 @@ export function Attention({ issues }: { issues: FleetIssue[] }) {
         onClick: issue.fix ? () => emitEvent("open-settings")
           : runnerKey ? () => select({ kind: "runner", key: runnerKey })
           : machineId ? () => select({ kind: "machine", id: machineId })
-          : issue.category === "queue" ? () => select({ kind: "queue" })
           : undefined,
       };
     });

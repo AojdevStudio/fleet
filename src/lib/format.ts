@@ -22,13 +22,17 @@ export function formatClock(iso: string): string {
 export function timeAgo(iso: string | null | undefined, now: number): string {
   if (!iso) return "never";
   const secs = Math.round((now - Date.parse(iso)) / 1000);
-  if (secs < 5) return "just now";
-  if (secs < 60) return `${secs}s ago`;
+  return secs < 5 ? "just now" : `${shortDuration(secs)} ago`;
+}
+
+/** A coarse duration: `42s`, `5m`, `3h`, `2d`. */
+export function shortDuration(secs: number): string {
+  if (secs < 60) return `${Math.max(0, secs)}s`;
   const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60) return `${mins}m`;
   const hours = Math.floor(mins / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
 /** Decimal units, like Finder. */

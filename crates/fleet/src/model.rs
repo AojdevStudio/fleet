@@ -3,7 +3,7 @@
 //! Observations are facts with timestamps. The view is a pure function of
 //! (config, observations, now) — see `derive.rs`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::machine::{DiskStats, MachineReport, OsFamily};
 use chrono::{DateTime, Utc};
@@ -219,6 +219,71 @@ pub struct OrgObservation {
     pub jobs_error: Option<Timed<String>>,
     pub rate_limit: Option<RateLimit>,
     pub missing_token: bool,
+    /// The first runner list in the current unbroken run that showed each runner
+    /// online and idle with its current labels. Keyed by repository and runner ID,
+    /// like GitHub numbers them.
+    idle_since: HashMap<(Option<String>, u64), DateTime<Utc>>,
+}
+
+impl OrgObservation {
+    /// Stores a new runner list and carries over when each still-idle runner went idle.
+    /// A gap long enough to make the last list stale, or a change of labels, starts
+    /// a new run, since the runner may have taken and finished a job unseen.
+    pub fn set_runners(&mut self, runners: Timed<Vec<GhRunner>>) {
+        let previous = self
+            .runners
+            .as_ref()
+            .filter(|p| runners.at - p.at <= crate::derive::GITHUB_STALE_AFTER);
+        self.idle_since = runners
+            .value
+            .iter()
+            .filter(|r| r.status == "online" && !r.busy)
+            .map(|r| {
+                let key = idle_key(r);
+                let unchanged = previous.is_some_and(|p| {
+                    p.value
+                        .iter()
+                        .any(|old| idle_key(old) == key && crate::labels::same_labels(&old.labels, &r.labels))
+                });
+                let since = self
+                    .idle_since
+                    .get(&key)
+                    .copied()
+                    .filter(|_| unchanged)
+                    .unwrap_or(runners.at);
+                (key, since)
+            })
+            .collect();
+        self.runners = Some(runners);
+    }
+
+    /// Stores a new job scan. A runner the scan saw working loses its idle time, so a
+    /// later scan that can't read that work doesn't take the runner for free.
+    pub fn set_jobs(&mut self, jobs: Timed<JobScan>) {
+        if let Some(runners) = &self.runners {
+            for r in &runners.value {
+                if jobs
+                    .value
+                    .jobs
+                    .iter()
+                    .any(|j| j.status == "in_progress" && crate::derive::ran_on(r, j))
+                {
+                    self.idle_since.remove(&idle_key(r));
+                }
+            }
+        }
+        self.jobs = Some(jobs);
+    }
+
+    /// When the runner list first showed this runner idle. None while it is busy or offline,
+    /// and after a job scan saw it working until the next runner list.
+    pub fn idle_since(&self, runner: &GhRunner) -> Option<DateTime<Utc>> {
+        self.idle_since.get(&idle_key(runner)).copied()
+    }
+}
+
+fn idle_key(r: &GhRunner) -> (Option<String>, u64) {
+    (r.repository.as_ref().map(|s| s.to_lowercase()), r.id)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -241,6 +306,9 @@ pub struct GhRunner {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct JobScan {
+    /// When the scan began. A queued job may start while the scan runs, so its
+    /// wait is counted only up to here.
+    pub started_at: DateTime<Utc>,
     pub repos_scanned: Vec<String>,
     /// True when repositories, runs, or jobs were skipped by a cap or access failure.
     pub truncated: bool,
@@ -506,12 +574,14 @@ pub struct JobView {
 #[serde(rename_all = "camelCase")]
 pub struct QueueView {
     pub jobs: Vec<QueuedJobView>,
-    /// Queued jobs whose labels no self-hosted runner in the org could ever match
-    /// (typically GitHub-hosted `ubuntu-latest`). Counted, not listed.
+    /// Queued jobs that match no observed runner by label and don't ask for
+    /// `self-hosted` (typically GitHub-hosted `ubuntu-latest`). Counted, not listed.
     pub other_queued: u32,
     /// False when job data is missing or stale for some org.
     pub complete: bool,
     pub as_of: Option<DateTime<Utc>>,
+    /// How long a job may wait while a matching runner is idle before it counts as stuck.
+    pub stuck_after_secs: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -521,10 +591,41 @@ pub struct QueuedJobView {
     pub org: String,
     pub job: JobView,
     pub created_at: Option<DateTime<Utc>>,
-    /// Runner keys whose labels are a superset of the job's labels.
+    /// Runners that match the job: every job label is on the runner, and a
+    /// repository runner belongs to the job's repository. Runner-group access
+    /// isn't checked.
     pub compatible_runners: Vec<String>,
     pub compatible_online: u32,
     pub compatible_idle: u32,
+    /// False until GitHub returns the organization's runner list. Until then no
+    /// runner is matched and the job is never marked stuck.
+    pub runners_known: bool,
+    /// Why the job isn't moving. None while it waits normally for a runner.
+    pub stuck: Option<QueueStuck>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueStuck {
+    pub reason: QueueStuckReason,
+    /// The reason as a sentence for people.
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub enum QueueStuckReason {
+    /// Runners have the job's labels, but each is registered to another repository.
+    OtherRepository,
+    /// No observed runner has every label the job asks for.
+    NoLabelMatch,
+    /// Every matching runner is offline or has no fresh data.
+    RunnersOffline,
+    /// A matching runner was already idle when the last job scan began, and the job
+    /// had waited past the limit by then.
+    WaitedPastLimit,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]

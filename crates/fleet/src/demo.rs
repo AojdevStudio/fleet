@@ -48,7 +48,16 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
         gh(102, "studio-2", false, &["self-hosted", "macOS", "ARM64", "xcode-16"]),
         gh(201, "mini-02", true, &["self-hosted", "macOS", "ARM64"]),
         gh(301, "linux-01-a", false, &["self-hosted", "Linux", "X64", "docker"]),
-        gh(302, "linux-01-b", false, &["self-hosted", "Linux", "X64", "docker"]),
+        // Registered to one repository, so other repositories' jobs can't use it.
+        GhRunner {
+            repository: Some("acme-demo/infra".into()),
+            ..gh(
+                302,
+                "linux-01-b",
+                false,
+                &["self-hosted", "Linux", "X64", "docker", "dependabot"],
+            )
+        },
         offline(gh(401, "win-builder", false, &["self-hosted", "Windows", "X64"])),
         gh(501, "cloud-gpu-1", false, &["self-hosted", "Linux", "X64", "gpu"]),
     ];
@@ -109,6 +118,50 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
             None,
             ago(20),
         ),
+        job(
+            9006,
+            0,
+            "integration",
+            "CI",
+            "acme-demo/infra",
+            "queued",
+            &["self-hosted", "Linux", "docker"],
+            None,
+            ago(6 * 60 + 40),
+        ),
+        job(
+            9007,
+            0,
+            "Dependabot",
+            "Dependabot Updates",
+            "acme-demo/web",
+            "queued",
+            &["dependabot"],
+            None,
+            ago(18 * 3600 + 12 * 60),
+        ),
+        job(
+            9008,
+            0,
+            "package (windows)",
+            "Release",
+            "acme-demo/desktop",
+            "queued",
+            &["self-hosted", "Windows"],
+            None,
+            ago(14 * 60),
+        ),
+        job(
+            9009,
+            0,
+            "migrate-check",
+            "Deploy",
+            "acme-demo/infra",
+            "queued",
+            &["self-hosted", "Linux", "X64"],
+            None,
+            ago(52 * 60),
+        ),
     ];
 
     let mut obs = Observations {
@@ -136,28 +189,31 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
         }),
         ..Default::default()
     };
-    obs.github.insert(
-        ORG.into(),
-        OrgObservation {
-            runners: Some(Timed::new(ago(9), gh_runners)),
-            jobs: Some(Timed::new(
-                ago(21),
-                JobScan {
-                    repos_scanned: vec!["ios-app".into(), "web".into(), "ml".into(), "infra".into()],
-                    truncated: false,
-                    jobs,
-                },
-            )),
-            error: None,
-            jobs_error: None,
-            rate_limit: Some(RateLimit {
-                limit: 5000,
-                remaining: 4712,
-                resets_at: Some(now + Duration::minutes(38)),
-            }),
-            missing_token: false,
+    let mut acme = OrgObservation::default();
+    acme.jobs = Some(Timed::new(
+        ago(21),
+        JobScan {
+            started_at: ago(23),
+            repos_scanned: vec![
+                "ios-app".into(),
+                "web".into(),
+                "ml".into(),
+                "infra".into(),
+                "desktop".into(),
+            ],
+            truncated: false,
+            jobs,
         },
-    );
+    ));
+    acme.rate_limit = Some(RateLimit {
+        limit: 5000,
+        remaining: 4712,
+        resets_at: Some(now + Duration::minutes(38)),
+    });
+    // An earlier runner poll saw the same list, so its idle runners were idle before the job scan.
+    acme.set_runners(Timed::new(ago(29), gh_runners.clone()));
+    acme.set_runners(Timed::new(ago(9), gh_runners));
+    obs.github.insert(ORG.into(), acme);
 
     let inventory = crate::demo_desired::inventory();
     let snapshot = crate::demo_desired::snapshot();

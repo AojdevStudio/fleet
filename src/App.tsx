@@ -3,7 +3,7 @@ import { DetailPane } from "./components/DetailPane";
 import { Sidebar } from "./components/Sidebar";
 import { ErrorText } from "./components/ui";
 import { useFleet } from "./hooks";
-import { filterNavView, flattenNav, moveSelection, reconcileSelection, selectionId } from "./lib/nav";
+import { filterNavView, flattenNav, keepsArrowKeys, moveSelection, reconcileSelection, selectionId } from "./lib/nav";
 import { emitEvent } from "./lib/tauri";
 import { Settings } from "./settings/Settings";
 import { useUi } from "./store";
@@ -38,8 +38,7 @@ function Main() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target;
-      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (keepsArrowKeys(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         select(moveSelection(nav, selection, e.key === "ArrowDown" ? 1 : -1));

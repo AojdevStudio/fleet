@@ -3,11 +3,15 @@ import type { QueuedJobView } from "./QueuedJobView";
 
 export type QueueView = { jobs: Array<QueuedJobView>, 
 /**
- * Queued jobs whose labels no self-hosted runner in the org could ever match
- * (typically GitHub-hosted `ubuntu-latest`). Counted, not listed.
+ * Queued jobs that match no observed runner by label and don't ask for
+ * `self-hosted` (typically GitHub-hosted `ubuntu-latest`). Counted, not listed.
  */
 otherQueued: number, 
 /**
  * False when job data is missing or stale for some org.
  */
-complete: boolean, asOf: string | null, };
+complete: boolean, asOf: string | null, 
+/**
+ * How long a job may wait while a matching runner is idle before it counts as stuck.
+ */
+stuckAfterSecs: number, };

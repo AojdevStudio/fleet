@@ -24,8 +24,9 @@ enum GithubAuthError {
     Gh(#[from] gh::GhError),
 }
 
-/// Where one kind of GitHub data, and the latest error fetching it, live in an org's observations.
-type ObservationSlot<T> = fn(&mut OrgObservation) -> (&mut Option<Timed<T>>, &mut Option<Timed<String>>);
+/// Stores one kind of GitHub data, or the latest error fetching it, in an org's observations.
+/// New data clears the error, and an error keeps the last good data.
+type ObservationStore<T> = fn(&mut OrgObservation, Result<Timed<T>, Timed<String>>);
 
 impl Engine {
     /// Keychain calls can block, so they run off the async runtime.
@@ -134,7 +135,7 @@ impl Engine {
         &self,
         fetch: impl AsyncFn(&GithubClient, &PolledOrg) -> Result<T, GithubError>,
         refetch_token_on: fn(&GithubError) -> bool,
-        slot: ObservationSlot<T>,
+        store: ObservationStore<T>,
     ) {
         let orgs = self.polled_orgs().await;
         join_all(orgs.iter().map(|polled| async {
@@ -146,7 +147,7 @@ impl Engine {
                     let mut obs = self.obs.write_locked();
                     let entry = obs.github.entry(key).or_default();
                     entry.missing_token = matches!(reason, GithubAuthError::MissingToken);
-                    *slot(entry).1 = Some(Timed::new(Utc::now(), reason.to_string()));
+                    store(entry, Err(Timed::new(Utc::now(), reason.to_string())));
                     return;
                 }
             };
@@ -158,14 +159,12 @@ impl Engine {
             let entry = obs.github.entry(key).or_default();
             entry.missing_token = false;
             entry.rate_limit = client.rate_limit();
-            let (value, error) = slot(entry);
-            match result {
-                Ok(fetched) => {
-                    *value = Some(Timed::new(Utc::now(), fetched));
-                    *error = None;
-                }
-                Err(e) => *error = Some(Timed::new(Utc::now(), self.github_error_text(org, &e))),
-            }
+            let now = Utc::now();
+            let result = match result {
+                Ok(fetched) => Ok(Timed::new(now, fetched)),
+                Err(e) => Err(Timed::new(now, self.github_error_text(org, &e))),
+            };
+            store(entry, result);
         }))
         .await;
     }
@@ -184,7 +183,13 @@ impl Engine {
             // A 403 here means the credential can't list runners. Fetching the token
             // again picks up a fix such as `gh auth refresh --scopes admin:org`.
             |e| matches!(e, GithubError::Unauthorized | GithubError::Forbidden(_)),
-            |org| (&mut org.runners, &mut org.error),
+            |org, result| match result {
+                Ok(runners) => {
+                    org.set_runners(runners);
+                    org.error = None;
+                }
+                Err(e) => org.error = Some(e),
+            },
         )
         .await;
     }
@@ -198,7 +203,13 @@ impl Engine {
             // Repositories the token can't read only mark the scan incomplete, so a 403
             // says nothing about the credential. Keeping the client keeps its ETag cache.
             |e| matches!(e, GithubError::Unauthorized),
-            |org| (&mut org.jobs, &mut org.jobs_error),
+            |org, result| match result {
+                Ok(jobs) => {
+                    org.set_jobs(jobs);
+                    org.jobs_error = None;
+                }
+                Err(e) => org.jobs_error = Some(e),
+            },
         )
         .await;
     }
@@ -260,7 +271,7 @@ impl Engine {
         self.update_config(|c| c.orgs.push(org))?;
         let mut obs = self.obs.write_locked();
         let entry = obs.github.entry(key).or_default();
-        entry.runners = Some(Timed::new(Utc::now(), runners));
+        entry.set_runners(Timed::new(Utc::now(), runners));
         entry.missing_token = false;
         entry.error = None;
         Ok(())
