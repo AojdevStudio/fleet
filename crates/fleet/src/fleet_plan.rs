@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::desired::model::{DoctorCheck, FleetSnapshot, Host, Inventory, Organization, PlanItem, StatusRow};
-use crate::model::TailnetPeer;
+use crate::model::{TailnetPeer, TailnetSnapshot};
 
 /// A change the user can review and run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -186,15 +186,17 @@ fn peer_named<'a>(name: &str, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPee
 }
 
 /// Hosts that share a tailnet peer or SSH destination must not own independent execution targets.
+/// Peers come from [`crate::this_mac::host_peer`], so two hosts that are both this Mac conflict.
 pub fn host_identity_conflicts(
     inventory: &Inventory,
     ssh_hosts: &BTreeMap<String, String>,
-    peers: &[TailnetPeer],
+    tailnet: Option<&TailnetSnapshot>,
+    app_user: Option<&str>,
 ) -> BTreeMap<String, String> {
     let mut owners: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for host in &inventory.hosts {
         let resolved = host.ssh_target.as_ref().and_then(|target| ssh_hosts.get(target));
-        if let Some(peer) = peer_for_host(host, resolved.map(String::as_str), peers) {
+        if let Some(peer) = crate::this_mac::host_peer(host, resolved.map(String::as_str), tailnet, app_user) {
             owners
                 .entry(format!("peer:{}", peer.node_id))
                 .or_default()

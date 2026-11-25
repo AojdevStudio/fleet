@@ -11,9 +11,7 @@ use super::{GhEntry, GithubIndex, connection, runner_view};
 use crate::desired::model::{FleetPlanAction, Host, Inventory, PlanItem, Platform, StatusRow};
 use crate::desired::plan::generate_plan;
 use crate::desired::state::build_status_rows;
-use crate::fleet_plan::{
-    DesiredRunnerRole, FleetPlanInputs, MachineDesired, RunnerDesired, host_identity_conflicts, peer_for_host,
-};
+use crate::fleet_plan::{DesiredRunnerRole, FleetPlanInputs, MachineDesired, RunnerDesired, host_identity_conflicts};
 use crate::model::*;
 
 /// One inventory host before it's turned into a view.
@@ -74,7 +72,6 @@ pub(super) fn assemble(
     now: DateTime<Utc>,
 ) -> Vec<MachineView> {
     let snapshot = obs.tailscale.as_ref().map(|t| &t.value);
-    let peers: &[TailnetPeer] = snapshot.map_or(&[], |s| &s.peers);
     // Without a loaded inventory there are no machines.
     let Some(inventory) = plan.inventory.as_ref().and_then(|r| r.as_ref().ok()) else {
         return Vec::new();
@@ -88,7 +85,7 @@ pub(super) fn assemble(
         now,
     };
 
-    let slots = slots(snapshot, peers, inventory, &plan.ssh_hosts);
+    let slots = slots(snapshot, inventory, &plan.ssh_hosts);
     let mut fleet = Vec::new();
     for slot in &slots {
         let mut view = machine_view(slot, &ctx, matched);
@@ -111,12 +108,13 @@ pub(super) fn assemble(
 
 /// One slot per inventory host, matched to its tailnet peer.
 fn slots<'a>(
-    tailnet: Option<&TailnetSnapshot>,
-    peers: &'a [TailnetPeer],
+    tailnet: Option<&'a TailnetSnapshot>,
     inventory: &'a Inventory,
     ssh_hosts: &BTreeMap<String, String>,
 ) -> Vec<Slot<'a>> {
     let mut slots: Vec<Slot<'a>> = Vec::new();
+    let app_user = crate::this_mac::app_user();
+    let app_user = app_user.as_deref();
 
     for host in &inventory.hosts {
         let resolved = host
@@ -124,17 +122,17 @@ fn slots<'a>(
             .as_deref()
             .and_then(|t| ssh_hosts.get(t))
             .map(String::as_str);
-        let peer = peer_for_host(host, resolved, peers);
+        let peer = crate::this_mac::host_peer(host, resolved, tailnet, app_user);
         slots.push(Slot {
             id: peer.map_or_else(|| inventory_machine_key(&host.id), |p| tailnet_machine_key(&p.node_id)),
             peer,
             host,
             identity_error: None,
-            this_mac: crate::this_mac::is_this_mac(host, resolved, tailnet),
+            this_mac: crate::this_mac::is_this_mac(host, resolved, tailnet, app_user),
         });
     }
 
-    let conflicts = host_identity_conflicts(inventory, ssh_hosts, peers);
+    let conflicts = host_identity_conflicts(inventory, ssh_hosts, tailnet, app_user);
     for slot in &mut slots {
         if let Some(error) = conflicts.get(&slot.host.id) {
             slot.identity_error = Some(error.clone());

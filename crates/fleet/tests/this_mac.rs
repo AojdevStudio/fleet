@@ -192,7 +192,7 @@ async fn a_host_on_the_tailnet_self_node_is_read_locally() {
 
 #[tokio::test]
 async fn a_localhost_host_is_read_locally() {
-    let f = fixture(&format!("{ORGANIZATION}{}{MINI}", laptop("ci@localhost")));
+    let f = fixture(&format!("{ORGANIZATION}{}{MINI}", laptop("localhost")));
     assert_read_locally(&f).await;
 }
 

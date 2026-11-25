@@ -288,9 +288,11 @@ are verified. Don't also enable `services.github-runners` for inventory runners.
 
 The app can list the Mac it runs on as a fleet machine without SSH to itself, so Remote Login
 can stay off. A host is this Mac when its written `ssh` target is `localhost`, `127.0.0.1` or
-`::1`, or when its SSH target, as written or as SSH resolves it, is exactly this Mac's tailnet
-DNS name, hostname or tailnet IP. A name that only starts with the same label doesn't count. A
-Windows host never is. For that host the app runs the same health probe, runner probe, checks,
+`::1`, or when the name SSH connects to (what `ssh -G` resolves, else the written target) is
+exactly this Mac's tailnet DNS name, hostname or tailnet IP. A name that only starts with the
+same label doesn't count. A target that names a login, such as `ci@localhost`, must name the
+account the app runs as, because local scripts run as that account. A Windows host never is, and
+two inventory hosts that are both this Mac are an identity conflict. For that host the app runs the same health probe, runner probe, checks,
 runner scripts and runner-up reads as local processes (`/bin/bash -s`) instead of over SSH. Its
 runners link by their `host-<id>` label as on any host.
 
@@ -394,8 +396,10 @@ coordinator.
 runner-up registers each one-job runner on GitHub as `runner-up-<place id>-<number>`. The app
 shows such a runner under its place in the pools section, not under **Not linked to a
 machine**. The place id is the text between `runner-up-` and the last dash, and it must be a
-place the coordinator reported, so `ci-linux-1` never claims `runner-up-ci-linux-10-…`. Before
-the coordinator's first read there are no places, and these runners stay unlinked. A pool
+place the pools section shows, so `ci-linux-1` never claims `runner-up-ci-linux-10-…`. With a
+`pools` list, places that serve only other pools are not shown, and their runners stay
+unlinked. Before the coordinator's first read there are no places, and these runners stay
+unlinked. A pool
 runner still counts in the runner totals and shows under **Running now** while it works.
 `GET /v1/runners` gives each one a `place`.
 

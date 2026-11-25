@@ -315,7 +315,10 @@ fn issues_for_machine(machine: &MachineView) -> Vec<FleetIssue> {
                 Inventory,
                 format!("{}: {}", machine.display_name, check.check),
                 &check.detail,
-                rules::doctor(check),
+                match check.check.split(':').next() {
+                    Some("ssh" | "runner-probe") if machine.this_mac => rules::local(),
+                    _ => rules::doctor(check),
+                },
             ));
         }
     }

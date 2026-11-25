@@ -173,19 +173,15 @@ impl Engine {
             inventory,
             &ssh_hosts,
             self.obs.read_locked().tailscale.as_ref().map(|t| &t.value),
+            crate::this_mac::app_user().as_deref(),
         )
     }
 
     fn host_identity_conflict(&self, inventory: &Inventory, host_id: &str) -> Option<String> {
         let ssh_hosts = self.desired.locked().ssh_hosts.clone();
-        let peers = self
-            .obs
-            .read_locked()
-            .tailscale
-            .as_ref()
-            .map(|snapshot| snapshot.value.peers.clone())
-            .unwrap_or_default();
-        host_identity_conflicts(inventory, &ssh_hosts, &peers).remove(host_id)
+        let obs = self.obs.read_locked();
+        let tailnet = obs.tailscale.as_ref().map(|t| &t.value);
+        host_identity_conflicts(inventory, &ssh_hosts, tailnet, crate::this_mac::app_user().as_deref()).remove(host_id)
     }
 
     fn ensure_live_desired(&self) -> Result<(), EngineError> {

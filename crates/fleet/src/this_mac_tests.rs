@@ -58,18 +58,52 @@ fn this_mac_is_the_tailnet_self_node_or_a_loopback_target() {
         ("win", "windows-x64", "localhost"),
         // Shares only its first label with this Mac's node, so it stays on SSH.
         ("office", "darwin-arm64", "laptop.office.example"),
+        // Local scripts run as the app's account, so another login is not this Mac.
+        ("other-login", "darwin-arm64", "admin@localhost"),
+        // Written like this Mac, but SSH resolves it to another machine.
+        ("redirected", "darwin-arm64", "laptop.example.ts.net"),
     ]);
-    let ssh_hosts = BTreeMap::from([("me".to_string(), "laptop.example.ts.net".to_string())]);
+    let ssh_hosts = BTreeMap::from([
+        ("me".to_string(), "laptop.example.ts.net".to_string()),
+        (
+            "laptop.example.ts.net".to_string(),
+            "builder.example.ts.net".to_string(),
+        ),
+    ]);
     let tailnet = tailnet();
     assert_eq!(
-        hosts(&inventory, &ssh_hosts, Some(&tailnet)),
+        hosts(&inventory, &ssh_hosts, Some(&tailnet), Some("ci")),
         BTreeSet::from(["alias", "laptop", "loop", "v4", "v6"].map(String::from))
     );
     // Without a tailnet read, only the loopback targets are this Mac.
     assert_eq!(
-        hosts(&inventory, &ssh_hosts, None),
+        hosts(&inventory, &ssh_hosts, None, Some("ci")),
         BTreeSet::from(["loop", "v4", "v6"].map(String::from))
     );
+}
+
+#[test]
+fn only_this_macs_hosts_get_the_self_node_and_two_of_them_conflict() {
+    let inventory = inventory(&[
+        ("laptop", "darwin-arm64", "laptop"),
+        ("office", "darwin-arm64", "laptop.office.example"),
+        ("mini", "darwin-arm64", "mini"),
+    ]);
+    let tailnet = tailnet();
+    let peer =
+        |id: &str| host_peer(inventory.find_host(id).unwrap(), None, Some(&tailnet), None).map(|p| p.node_id.as_str());
+    assert_eq!(peer("laptop"), Some("nSelf"));
+    assert_eq!(peer("office"), None);
+    assert_eq!(peer("mini"), Some("nMini"));
+    let conflicts = |inventory: &Inventory| {
+        crate::fleet_plan::host_identity_conflicts(inventory, &BTreeMap::new(), Some(&tailnet), None)
+    };
+    assert!(conflicts(&inventory).is_empty());
+    let twice = self::inventory(&[
+        ("laptop", "darwin-arm64", "laptop"),
+        ("loop", "darwin-arm64", "localhost"),
+    ]);
+    assert_eq!(conflicts(&twice).into_keys().collect::<Vec<_>>(), ["laptop", "loop"]);
 }
 
 #[test]
@@ -80,7 +114,7 @@ fn this_macs_host_goes_to_the_local_runner_and_others_over_ssh() {
     let remote = LocalOrSsh {
         ssh: Arc::new(ssh.clone()),
         local: Arc::new(RemoteClient::local(local.clone(), Duration::from_secs(5))),
-        local_hosts: hosts(&inventory, &BTreeMap::new(), Some(&tailnet())),
+        local_hosts: hosts(&inventory, &BTreeMap::new(), Some(&tailnet()), None),
     };
     for host in &inventory.hosts {
         remote.probe(host).unwrap();
