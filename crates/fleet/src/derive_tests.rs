@@ -594,13 +594,13 @@ fn add_machine_offers_the_same_hostname_device_the_machine_row_did_not_take() {
     ]);
     let view = f.view();
     let row = view.machines.iter().find(|m| m.display_name == "box").unwrap();
-    let offered: Vec<_> = view
-        .tailnet_devices
-        .iter()
-        .map(|d| format!("ts:{}", d.node_id))
-        .collect();
-    assert_eq!(offered.len(), 1);
-    assert_ne!(offered[0], row.id);
+    let other = match row.id.as_str() {
+        "ts:nBox" => "nBox1",
+        "ts:nBox1" => "nBox",
+        id => panic!("the box row matched no box device: {id}"),
+    };
+    let offered: Vec<_> = view.tailnet_devices.iter().map(|d| d.node_id.as_str()).collect();
+    assert_eq!(offered, [other]);
 }
 
 #[test]
