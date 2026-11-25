@@ -291,7 +291,6 @@ fn unreadable_history_does_not_count_as_an_alert_going_away() {
     assert!(issue(&view, "alert:disk").cleared);
 }
 
-#[cfg(unix)]
 #[test]
 fn history_advice_moves_the_file_aside_only_when_it_cannot_be_read() {
     let dir = tempfile::tempdir().unwrap();
@@ -318,6 +317,7 @@ fn history_advice_moves_the_file_aside_only_when_it_cannot_be_read() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn a_failed_save_changes_nothing() {
     use std::os::unix::fs::PermissionsExt;
