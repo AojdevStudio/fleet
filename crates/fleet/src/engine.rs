@@ -136,10 +136,18 @@ impl Engine {
         self.config.read_locked().clone()
     }
 
+    /// The fleet view. Every view also drops clears whose problem changed or went away, so a
+    /// recovery the app showed counts even if the problem returns before the next poll.
+    /// Saves the cleared items file when that drops a clear.
     pub fn view(&self) -> FleetView {
         let config = self.config();
-        let clears = self.clear_store(&config).locked();
-        self.view_with(config, &clears)
+        let demo = config.demo_mode;
+        let mut clears = self.clear_store(&config).locked();
+        let view = self.view_with(config, &clears);
+        if !demo && let Err(e) = clears.record(&view) {
+            tracing::warn!("saving cleared items failed: {e}");
+        }
+        view
     }
 
     /// The fleet view with `clears` applied. Callers that change the clears hold their lock

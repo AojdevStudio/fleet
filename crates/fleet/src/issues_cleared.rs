@@ -16,7 +16,9 @@
 //!   - Anything else: absence after the app showed the finding since launch, and for a
 //!     machine finding, while the machine has a fresh SSH read.
 //! - Bring back drops the saved clear at once.
-//! - A failed save changes nothing. The poller tries again on its next tick.
+//! - Every fleet view drops the clears that no longer apply, not only the poller's tick,
+//!   so a problem that a view showed gone comes back even if it returns at once.
+//! - A failed save changes nothing. The next view tries again.
 //!
 //! Not covered: a value the app can't read (`Unknown`) hides a diagnostic warning, and that
 //! counts as gone. A "shown since launch" finding (GitHub, runner checks, the runner plan,

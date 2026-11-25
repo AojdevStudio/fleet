@@ -48,17 +48,33 @@ impl Engine {
         self.view_changed();
         Ok(())
     }
+}
 
-    /// Drop clears whose problem changed or went away. Performs local disk I/O; call off the async runtime.
-    pub fn record_cleared(&self) {
-        let config = self.config();
-        if config.demo_mode {
-            return;
-        }
-        let mut clears = self.clears.locked();
-        let view = self.view_with(config, &clears);
-        if let Err(e) = clears.record(&view) {
-            tracing::warn!("saving cleared items failed: {e}");
-        }
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::engine::{Engine, MemorySecrets};
+
+    #[test]
+    fn a_recovery_a_view_showed_brings_the_problem_back_before_the_next_poll() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = Engine::load(dir.path().join("config.json"), Arc::new(MemorySecrets::default())).unwrap();
+        let broken = dir.path().join("broken.toml").display().to_string();
+        let valid = dir.path().join("fleet.toml");
+        std::fs::write(&valid, include_str!("../../../inventory/fleet.example.toml")).unwrap();
+        let inventory = |engine: &Engine| engine.view().issues.into_iter().find(|i| i.id == "inventory");
+
+        engine.set_inventory_path(Some(broken.clone())).unwrap();
+        let shown = inventory(&engine).unwrap();
+        engine.clear_issue(&shown.id, &shown.fingerprint).unwrap();
+        assert!(inventory(&engine).unwrap().cleared);
+
+        engine.set_inventory_path(Some(valid.display().to_string())).unwrap();
+        assert!(inventory(&engine).is_none());
+        engine.set_inventory_path(Some(broken)).unwrap();
+        let back = inventory(&engine).unwrap();
+        assert_eq!(back.fingerprint, shown.fingerprint);
+        assert!(!back.cleared);
     }
 }
