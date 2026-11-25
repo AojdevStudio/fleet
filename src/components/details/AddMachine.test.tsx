@@ -4,13 +4,12 @@ import { previewFleet } from "../../lib/preview";
 import { AddMachine } from "./AddMachine";
 
 describe("Add machine", () => {
-  it("says why it is unavailable, names the host, and offers no entry to copy", () => {
+  it("tells the user to check a device isn't already in the inventory before pasting its entry", () => {
     const view = previewFleet();
-    view.addMachine = { state: "waiting", hosts: [{ hostId: "studio", reason: "ssh = \"${STUDIO_SSH}\" is unset in the app's environment." }] };
     const html = renderToStaticMarkup(<AddMachine view={view} />);
-    expect(html).toContain("Unavailable until the app knows which tailnet device each inventory host is");
-    expect(html).toContain("studio");
-    expect(html).toContain("STUDIO_SSH");
-    expect(html).not.toContain("Copy entry");
+    expect(html).toContain("Devices on your tailnet that no inventory host names.");
+    expect(html).toContain("isn&#x27;t already in the inventory under another name before you paste its entry");
+    expect(html).toContain(view.tailnetDevices[0].inventoryEntry.split("\n")[0]);
+    expect(html).toContain("Copy entry");
   });
 });

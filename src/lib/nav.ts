@@ -1,4 +1,3 @@
-import type { AddMachineView } from "../bindings/AddMachineView";
 import type { FleetView } from "../bindings/FleetView";
 import type { MachineView } from "../bindings/MachineView";
 import type { RunnerView } from "../bindings/RunnerView";
@@ -12,23 +11,6 @@ export type Selection =
   | { kind: "machine"; id: string }
   | { kind: "runner"; key: string }
   | { kind: "add-machine" };
-
-/** Add machine is listed when it offers a device or names a host it waits for. */
-export function showsAddMachine(view: FleetView): boolean {
-  const add = view.addMachine;
-  return add.state === "ready" ? add.devices.length > 0 : add.state === "waiting" && add.hosts.length > 0;
-}
-
-function filterAddMachine(add: AddMachineView, matches: (values: string[]) => boolean): AddMachineView {
-  switch (add.state) {
-    case "ready":
-      return { ...add, devices: add.devices.filter((d) => matches([d.name])) };
-    case "waiting":
-      return { ...add, hosts: add.hosts.filter((h) => matches([h.hostId])) };
-    case "noInventory":
-      return add;
-  }
-}
 
 export function selectionId(s: Selection): string {
   switch (s.kind) {
@@ -85,7 +67,7 @@ export function filterNavView(view: FleetView, query: string): FleetView {
       return runners.length ? [{ ...m, runners }] : [];
     }),
     unmatchedRunners: view.unmatchedRunners.filter(runnerMatches),
-    addMachine: filterAddMachine(view.addMachine, matches),
+    tailnetDevices: view.tailnetDevices.filter((d) => matches([d.name])),
   };
 }
 
@@ -102,7 +84,7 @@ export function flattenNav(view: FleetView, collapsed: ReadonlySet<string>, open
   if (open.unlinked) {
     for (const r of view.unmatchedRunners) items.push({ selection: { kind: "runner", key: r.key } });
   }
-  if (showsAddMachine(view)) items.push({ selection: { kind: "add-machine" } });
+  if (view.tailnetDevices.length > 0) items.push({ selection: { kind: "add-machine" } });
   return items;
 }
 
@@ -123,7 +105,7 @@ export function reconcileSelection(view: FleetView, s: Selection): Selection {
     case "runner":
       return findRunner(view, s.key) ? s : { kind: "overview" };
     case "add-machine":
-      return showsAddMachine(view) ? s : { kind: "overview" };
+      return view.tailnetDevices.length > 0 ? s : { kind: "overview" };
     case "moving":
     case "retiring":
       return view.rollout.length > 0 ? s : { kind: "overview" };

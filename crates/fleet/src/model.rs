@@ -178,17 +178,7 @@ pub struct TailnetSnapshot {
     pub self_node_id: Option<String>,
     pub local_online: Option<bool>,
     pub tailnet_name: Option<String>,
-    /// Every node on the tailnet, this Mac (`self_node_id`) included.
     pub peers: Vec<TailnetPeer>,
-}
-
-impl TailnetSnapshot {
-    /// The nodes other than this Mac, which machine rows and offers draw from.
-    pub fn others(&self) -> impl Iterator<Item = &TailnetPeer> {
-        self.peers
-            .iter()
-            .filter(|p| Some(p.node_id.as_str()) != self.self_node_id.as_deref())
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -315,9 +305,8 @@ pub struct FleetView {
     pub machines: Vec<MachineView>,
     /// GitHub runners not tied to any machine (e.g. hosted runner pools).
     pub unmatched_runners: Vec<RunnerView>,
-    /// Tailnet devices no inventory host claims, offered by Add machine, or why there are none
-    /// yet. These devices are never contacted.
-    pub add_machine: crate::add_machine::AddMachineView,
+    /// Tailnet devices no inventory host names, offered by Add machine. Never contacted.
+    pub tailnet_devices: Vec<crate::add_machine::TailnetDeviceView>,
     pub queue: QueueView,
     /// Desired state from `inventory/fleet.toml`: errors, last check, the current change.
     pub plan: crate::fleet_plan::FleetPlanStatus,

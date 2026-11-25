@@ -23,7 +23,7 @@ host configuration.
 | Route | Filters and result |
 | --- | --- |
 | `GET /` | Capabilities, limits and semantics |
-| `GET /v1/fleet` | Complete FleetView, including `issues` and `addMachine` |
+| `GET /v1/fleet` | Complete FleetView, including `issues` and `tailnetDevices` |
 | `GET /v1/summary` | Summary, organization and tailnet status |
 | `GET /v1/machines` | The inventory's machines; `os`, `connection`, `q`, `after`, `limit` |
 | `GET /v1/machines/{id}` | One machine |
@@ -75,10 +75,8 @@ matches observed GitHub labels; `repo` matches the runner's linked current job, 
 access permissions. GitHub data freshness is visible on each runner.
 
 Machines are the inventory's hosts. A tailnet device outside the inventory is never a machine,
-is never contacted over SSH and never raises an alert. `addMachine` in `/v1/fleet` has a
-`state`. `ready` lists such devices by name in `devices`, each with the `[[hosts]]` entry that
-would add it. `waiting` lists in `hosts` the inventory hosts whose tailnet machine isn't known
-yet, each with a `reason`, and offers no entry. `noInventory` means no inventory is loaded. The `otherMachines`
+is never contacted over SSH and never raises an alert. `tailnetDevices` in `/v1/fleet` lists
+such devices by name, each with the `[[hosts]]` entry that would add it. The `otherMachines`
 and `ignored` fields, `GET /v1/discovered` and the `scope` filter of `/v1/machines` were
 removed. A request that still sends `scope` gets 400, and `/v1/discovered` gets 404. Queue scope
 metadata (`complete`, `asOf`, `otherQueued`) stays fleet-wide when jobs are filtered.

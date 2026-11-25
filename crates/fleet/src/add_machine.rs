@@ -2,76 +2,60 @@
 //! Built from the tailnet snapshot alone. Nothing here contacts the device.
 
 use std::collections::{BTreeMap, HashSet};
+use std::net::IpAddr;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::desired::model::{Host, Platform, SshTransport};
-use crate::fleet_plan::{connected_hostname, proof_candidates};
 use crate::model::TailnetPeer;
 
-/// What Add machine can offer.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
-#[serde(tag = "state", rename_all = "camelCase")]
-pub enum AddMachineView {
-    /// No inventory is loaded, so nothing says which devices are already in it.
-    NoInventory,
-    /// Offers wait until the app knows which tailnet device each of these hosts is.
-    /// Until then an entry could add a machine that is already in the inventory.
-    Waiting { hosts: Vec<AddMachineWait> },
-    /// Tailnet devices no inventory host claims.
-    Ready { devices: Vec<TailnetDeviceView> },
+/// Whether any inventory host plausibly names `peer`, so Add machine leaves it out. An offer is
+/// only a paste suggestion, so any sign of a match is enough. The device's MagicDNS name, its
+/// short name (MagicDNS label or Tailscale hostname) and its tailnet IPs are compared with each
+/// host's `id`, its written `ssh` target without the user part, the hostname `ssh -G` resolved
+/// that target to, and the first DNS label of each of these. The comparison ignores case and a
+/// final dot. Disabled and decommissioned hosts count too, because they are still in the inventory.
+///
+/// Known limit: an alias that resolves to a LAN address or a LAN name unlike the device's names
+/// doesn't exclude the device, so the user checks before pasting an entry.
+pub(crate) fn inventory_names_device(hosts: &[Host], ssh_hosts: &BTreeMap<String, String>, peer: &TailnetPeer) -> bool {
+    let label = peer.dns_name.as_deref().and_then(|d| d.split('.').next());
+    let device: HashSet<String> = [peer.dns_name.as_deref(), label, Some(peer.hostname.as_str())]
+        .into_iter()
+        .flatten()
+        .chain(peer.ips.iter().map(String::as_str))
+        .map(normalized)
+        .collect();
+    hosts.iter().any(|host| {
+        let written = host.ssh_target.as_deref();
+        let resolved = written.and_then(|t| ssh_hosts.get(t)).map(String::as_str);
+        [Some(host.id.as_str()), written, resolved]
+            .into_iter()
+            .flatten()
+            .map(normalized)
+            .any(|name| device.contains(&name) || device.contains(first_label(&name)))
+    })
 }
 
-/// An inventory host whose tailnet device isn't known yet, and what to do about it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
-#[serde(rename_all = "camelCase")]
-pub struct AddMachineWait {
-    pub host_id: String,
-    pub reason: String,
+/// A DNS name's first label. An IP address has none, so it stays whole.
+fn first_label(name: &str) -> &str {
+    if name.parse::<IpAddr>().is_ok() {
+        return name;
+    }
+    name.split('.').next().unwrap_or(name)
 }
 
-/// The tailnet device `host` provably is, `None` when there are no devices to prove it against,
-/// or why it isn't known. `ssh_hosts` maps each SSH target to the host name OpenSSH resolves it
-/// to. Disabled hosts count too: their device is still in the inventory, so an offer for it
-/// would add the machine twice.
-pub(crate) fn host_proof<'a>(
-    host: &Host,
-    ssh_hosts: &BTreeMap<String, String>,
-    peers: &'a [TailnetPeer],
-) -> Result<Option<&'a TailnetPeer>, String> {
-    let Some(target) = &host.ssh_target else {
-        return Err(format!(
-            "ssh = \"{}\" is unset in the app's environment. Set the variable and restart the app, \
-             or write the SSH target in the inventory.",
-            host.ssh_setting
-        ));
-    };
-    let resolved = ssh_hosts.get(target).map(String::as_str);
-    if host.ssh_transport == SshTransport::Openssh && resolved.is_none() {
-        return Err(format!(
-            "SSH hasn't resolved {target} yet. If this lasts, check that `ssh -G {target}` works on this Mac."
-        ));
-    }
-    if peers.is_empty() {
-        return Ok(None);
-    }
-    let name = connected_hostname(host, resolved).unwrap_or_default();
-    match proof_candidates(host, resolved, peers)[..] {
-        [peer] => Ok(Some(peer)),
-        [] => Err(format!(
-            "SSH connects to {name}, and no device on this tailnet has that MagicDNS name or tailnet IP, so \
-             the app can't tell which device this host is. If the device is on the tailnet, write its MagicDNS \
-             name or tailnet IP in ssh. If it isn't, add new machines to the inventory by hand."
-        )),
-        ref several => Err(format!(
-            "{name} names more than one device on this tailnet ({}). Write the full MagicDNS name or \
-             tailnet IP in ssh.",
-            several.iter().map(|p| p.address()).collect::<Vec<_>>().join(", ")
-        )),
-    }
+/// The host part, lowercase, without a final dot, and an IP address in its canonical spelling.
+fn normalized(name: &str) -> String {
+    let name = name
+        .rsplit('@')
+        .next()
+        .unwrap_or(name)
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    let bare = name.trim_start_matches('[').trim_end_matches(']');
+    bare.parse::<IpAddr>().map_or(name.clone(), |ip| ip.to_string())
 }
 
 /// A tailnet device no inventory host claims, with the `[[hosts]]` entry that adds it.

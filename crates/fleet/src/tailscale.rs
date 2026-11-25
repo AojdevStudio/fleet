@@ -89,12 +89,9 @@ pub fn parse_status(json: &str) -> Result<TailnetSnapshot, String> {
     {
         return Err(format!("Tailscale is not connected (state: {state})"));
     }
-    let self_node_id = s.self_.as_ref().map(|n| n.id.clone());
-    let local_online = s.self_.as_ref().map(|n| n.online);
     let peers = s
-        .self_
-        .into_iter()
-        .chain(s.peer.into_values())
+        .peer
+        .into_values()
         .map(|n| TailnetPeer {
             node_id: n.id,
             hostname: n.host_name,
@@ -109,8 +106,8 @@ pub fn parse_status(json: &str) -> Result<TailnetSnapshot, String> {
         })
         .collect();
     Ok(TailnetSnapshot {
-        local_online,
-        self_node_id,
+        local_online: s.self_.as_ref().map(|n| n.online),
+        self_node_id: s.self_.map(|n| n.id),
         tailnet_name: s.current_tailnet.and_then(|t| t.name),
         peers,
     })
@@ -141,9 +138,7 @@ mod tests {
         let snap = parse_status(json).unwrap();
         assert_eq!(snap.self_node_id.as_deref(), Some("nSelf"));
         assert_eq!(snap.tailnet_name.as_deref(), Some("example.github"));
-        assert_eq!(snap.peers.len(), 4, "this Mac is a peer too");
-        let this_mac = snap.peers.iter().find(|p| p.node_id == "nSelf").unwrap();
-        assert_eq!(this_mac.dns_name.as_deref(), Some("dev-laptop.tail1.ts.net"));
+        assert_eq!(snap.peers.len(), 3);
         let mini = snap.peers.iter().find(|p| p.node_id == "nMini").unwrap();
         assert_eq!(mini.dns_name.as_deref(), Some("mac-mini.tail1.ts.net"));
         assert_eq!(mini.last_seen, None);

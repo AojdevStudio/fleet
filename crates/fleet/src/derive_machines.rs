@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::add_machine::{AddMachineView, AddMachineWait, TailnetDeviceView, device_view, host_proof};
+use crate::add_machine::{TailnetDeviceView, device_view, inventory_names_device};
 use crate::machine::{MachineReport, OsFamily};
 use chrono::{DateTime, Utc};
 
@@ -13,13 +13,13 @@ use crate::desired::model::{FleetPlanAction, Host, Inventory, PlanItem, Platform
 use crate::desired::plan::generate_plan;
 use crate::desired::state::build_status_rows;
 use crate::fleet_plan::{
-    DesiredRunnerRole, FleetPlanInputs, HostPeer, MachineDesired, RunnerDesired, host_identity_conflicts, host_peer,
+    DesiredRunnerRole, FleetPlanInputs, MachineDesired, RunnerDesired, host_identity_conflicts, peer_for_host,
 };
 use crate::model::*;
 
 pub(super) struct Machines {
     pub fleet: Vec<MachineView>,
-    pub add_machine: AddMachineView,
+    pub devices: Vec<TailnetDeviceView>,
 }
 
 /// One inventory host before it's turned into a view.
@@ -79,14 +79,21 @@ pub(super) fn assemble(
     now: DateTime<Utc>,
 ) -> Machines {
     let snapshot = obs.tailscale.as_ref().map(|t| &t.value);
-    // This Mac proves a host that is this Mac, but is never a machine's peer or an offer.
-    let all_peers = snapshot.map_or(&[][..], |s| s.peers.as_slice());
-    let peers: Vec<TailnetPeer> = snapshot.map(|s| s.others().cloned().collect()).unwrap_or_default();
-    // Without a loaded inventory nothing says which peers are already enrolled.
+    let self_node = snapshot.and_then(|s| s.self_node_id.as_deref());
+    let peers: Vec<TailnetPeer> = snapshot
+        .map(|s| {
+            s.peers
+                .iter()
+                .filter(|p| Some(p.node_id.as_str()) != self_node)
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    // Without a loaded inventory nothing says which devices are already in it.
     let Some(inventory) = plan.inventory.as_ref().and_then(|r| r.as_ref().ok()) else {
         return Machines {
             fleet: Vec::new(),
-            add_machine: AddMachineView::NoInventory,
+            devices: Vec::new(),
         };
     };
     let ctx = DeriveCtx {
@@ -98,22 +105,7 @@ pub(super) fn assemble(
         now,
     };
 
-    let self_node = snapshot.and_then(|s| s.self_node_id.as_deref());
-    let slots = slots(all_peers, self_node, inventory, &plan.ssh_hosts);
-    // With nothing to offer there is nothing to prove. Offers start only once every host is
-    // proven, so the proven devices are exactly the ones to leave out.
-    let proof_peers = if peers.is_empty() { &[][..] } else { all_peers };
-    let mut proven = HashSet::new();
-    let mut waiting = Vec::new();
-    for host in &inventory.hosts {
-        match host_proof(host, &plan.ssh_hosts, proof_peers) {
-            Ok(device) => proven.extend(device.map(|p| p.node_id.as_str())),
-            Err(reason) => waiting.push(AddMachineWait {
-                host_id: host.id.clone(),
-                reason,
-            }),
-        }
-    }
+    let slots = slots(&peers, inventory, &plan.ssh_hosts);
     let mut fleet = Vec::new();
     for slot in &slots {
         let mut view = machine_view(slot, &ctx, matched);
@@ -133,41 +125,32 @@ pub(super) fn assemble(
     fleet.sort_by_key(|m| (m.display_name.to_lowercase(), m.id.clone()));
     Machines {
         fleet,
-        add_machine: if waiting.is_empty() {
-            AddMachineView::Ready {
-                devices: devices(
-                    &peers,
-                    &proven,
-                    &inventory.organization.name,
-                    inventory.hosts.iter().map(|h| h.id.clone()).collect(),
-                ),
-            }
-        } else {
-            AddMachineView::Waiting { hosts: waiting }
-        },
+        devices: devices(&peers, inventory, &plan.ssh_hosts),
     }
 }
 
-/// Tailnet devices for Add machine, by name. `host_ids` are the inventory's, which entries never reuse.
+/// Tailnet devices for Add machine, by name: those no inventory host names. Entries never reuse
+/// an inventory host ID.
 fn devices(
     peers: &[TailnetPeer],
-    proven: &HashSet<&str>,
-    organization: &str,
-    mut host_ids: HashSet<String>,
+    inventory: &Inventory,
+    ssh_hosts: &BTreeMap<String, String>,
 ) -> Vec<TailnetDeviceView> {
-    let mut unclaimed: Vec<_> = peers.iter().filter(|p| !proven.contains(p.node_id.as_str())).collect();
-    unclaimed.sort_by_key(|p| (p.hostname.to_lowercase(), p.node_id.clone()));
-    unclaimed
+    let mut host_ids = inventory.hosts.iter().map(|h| h.id.clone()).collect();
+    let mut unnamed: Vec<_> = peers
+        .iter()
+        .filter(|p| !inventory_names_device(&inventory.hosts, ssh_hosts, p))
+        .collect();
+    unnamed.sort_by_key(|p| (p.hostname.to_lowercase(), p.node_id.clone()));
+    unnamed
         .into_iter()
-        .filter_map(|p| device_view(p, organization, &mut host_ids))
+        .filter_map(|p| device_view(p, &inventory.organization.name, &mut host_ids))
         .collect()
 }
 
-/// One slot per inventory host, matched to a tailnet peer other than this Mac. A host proven to
-/// be this Mac keeps its inventory ID, and the conflict check catches two such hosts.
+/// One slot per inventory host, matched to its tailnet peer.
 fn slots<'a>(
     peers: &'a [TailnetPeer],
-    self_node: Option<&str>,
     inventory: &'a Inventory,
     ssh_hosts: &BTreeMap<String, String>,
 ) -> Vec<Slot<'a>> {
@@ -179,10 +162,7 @@ fn slots<'a>(
             .as_deref()
             .and_then(|t| ssh_hosts.get(t))
             .map(String::as_str);
-        let peer = match host_peer(host, resolved, peers, self_node) {
-            HostPeer::Other(peer) => Some(peer),
-            HostPeer::ThisMac(_) | HostPeer::Unmatched => None,
-        };
+        let peer = peer_for_host(host, resolved, peers);
         slots.push(Slot {
             id: peer.map_or_else(|| inventory_machine_key(&host.id), |p| tailnet_machine_key(&p.node_id)),
             peer,
@@ -191,7 +171,7 @@ fn slots<'a>(
         });
     }
 
-    let conflicts = host_identity_conflicts(inventory, ssh_hosts, peers, self_node);
+    let conflicts = host_identity_conflicts(inventory, ssh_hosts, peers);
     for slot in &mut slots {
         if let Some(error) = conflicts.get(&slot.host.id) {
             slot.identity_error = Some(error.clone());

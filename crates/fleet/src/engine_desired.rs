@@ -157,14 +157,14 @@ impl Engine {
 
     fn host_identity_conflict(&self, inventory: &Inventory, host_id: &str) -> Option<String> {
         let ssh_hosts = self.desired.locked().ssh_hosts.clone();
-        let (peers, self_node) = self
+        let peers = self
             .obs
             .read_locked()
             .tailscale
             .as_ref()
-            .map(|snapshot| (snapshot.value.peers.clone(), snapshot.value.self_node_id.clone()))
+            .map(|snapshot| snapshot.value.peers.clone())
             .unwrap_or_default();
-        host_identity_conflicts(inventory, &ssh_hosts, &peers, self_node.as_deref()).remove(host_id)
+        host_identity_conflicts(inventory, &ssh_hosts, &peers).remove(host_id)
     }
 
     fn ensure_live_desired(&self) -> Result<(), EngineError> {

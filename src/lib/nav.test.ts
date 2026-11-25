@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { filterNavView, findRunner, flattenNav, moveSelection, reconcileSelection, selectionId } from "./nav";
 import { previewFleet } from "./preview";
-import type { FleetView } from "../bindings/FleetView";
 
 const view = previewFleet();
 
@@ -41,24 +40,13 @@ describe("flattenNav", () => {
     expect(ids).not.toContain("runner:gh:acme-demo:501"); // unlinked group is closed
     expect(ids).not.toContain("machine:ts:nSpare"); // tailnet devices are not machines
     expect(ids.at(-1)).toBe("add-machine");
-    expect(flattenNav({ ...view, addMachine: { state: "ready", devices: [] } }, new Set(), closed).map((i) => selectionId(i.selection))).not.toContain("add-machine");
+    expect(flattenNav({ ...view, tailnetDevices: [] }, new Set(), closed).map((i) => selectionId(i.selection))).not.toContain("add-machine");
   });
 
   it("hides runners of collapsed machines and shows the open groups", () => {
     const ids = flattenNav(view, new Set(["ts:nLinux"]), { unlinked: true }).map((i) => selectionId(i.selection));
     expect(ids).not.toContain("runner:gh:acme-demo:301");
     expect(ids).toContain("runner:gh:acme-demo:501");
-  });
-});
-
-describe("Add machine while it waits", () => {
-  const waiting: FleetView = { ...view, addMachine: { state: "waiting", hosts: [{ hostId: "studio", reason: "SSH hasn't resolved studio yet." }] } };
-  it("stays listed so it can say which host needs attention", () => {
-    expect(flattenNav(waiting, new Set(), closed).map((i) => selectionId(i.selection)).at(-1)).toBe("add-machine");
-    expect(reconcileSelection(waiting, { kind: "add-machine" })).toEqual({ kind: "add-machine" });
-    expect(filterNavView(waiting, "stud").addMachine).toEqual(waiting.addMachine);
-    expect(flattenNav(filterNavView(waiting, "spare"), new Set(), closed).map((i) => selectionId(i.selection))).not.toContain("add-machine");
-    expect(flattenNav({ ...view, addMachine: { state: "noInventory" } }, new Set(), closed).map((i) => selectionId(i.selection))).not.toContain("add-machine");
   });
 });
 
@@ -76,7 +64,7 @@ describe("reconcileSelection", () => {
     expect(reconcileSelection(view, { kind: "machine", id: "ts:nMini" })).toEqual({ kind: "machine", id: "ts:nMini" });
     expect(reconcileSelection(view, { kind: "machine", id: "ts:nSpare" })).toEqual({ kind: "overview" });
     expect(reconcileSelection(view, { kind: "add-machine" })).toEqual({ kind: "add-machine" });
-    expect(reconcileSelection({ ...view, addMachine: { state: "ready", devices: [] } }, { kind: "add-machine" })).toEqual({ kind: "overview" });
+    expect(reconcileSelection({ ...view, tailnetDevices: [] }, { kind: "add-machine" })).toEqual({ kind: "overview" });
     expect(reconcileSelection(view, { kind: "machine", id: "gone" })).toEqual({ kind: "overview" });
     expect(reconcileSelection(view, { kind: "runner", key: "gh:acme-demo:501" })).toEqual({ kind: "runner", key: "gh:acme-demo:501" });
     expect(reconcileSelection(view, { kind: "runner", key: "gone" })).toEqual({ kind: "overview" });

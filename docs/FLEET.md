@@ -133,19 +133,17 @@ Windows:     C:\gh-runners\acme\runner-01
 ## Using the app
 
 Machines are the inventory's hosts. Each one is matched to its tailnet machine (as `ssh -G`
-resolves its target, or by the written name when `ssh_transport = "tailscale"`, because
-`tailscale ssh` doesn't read the OpenSSH config) and listed with its runners: declared runners, legacy runners
+resolves its target) and listed with its runners: declared runners, legacy runners
 still present, runners pending decommission, and GitHub runners carrying its `host-*` label.
 A tailnet device outside the inventory is never listed, contacted or alerted on. **Add machine**
 in the sidebar lists those devices by name and shows the `[[hosts]]` entry to paste for each.
 Tailscale doesn't report a machine's CPU, so check `platform` before you save. A Windows entry
 may need `windows-arm64`, and an Intel Mac can't be added, since only `darwin-arm64` is
-supported. Until the
-app can prove every host's tailnet machine, Add machine offers no entry and names the hosts
-that need attention instead, disabled hosts included. Proof is that SSH connects to the
-machine's MagicDNS name or tailnet IP (`ssh -G` shows the name OpenSSH uses), or to its bare
-MagicDNS name for `ssh_transport = "tailscale"`. An unset `ssh = "${VAR}"`, an alias SSH hasn't
-resolved, or a LAN name such as `builder.lan` holds it back. The inventory needs at least one host, so add the first one by hand.
+supported. Add machine leaves out a device when a host's `id`, `ssh` target or resolved SSH
+hostname matches the device's MagicDNS name, short name or tailnet IP, disabled hosts included.
+An alias that resolves to a LAN address doesn't match, so check that a device isn't already in
+the inventory under another name before you paste its entry. The inventory needs at least one
+host, so add the first one by hand.
 
 - **Check now** (overview) or **Check** (a machine) reads GitHub with `gh` and probes hosts over
   SSH (`tailscale ssh` for `ssh_transport = "tailscale"`). The app checks once at launch, then

@@ -47,13 +47,11 @@ Inventory SSH aliases resolve through `ssh -G`. Machines are the inventory's hos
 device no host claims gets no machine view, no SSH read, no issue and no monitoring state. Add
 machine lists such desktop and server devices by name from the tailnet snapshot, with a
 `[[hosts]]` entry built in `add_machine.rs`, with an ID no inventory host or other entry uses.
-It offers nothing until it can prove every host's peer, since a host may own a peer its written
-name doesn't match. Proof is that the name the transport connects to (the `ssh -G` hostname for
-OpenSSH, the written name for `tailscale ssh`) is a peer's full MagicDNS name or tailnet IP, or,
-for `tailscale ssh` only, a bare MagicDNS label. An unset `${VAR}` target, a failed `ssh -G`, or
-a name such as `builder.lan` holds it back, and Add machine names the hosts it waits for. Machine
-rows and the conflict check still match by name as before, and the conflict check keys both the
-written name and the OpenSSH resolution. It also offers nothing without a loaded inventory.
+An entry is a paste suggestion, so `inventory_names_device` leaves out a device on any sign of a
+match: its MagicDNS name, short name or tailnet IP equals a host's ID, written SSH target or
+`ssh -G` hostname, or the first label of one. Disabled hosts count. An alias that resolves to a
+LAN name unlike the device's names doesn't exclude it, so the pane asks the user to check before
+pasting. It offers nothing without a loaded inventory.
 Monitoring keys history by inventory host. History that older versions saved under a tailnet key
 (`ts:<node id>`) belonged to devices outside the inventory, so it is dropped when the history loads.
 When the inventory fails to load, the overview says why, with the error and the inventory path.
