@@ -573,6 +573,33 @@ fn add_machine_and_the_machine_row_agree_when_ssh_sends_a_target_elsewhere() {
 }
 
 #[test]
+fn add_machine_never_repeats_an_ssh_target_for_a_device_without_a_magicdns_name() {
+    let text = "[organization]\nname = \"acme\"\nurl = \"https://github.com/acme\"\nrunner_group = \"trusted\"\n\n\
+                [[hosts]]\nid = \"main\"\nplatform = \"linux-x64\"\nssh = \"box\"\nroot = \"~/gh-runners/acme\"\n\
+                service_mode = \"systemd\"\nlabels = [\"fleet\", \"linux-build\"]\n";
+    let mut f = Fixture::new();
+    f.plan.inventory = Some(Ok(crate::desired::inventory::parse_inventory(
+        text,
+        &Default::default(),
+    )
+    .unwrap()));
+    f.plan.ssh_hosts.insert("box".into(), "build".into());
+    f.obs.tailscale.as_mut().unwrap().value.peers.extend([
+        TailnetPeer {
+            dns_name: None,
+            ..peer("nBox", "box", "linux", true)
+        },
+        peer("nBuild", "build", "linux", true),
+        peer("nSpare", "spare", "linux", true),
+    ]);
+    let view = f.view();
+    let row = view.machines.iter().find(|m| m.display_name == "main").unwrap();
+    assert_eq!(row.id, "ts:nBuild");
+    let offered: Vec<_> = view.tailnet_devices.iter().map(|d| d.node_id.as_str()).collect();
+    assert_eq!(offered, ["nSpare"]);
+}
+
+#[test]
 fn add_machine_offers_neither_the_row_device_nor_the_device_the_ssh_target_names() {
     let text = "[organization]\nname = \"acme\"\nurl = \"https://github.com/acme\"\nrunner_group = \"trusted\"\n\n\
                 [[hosts]]\nid = \"box\"\nplatform = \"linux-x64\"\nssh = \"box.example.ts.net.\"\nroot = \"~/gh-runners/acme\"\n\

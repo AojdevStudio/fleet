@@ -46,19 +46,22 @@ pub(crate) fn unmatched_host_names_device<'a>(
     })
 }
 
-/// Whether some host's written or `ssh -G` SSH name is exactly `peer`'s MagicDNS name or one of its
-/// tailnet IPs. Such a device's entry would repeat an SSH target the inventory already has, so it
-/// is never offered, whichever device that host's machine row shows.
+/// Whether some host's written or `ssh -G` SSH name is exactly `peer`'s MagicDNS name, one of its
+/// tailnet IPs, or the `ssh` value its entry would use. Such a device's entry would repeat an SSH
+/// target the inventory already has, so it is never offered, whichever device that host's machine
+/// row shows.
 pub(crate) fn ssh_target_reaches_device(
     hosts: &[Host],
     ssh_hosts: &BTreeMap<String, String>,
     peer: &TailnetPeer,
 ) -> bool {
+    let address = peer.address();
     let device: HashSet<String> = peer
         .dns_name
         .as_deref()
         .into_iter()
         .chain(peer.ips.iter().map(String::as_str))
+        .chain([address.as_str()])
         .map(normalized)
         .collect();
     hosts.iter().any(|host| {
