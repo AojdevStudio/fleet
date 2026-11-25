@@ -57,7 +57,7 @@ impl Fixture {
     }
 
     fn jobs(&mut self, at: DateTime<Utc>, jobs: Vec<GhJob>) -> &mut Self {
-        self.obs.github.entry("acme".into()).or_default().jobs = Some(Timed::new(
+        self.obs.github.entry("acme".into()).or_default().set_jobs(Timed::new(
             at,
             JobScan {
                 started_at: at,
@@ -380,18 +380,13 @@ fn an_idle_run_restarts_after_a_gap_a_label_change_or_a_job_the_scan_saw() {
             vec![waiting(), job(11, Some(1), "in_progress", MAC, Some(ago(40)))],
         );
     assert_eq!(stuck(&f), None);
-    let idle = |f: &Fixture| {
-        f.view()
-            .queue
-            .jobs
-            .iter()
-            .find(|q| q.job.id == 10)
-            .unwrap()
-            .compatible_idle
-    };
-    assert_eq!(idle(&f), 0, "the newer scan saw it working");
+    // Running now and Up next both follow the runner list for whether it is idle.
+    let v = f.view();
+    assert_eq!((v.summary.runners_busy, v.queue.jobs[0].compatible_idle), (0, 1));
+    // A later scan that can't read that work doesn't make the runner free.
+    f.jobs(ago(20), vec![waiting()]);
+    assert_eq!(stuck(&f), None);
     f.gh_runners(ago(10), vec![gh(1, "mac", "online", false, MAC)]);
-    assert_eq!(idle(&f), 1, "a newer runner list sees it idle again");
     assert_eq!(stuck(&f), None);
     f.jobs(ago(5), vec![waiting()]);
     assert_eq!(stuck(&f), Some(QueueStuckReason::WaitedPastLimit));

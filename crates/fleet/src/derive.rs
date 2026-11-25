@@ -257,7 +257,7 @@ impl GithubIndex {
 
 /// Whether an in-progress job ran on this runner. Repository runners share IDs,
 /// so the job's repository and, when GitHub gives one, its runner name must agree.
-fn ran_on(runner: &GhRunner, job: &GhJob) -> bool {
+pub(crate) fn ran_on(runner: &GhRunner, job: &GhJob) -> bool {
     job.runner_id == Some(runner.id)
         && takes_jobs_from(runner, &job.repo)
         && job
@@ -440,8 +440,6 @@ fn queue_view(
         }
         view.as_of = Some(view.as_of.map_or(jobs.at, |a: DateTime<Utc>| a.min(jobs.at)));
         let runners_known = obs.github.get(&org).is_some_and(|o| o.runners.is_some());
-        let working: Vec<&GhJob> = jobs.value.jobs.iter().filter(|j| j.status == "in_progress").collect();
-        let scan_saw_working = |r: &GhEntry| working.iter().any(|j| ran_on(&r.runner, j));
 
         for job in jobs.value.jobs.iter().filter(|j| j.status == "queued") {
             let by_label: Vec<&GhEntry> = gh
@@ -471,15 +469,13 @@ fn queue_view(
                         && by_key
                             .get(r.key.as_str())
                             .is_none_or(|v| !matches!(v.activity, RunnerActivity::Busy { .. }))
-                        // A job scan newer than the runner list that saw the runner working wins.
-                        && !(r.at <= jobs.at && scan_saw_working(r))
                 })
                 .collect();
-            // A runner that went idle after the scan began may have taken this job since,
-            // and one the scan saw working wasn't free for it.
+            // A runner that went idle after the scan began may have taken this job since.
+            // One a scan saw working has no idle time until a later runner list.
             let idle_at_scan = idle
                 .iter()
-                .any(|r| r.idle_since.is_some_and(|at| at <= jobs.value.started_at) && !scan_saw_working(r));
+                .any(|r| r.idle_since.is_some_and(|at| at <= jobs.value.started_at));
             let reason = if !runners_known {
                 None
             } else if by_label.is_empty() {

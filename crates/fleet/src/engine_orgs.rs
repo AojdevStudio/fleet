@@ -205,7 +205,7 @@ impl Engine {
             |e| matches!(e, GithubError::Unauthorized),
             |org, result| match result {
                 Ok(jobs) => {
-                    org.jobs = Some(jobs);
+                    org.set_jobs(jobs);
                     org.jobs_error = None;
                 }
                 Err(e) => org.jobs_error = Some(e),

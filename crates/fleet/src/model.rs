@@ -257,7 +257,26 @@ impl OrgObservation {
         self.runners = Some(runners);
     }
 
-    /// When the runner list first showed this runner idle. None while it is busy or offline.
+    /// Stores a new job scan. A runner the scan saw working loses its idle time, so a
+    /// later scan that can't read that work doesn't take the runner for free.
+    pub fn set_jobs(&mut self, jobs: Timed<JobScan>) {
+        if let Some(runners) = &self.runners {
+            for r in &runners.value {
+                if jobs
+                    .value
+                    .jobs
+                    .iter()
+                    .any(|j| j.status == "in_progress" && crate::derive::ran_on(r, j))
+                {
+                    self.idle_since.remove(&idle_key(r));
+                }
+            }
+        }
+        self.jobs = Some(jobs);
+    }
+
+    /// When the runner list first showed this runner idle. None while it is busy or offline,
+    /// and after a job scan saw it working until the next runner list.
     pub fn idle_since(&self, runner: &GhRunner) -> Option<DateTime<Utc>> {
         self.idle_since.get(&idle_key(runner)).copied()
     }
