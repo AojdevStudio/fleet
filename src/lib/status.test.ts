@@ -7,14 +7,14 @@ const byName = Object.fromEntries(view.machines.map((m) => [m.displayName, m]));
 
 describe("tailnetState", () => {
   it("says checking until the first result, and gives the reason on failure", () => {
-    expect(tailnetState({ available: false, localOnline: null, tailnetName: null, asOf: null, error: null })).toEqual({
+    expect(tailnetState({ available: false, localOnline: null, tailnetName: null, asOf: null, error: null, magicDns: true })).toEqual({
       kind: "checking",
       text: "Checking Tailscale…",
     });
-    expect(tailnetState({ available: false, localOnline: false, tailnetName: null, asOf: null, error: "Tailscale is not connected (state: Stopped)" }).text).toBe(
+    expect(tailnetState({ available: false, localOnline: false, tailnetName: null, asOf: null, error: "Tailscale is not connected (state: Stopped)", magicDns: true }).text).toBe(
       "Tailscale unavailable: Tailscale is not connected (state: Stopped)",
     );
-    expect(tailnetState({ available: true, localOnline: true, tailnetName: "example.ts.net", asOf: null, error: null }).kind).toBe("ok");
+    expect(tailnetState({ available: true, localOnline: true, tailnetName: "example.ts.net", asOf: null, error: null, magicDns: true }).kind).toBe("ok");
   });
 });
 

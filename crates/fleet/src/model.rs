@@ -182,6 +182,9 @@ pub struct TailnetSnapshot {
     pub self_names: BTreeSet<String>,
     pub local_online: Option<bool>,
     pub tailnet_name: Option<String>,
+    /// Whether Tailscale reports MagicDNS on. False when it doesn't say. A peer can have a
+    /// MagicDNS name even when MagicDNS is off, and then OpenSSH can't resolve that name.
+    pub magic_dns: bool,
     pub peers: Vec<TailnetPeer>,
 }
 
@@ -380,6 +383,9 @@ pub struct FleetView {
     /// GitHub runners in a runner-up place, each with its `place`.
     #[serde(default)]
     pub pool_runners: Vec<RunnerView>,
+    /// Tailnet devices no inventory host names, offered by Add machine. Never contacted.
+    #[serde(default)]
+    pub tailnet_devices: Vec<crate::add_machine::TailnetDeviceView>,
     pub queue: QueueView,
     /// Desired state from `inventory/fleet.toml`: errors, last check, the current change.
     pub plan: crate::fleet_plan::FleetPlanStatus,
@@ -664,4 +670,7 @@ pub struct TailnetStatusView {
     pub tailnet_name: Option<String>,
     pub as_of: Option<DateTime<Utc>>,
     pub error: Option<String>,
+    /// Whether Tailscale reports MagicDNS on. Add machine offers entries only then.
+    #[serde(default)]
+    pub magic_dns: bool,
 }

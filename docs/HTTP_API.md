@@ -23,7 +23,7 @@ host configuration.
 | Route | Filters and result |
 | --- | --- |
 | `GET /` | Capabilities, limits and semantics |
-| `GET /v1/fleet` | Complete FleetView, including `issues` |
+| `GET /v1/fleet` | Complete FleetView, including `issues` and `tailnetDevices` |
 | `GET /v1/summary` | Summary, organization and tailnet status |
 | `GET /v1/machines` | The inventory's machines; `os`, `connection`, `q`, `after`, `limit` |
 | `GET /v1/machines/{id}` | One machine |
@@ -76,7 +76,9 @@ access permissions. GitHub data freshness is visible on each runner.
 
 Machines are the inventory's hosts. A tailnet device outside the inventory is never a machine,
 is never contacted over SSH and never raises an alert. A machine joins the fleet when the
-inventory gets a `[[hosts]]` entry for it ([FLEET.md](FLEET.md)). The `otherMachines` and
+inventory gets a `[[hosts]]` entry for it ([FLEET.md](FLEET.md)). `tailnetDevices` in
+`/v1/fleet` lists the devices Add machine offers, each with `nodeId`, `name` and the
+`inventoryEntry` that would add it. It is empty without a loaded inventory and while the latest Tailscale poll failed. The `otherMachines` and
 `ignored` fields, `GET /v1/discovered` and the `scope` filter of `/v1/machines` were
 removed. A request that still sends `scope` gets 400, and `/v1/discovered` gets 404. Queue scope
 metadata (`complete`, `asOf`, `otherQueued`, `stuckAfterSecs`) stays fleet-wide when jobs are

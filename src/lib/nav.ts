@@ -9,7 +9,8 @@ export type Selection =
   | { kind: "moving" }
   | { kind: "retiring" }
   | { kind: "machine"; id: string }
-  | { kind: "runner"; key: string };
+  | { kind: "runner"; key: string }
+  | { kind: "add-machine" };
 
 export function selectionId(s: Selection): string {
   switch (s.kind) {
@@ -17,6 +18,7 @@ export function selectionId(s: Selection): string {
     case "queue":
     case "moving":
     case "retiring":
+    case "add-machine":
       return s.kind;
     case "machine":
       return `machine:${s.id}`;
@@ -68,7 +70,18 @@ export function filterNavView(view: FleetView, query: string): FleetView {
     }),
     poolRunners: view.poolRunners.filter((r) => runnerMatches(r) || matches([r.place])),
     unmatchedRunners: view.unmatchedRunners.filter(runnerMatches),
+    tailnetDevices: view.tailnetDevices.filter((d) => matches([d.name])),
   };
+}
+
+/**
+ * Add machine shows while it offers devices. With a loaded inventory it also shows after a failed
+ * Tailscale poll, or when Tailscale reports MagicDNS off, so it can say why it offers none.
+ */
+export function showsAddMachine(view: FleetView): boolean {
+  if (view.tailnetDevices.length > 0) return true;
+  if (view.plan.organization === null) return false;
+  return view.tailnet.error !== null || (view.tailnet.available && !view.tailnet.magicDns);
 }
 
 /** Sidebar rows in visual order, honoring collapsed machines and groups. */
@@ -87,6 +100,7 @@ export function flattenNav(view: FleetView, collapsed: ReadonlySet<string>, open
   if (open.unlinked) {
     for (const r of view.unmatchedRunners) items.push({ selection: { kind: "runner", key: r.key } });
   }
+  if (showsAddMachine(view)) items.push({ selection: { kind: "add-machine" } });
   return items;
 }
 
@@ -106,6 +120,8 @@ export function reconcileSelection(view: FleetView, s: Selection): Selection {
       return findMachine(view, s.id) ? s : { kind: "overview" };
     case "runner":
       return findRunner(view, s.key) ? s : { kind: "overview" };
+    case "add-machine":
+      return showsAddMachine(view) ? s : { kind: "overview" };
     case "moving":
     case "retiring":
       return view.rollout.length > 0 ? s : { kind: "overview" };

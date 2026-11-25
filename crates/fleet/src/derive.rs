@@ -58,7 +58,8 @@ pub(crate) fn derive_without_issues(
     let checked = machines::Checked::build(plan);
     let gh = GithubIndex::build(config, obs, now);
     let mut matched: HashSet<String> = HashSet::new();
-    let fleet = machines::assemble(config, obs, plan, checked.as_ref(), &gh, &mut matched, now);
+    let machines::Machines { fleet, devices } =
+        machines::assemble(config, obs, plan, checked.as_ref(), &gh, &mut matched, now);
 
     let pools = crate::runner_up::view(obs);
     let places = pools.as_ref().map_or(&[][..], |p| p.places.as_slice());
@@ -93,6 +94,7 @@ pub(crate) fn derive_without_issues(
         machines: fleet,
         unmatched_runners,
         pool_runners,
+        tailnet_devices: devices,
         queue,
         orgs: org_statuses(config, obs),
         tailnet: TailnetStatusView {
@@ -101,6 +103,7 @@ pub(crate) fn derive_without_issues(
             tailnet_name: obs.tailscale.as_ref().and_then(|t| t.value.tailnet_name.clone()),
             as_of: obs.tailscale.as_ref().map(|t| t.at),
             error: obs.tailscale_error.as_ref().map(|e| e.value.clone()),
+            magic_dns: obs.tailscale.as_ref().is_some_and(|t| t.value.magic_dns),
         },
         plan: plan_status(plan, checked.as_ref()),
         monitoring: crate::monitoring::FleetMonitoring::default(),

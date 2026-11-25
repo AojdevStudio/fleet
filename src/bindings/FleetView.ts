@@ -10,6 +10,7 @@ import type { QueueView } from "./QueueView";
 import type { RolloutRepoView } from "./RolloutRepoView";
 import type { RunnerUpPoolsView } from "./RunnerUpPoolsView";
 import type { RunnerView } from "./RunnerView";
+import type { TailnetDeviceView } from "./TailnetDeviceView";
 import type { TailnetStatusView } from "./TailnetStatusView";
 
 export type FleetView = { generatedAt: string, source: DataSource, summary: FleetSummary, 
@@ -28,7 +29,11 @@ unmatchedRunners: Array<RunnerView>,
 /**
  * GitHub runners in a runner-up place, each with its `place`.
  */
-poolRunners: Array<RunnerView>, queue: QueueView, 
+poolRunners: Array<RunnerView>, 
+/**
+ * Tailnet devices no inventory host names, offered by Add machine. Never contacted.
+ */
+tailnetDevices: Array<TailnetDeviceView>, queue: QueueView, 
 /**
  * Desired state from `inventory/fleet.toml`: errors, last check, the current change.
  */

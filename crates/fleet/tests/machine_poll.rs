@@ -45,6 +45,39 @@ impl MachineSource for FakeMachine {
     }
 }
 
+/// This Mac's tailnet: the inventory's `mini` and a household computer outside the inventory.
+fn tailnet() -> TailnetSnapshot {
+    TailnetSnapshot {
+        magic_dns: true,
+        peers: vec![
+            TailnetPeer {
+                node_id: "nMini".into(),
+                hostname: "mini".into(),
+                dns_name: Some("mini.demo.ts.net".into()),
+                os: "macOS".into(),
+                ips: vec![],
+                online: true,
+                last_seen: None,
+                tags: vec![],
+                ssh_host_keys: vec![],
+            },
+            // A household computer on the tailnet, outside the inventory.
+            TailnetPeer {
+                node_id: "nFamily".into(),
+                hostname: "family-pc".into(),
+                dns_name: Some("family-pc.demo.ts.net".into()),
+                os: "windows".into(),
+                ips: vec!["100.64.0.9".into()],
+                online: true,
+                last_seen: None,
+                tags: vec![],
+                ssh_host_keys: vec!["ssh-ed25519 fake".into()],
+            },
+        ],
+        ..Default::default()
+    }
+}
+
 fn fixture(source: Arc<dyn MachineSource>, inventory: &str) -> (tempfile::TempDir, Engine) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("fleet.toml");
@@ -61,36 +94,7 @@ fn fixture(source: Arc<dyn MachineSource>, inventory: &str) -> (tempfile::TempDi
                     .flatten()
             }),
         })
-        .with_tailscale_source(|| async {
-            Ok(TailnetSnapshot {
-                peers: vec![
-                    TailnetPeer {
-                        node_id: "nMini".into(),
-                        hostname: "mini".into(),
-                        dns_name: Some("mini.demo.ts.net".into()),
-                        os: "macOS".into(),
-                        ips: vec![],
-                        online: true,
-                        last_seen: None,
-                        tags: vec![],
-                        ssh_host_keys: vec![],
-                    },
-                    // A household computer on the tailnet, outside the inventory.
-                    TailnetPeer {
-                        node_id: "nFamily".into(),
-                        hostname: "family-pc".into(),
-                        dns_name: Some("family-pc.demo.ts.net".into()),
-                        os: "windows".into(),
-                        ips: vec![],
-                        online: true,
-                        last_seen: None,
-                        tags: vec![],
-                        ssh_host_keys: vec!["ssh-ed25519 fake".into()],
-                    },
-                ],
-                ..Default::default()
-            })
-        });
+        .with_tailscale_source(|| async { Ok(tailnet()) });
     engine.set_inventory_path(Some(path.display().to_string())).unwrap();
     fleet::desired::inventory::load_inventory_from_env(&path).unwrap();
     (dir, engine)
@@ -271,7 +275,38 @@ async fn personal_labels_persist_across_restart_and_tailnet_discovery_without_ch
 }
 
 #[tokio::test]
-async fn tailnet_devices_outside_the_inventory_are_never_contacted_or_labelled() {
+async fn a_failed_tailscale_poll_lists_no_devices_and_keeps_the_last_peer_for_machine_rows() {
+    let (_dir, engine) = fixture(Arc::new(FakeMachine::default()), INVENTORY);
+    let reads = Arc::new(Mutex::new(VecDeque::from([true, false, true])));
+    let engine = engine.with_tailscale_source(move || {
+        let ok = reads.lock().unwrap().pop_front().unwrap();
+        async move {
+            if ok {
+                Ok(tailnet())
+            } else {
+                Err("Tailscale CLI failed".into())
+            }
+        }
+    });
+    let devices = |engine: &Engine| {
+        let view = engine.view();
+        let mini = view.machines.iter().find(|m| m.id == "ts:nMini").unwrap();
+        assert_eq!(mini.tailnet.as_ref().unwrap().node_id, "nMini");
+        view.tailnet_devices.into_iter().map(|d| d.name).collect::<Vec<_>>()
+    };
+    engine.poll_tailscale().await;
+    // The machine poll resolves `mini-alias`, so the `mini` row shows its device.
+    engine.poll_machines().await;
+    assert_eq!(devices(&engine), ["family-pc"]);
+    engine.poll_tailscale().await;
+    assert_eq!(engine.view().tailnet.error.as_deref(), Some("Tailscale CLI failed"));
+    assert!(devices(&engine).is_empty());
+    engine.poll_tailscale().await;
+    assert_eq!(devices(&engine), ["family-pc"]);
+}
+
+#[tokio::test]
+async fn tailnet_devices_outside_the_inventory_are_never_contacted_listed_or_labelled() {
     let fake = Arc::new(FakeMachine::default());
     let (_dir, engine) = fixture(fake.clone(), INVENTORY);
     engine.poll_tailscale().await;
@@ -282,6 +317,10 @@ async fn tailnet_devices_outside_the_inventory_are_never_contacted_or_labelled()
     assert_eq!(
         view.machines.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
         ["ts:nMini"]
+    );
+    assert_eq!(
+        view.tailnet_devices.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
+        ["family-pc"]
     );
     assert!(
         !serde_json::to_string(&view.issues).unwrap().contains("family-pc"),

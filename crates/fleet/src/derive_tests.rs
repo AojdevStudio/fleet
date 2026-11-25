@@ -42,6 +42,7 @@ impl Fixture {
                 self_names: Default::default(),
                 local_online: Some(true),
                 tailnet_name: None,
+                magic_dns: true,
                 peers: vec![peer("nSelf", "my-mac", "macOS", true)],
             },
         ));
@@ -784,6 +785,10 @@ fn discovery_and_demo_cover_current_stale_offline_and_failed_ssh() {
             "win-builder"
         ]
     );
+    // Peers no inventory host claims are only offered to Add machine. A phone fits no platform,
+    // and this Mac's own node is never offered.
+    let devices: Vec<_> = view.tailnet_devices.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(devices, ["home-nas", "spare-ubuntu"]);
     // This Mac, and tailnet peers no inventory host claims, never raise an issue.
     let issues = serde_json::to_string(&view.issues).unwrap();
     let quiet = ["dev-laptop", "home-nas", "spare-ubuntu", "iphone"];
@@ -894,6 +899,7 @@ runners = [{ name = "second-01", directory = "runner-01" }]
         .map(|m| (m.id.as_str(), m.display_name.as_str()))
         .collect();
     assert_eq!(identities, [("inv:mini", "mini"), ("inv:second", "second")]);
+    assert!(!view.tailnet_devices.iter().any(|d| d.node_id == "nMini"));
     for machine in &view.machines {
         let MachineConnection::Error { detail } = &machine.connection else {
             panic!("conflict must be an error")
@@ -997,3 +1003,6 @@ fn identity_conflicts_do_not_reuse_previously_checked_local_facts() {
 
 #[path = "derive_pool_tests.rs"]
 mod pools;
+
+#[path = "derive_add_machine_tests.rs"]
+mod add_machine;

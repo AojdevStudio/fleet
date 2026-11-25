@@ -532,6 +532,7 @@ async fn ssh_aliases_resolve_to_their_tailnet_machine() {
             self_names: Default::default(),
             local_online: Some(true),
             tailnet_name: None,
+            magic_dns: true,
             peers: vec![TailnetPeer {
                 node_id: "nMini".into(),
                 hostname: "Build Mac Mini".into(),
@@ -553,11 +554,13 @@ async fn ssh_aliases_resolve_to_their_tailnet_machine() {
         engine.view().machines.iter().all(|m| m.id != "ts:nMini"),
         "an unclaimed device is no machine"
     );
+    assert_eq!(engine.view().tailnet_devices.len(), 1);
     engine.desired_refresh(None).await.unwrap();
     // After: one machine, keyed by its tailnet node.
     let mini = machine(&engine, "mini");
     assert_eq!(mini.id, "ts:nMini");
     assert_eq!(mini.tailnet.unwrap().node_id, "nMini");
+    assert!(engine.view().tailnet_devices.is_empty());
 }
 
 async fn review_restart(f: &Fixture) -> fleet::engine::desired::ReviewView {
@@ -888,6 +891,7 @@ async fn execution_rejects_a_new_peer_ownership_blocker_even_when_plan_items_are
                 self_names: Default::default(),
                 local_online: Some(true),
                 tailnet_name: None,
+                magic_dns: true,
                 peers,
             })
         }

@@ -196,6 +196,7 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
                 self_names: Default::default(),
                 local_online: Some(true),
                 tailnet_name: Some("demo.ts.net".into()),
+                magic_dns: true,
                 peers,
             },
         )),
