@@ -66,6 +66,14 @@ mod tests {
 
     use crate::engine::{Engine, MemorySecrets};
 
+    /// The file's inode and modification time. An atomic rewrite replaces the inode.
+    #[cfg(unix)]
+    fn file_id(path: &std::path::Path) -> (u64, std::time::SystemTime) {
+        use std::os::unix::fs::MetadataExt;
+        let meta = std::fs::metadata(path).unwrap();
+        (meta.ino(), meta.modified().unwrap())
+    }
+
     #[test]
     fn a_recovery_a_view_showed_brings_the_problem_back_before_the_next_poll() {
         let dir = tempfile::tempdir().unwrap();
@@ -81,6 +89,8 @@ mod tests {
         engine.clear_issue(&shown.id, &shown.fingerprint).unwrap();
         assert!(inventory(&engine).unwrap().cleared);
         let with_clear = saved();
+        #[cfg(unix)]
+        let before = file_id(&dir.path().join("cleared-issues.json"));
 
         engine.set_inventory_path(Some(valid.display().to_string())).unwrap();
         assert!(inventory(&engine).is_none());
@@ -88,8 +98,11 @@ mod tests {
         let back = inventory(&engine).unwrap();
         assert_eq!(back.fingerprint, shown.fingerprint);
         assert!(!back.cleared);
-        // Views write nothing. The poller's save drops the clear, so a restart keeps it shown.
+        // Views write nothing, not even the same bytes. The poller's save drops the clear, so a
+        // restart keeps it shown.
         assert_eq!(saved(), with_clear);
+        #[cfg(unix)]
+        assert_eq!(file_id(&dir.path().join("cleared-issues.json")), before);
         engine.record_cleared();
         assert!(!saved().contains("\"inventory\""), "{}", saved());
         let restarted = Engine::load(dir.path().join("config.json"), Arc::new(MemorySecrets::default())).unwrap();
