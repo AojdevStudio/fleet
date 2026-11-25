@@ -493,26 +493,28 @@ fn inventory_hosts_match_tailnet_machines_by_their_ssh_target() {
     openssh.ssh_target = Some("builder.lan".into());
     let matched = peer_for_host(&openssh, None, &lan);
     assert_eq!(matched.map(|p| p.node_id.as_str()), Some("nA"));
-    // OpenSSH may send a bare `builder` to A through the hosts file, so both devices still fit,
-    // while `tailscale ssh builder` reaches B's MagicDNS label.
-    let candidates = |host: &fleet::desired::model::Host| {
-        fleet::fleet_plan::peer_candidates(host, None, &lan)
-            .iter()
-            .map(|p| p.node_id.clone())
-            .collect::<Vec<_>>()
+    // Add machine trusts only a proven device. OpenSSH may send a bare `builder` to A through
+    // the hosts file, while `tailscale ssh builder` reaches B's MagicDNS label.
+    let proven = |host: &fleet::desired::model::Host, lan: &[TailnetPeer]| {
+        fleet::fleet_plan::proven_peer(host, None, lan).map(|p| p.node_id.clone())
     };
+    assert_eq!(proven(&openssh, &lan), None, "builder.lan is a guess");
     openssh.ssh_target = Some("builder".into());
-    assert_eq!(candidates(&openssh), ["nA", "nB"]);
+    assert_eq!(proven(&openssh, &lan), None);
     let mut magic = openssh.clone();
     magic.ssh_transport = fleet::desired::model::SshTransport::Tailscale;
-    assert_eq!(candidates(&magic), ["nB"]);
-    // A fully qualified name with its final dot is still that exact MagicDNS name.
+    assert_eq!(proven(&magic, &lan).as_deref(), Some("nB"));
+    // A final DNS dot and an expanded IPv6 spelling still name the exact device.
     openssh.ssh_target = Some("builder@builder.example.ts.net.".into());
-    assert_eq!(candidates(&openssh), ["nB"]);
+    assert_eq!(proven(&openssh, &lan).as_deref(), Some("nB"));
+    let mut v6 = vec![peer("nV6", "v6", "v6.example.ts.net")];
+    v6[0].ips = vec!["fd7a:115c:a1e0::2".into()];
+    magic.ssh_target = Some("runner@fd7a:115c:a1e0:0:0:0:0:2".into());
+    assert_eq!(proven(&magic, &v6).as_deref(), Some("nV6"));
 }
 
 #[test]
-fn a_resolved_openssh_alias_does_not_share_its_written_name() {
+fn hosts_that_may_reach_one_machine_by_name_are_blocked() {
     use fleet::fleet_plan::host_identity_conflicts;
     use fleet::model::TailnetPeer;
     let peer = |id: &str, host: &str| TailnetPeer {
@@ -539,18 +541,13 @@ fn a_resolved_openssh_alias_does_not_share_its_written_name() {
     );
     let inventory = fleet::desired::inventory::parse_inventory(&text, &Default::default()).unwrap();
     let peers = vec![peer("nAlpha", "alpha"), peer("nBeta", "beta")];
-    // OpenSSH sends `beta.fleet.ts.net` to alpha, so gamma is alpha and beta is beta.
-    let resolved = [(
-        "builder@beta.fleet.ts.net".to_string(),
-        "alpha.fleet.ts.net".to_string(),
-    )];
-    assert_eq!(
-        host_identity_conflicts(&inventory, &resolved.into(), &peers),
-        Default::default()
-    );
-    // Until the alias resolves, the written names are all there is, so they still conflict.
-    let unresolved = host_identity_conflicts(&inventory, &Default::default(), &peers);
-    assert_eq!(unresolved.keys().collect::<Vec<_>>(), ["beta", "gamma"]);
+    // Both are written as beta. Even when OpenSSH sends gamma's name elsewhere, a shared written
+    // name may still mean one machine, so both stay blocked instead of trusting a name guess.
+    let resolved = [("builder@beta.fleet.ts.net".to_string(), "alpha.lan.example".to_string())];
+    for ssh_hosts in [resolved.into(), Default::default()] {
+        let conflicts = host_identity_conflicts(&inventory, &ssh_hosts, &peers);
+        assert_eq!(conflicts.keys().collect::<Vec<_>>(), ["beta", "gamma"]);
+    }
 }
 
 #[test]
@@ -619,7 +616,11 @@ async fn ssh_aliases_resolve_to_their_tailnet_machine() {
     let mini = machine(&engine, "mini");
     assert_eq!(mini.id, "ts:nMini");
     assert_eq!(mini.tailnet.unwrap().node_id, "nMini");
-    assert_eq!(engine.view().add_machine, AddMachineView::Ready { devices: vec![] });
+    // The `linux` host's device isn't in this snapshot, so ownership stays unproven.
+    let AddMachineView::Waiting { hosts } = engine.view().add_machine else {
+        panic!("linux has no proven device")
+    };
+    assert_eq!(hosts.iter().map(|h| h.host_id.as_str()).collect::<Vec<_>>(), ["linux"]);
 }
 
 async fn review_restart(f: &Fixture) -> fleet::engine::desired::ReviewView {

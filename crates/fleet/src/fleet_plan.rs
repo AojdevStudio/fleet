@@ -3,6 +3,7 @@
 //! and changes. Pure data; `derive_machines` fills it in.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::net::IpAddr;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -162,24 +163,41 @@ pub struct FleetPlanInputs {
 /// is what SSH resolves the target to (`ssh -G`), which matters for aliases
 /// like `mini` → `mac-mini.<tailnet>.ts.net`. `tailscale ssh` never reads the
 /// OpenSSH config, so a Tailscale host is the peer its written name names.
+/// The last resort is a guess by the name's first part, in snapshot order.
 pub fn peer_for_host<'a>(host: &Host, ssh_hostname: Option<&str>, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPeer> {
-    peer_candidates(host, ssh_hostname, peers).first().copied()
-}
-
-/// Every tailnet machine that fits the host's SSH target equally well, in snapshot order.
-/// More than one means the name is ambiguous, and `peer_for_host` takes the first.
-pub fn peer_candidates<'a>(host: &Host, ssh_hostname: Option<&str>, peers: &'a [TailnetPeer]) -> Vec<&'a TailnetPeer> {
-    let Some(target) = host.ssh_target.as_deref() else {
-        return Vec::new();
-    };
-    let written = target.rsplit('@').next().unwrap_or(target);
-    let magic_dns = host.ssh_transport == SshTransport::Tailscale;
+    let written = written_hostname(host)?;
     transport_hostname(host, ssh_hostname)
         .into_iter()
         .chain([written])
-        .map(|name| peers_named(&name.trim_end_matches('.').to_ascii_lowercase(), magic_dns, peers))
-        .find(|candidates| !candidates.is_empty())
-        .unwrap_or_default()
+        .map(normalized)
+        .find_map(|name| {
+            proven_named(&name, host.ssh_transport, peers).or_else(|| {
+                let short = name.split('.').next().unwrap_or(&name);
+                peers.iter().find(|p| {
+                    label(p).is_some_and(|l| l.eq_ignore_ascii_case(short)) || p.hostname.eq_ignore_ascii_case(short)
+                })
+            })
+        })
+}
+
+/// The tailnet machine the host's transport provably connects to: the name it connects to is
+/// a full MagicDNS name or a tailnet IP, or a bare MagicDNS label for `tailscale ssh`. The
+/// guesses `peer_for_host` falls back to don't count, so Add machine can't duplicate a host.
+pub fn proven_peer<'a>(host: &Host, ssh_hostname: Option<&str>, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPeer> {
+    let name = connected_hostname(host, ssh_hostname)?;
+    proven_named(&name, host.ssh_transport, peers)
+}
+
+/// The normalized name the host's transport connects to.
+pub fn connected_hostname(host: &Host, ssh_hostname: Option<&str>) -> Option<String> {
+    transport_hostname(host, ssh_hostname)
+        .or_else(|| written_hostname(host))
+        .map(normalized)
+}
+
+fn written_hostname(host: &Host) -> Option<&str> {
+    let target = host.ssh_target.as_deref()?;
+    target.rsplit('@').next()
 }
 
 /// The resolved hostname the host's transport connects to. Only OpenSSH reads `ssh -G`.
@@ -190,35 +208,28 @@ fn transport_hostname<'a>(host: &Host, ssh_hostname: Option<&'a str>) -> Option<
     }
 }
 
-/// The peers of the first match kind that fits `name`: its full MagicDNS name, a tailnet IP,
-/// its MagicDNS label for a bare name when `magic_dns` resolves it (`tailscale ssh`), then the
-/// first part of the name as a label or reported hostname. Only that last kind can fit several
-/// devices. OpenSSH may resolve a bare name through the hosts file or LAN DNS, so it skips the
-/// label step and an ambiguous name stays ambiguous.
-fn peers_named<'a>(name: &str, magic_dns: bool, peers: &'a [TailnetPeer]) -> Vec<&'a TailnetPeer> {
-    let short = name.split('.').next().unwrap_or(name);
-    let bare = magic_dns && !name.contains('.');
-    let labelled = |p: &TailnetPeer| {
-        p.dns_name
-            .as_deref()
-            .and_then(|d| d.split('.').next())
-            .is_some_and(|d| d.eq_ignore_ascii_case(short))
-    };
-    let kinds: [&dyn Fn(&TailnetPeer) -> bool; 4] = [
-        &|p| {
-            p.dns_name
-                .as_deref()
-                .is_some_and(|d| d.trim_end_matches('.').eq_ignore_ascii_case(name))
-        },
-        &|p| p.ips.iter().any(|ip| ip == name),
-        &|p| bare && labelled(p),
-        &|p| labelled(p) || p.hostname.eq_ignore_ascii_case(short),
-    ];
-    kinds
-        .iter()
-        .map(|fits| peers.iter().filter(|p| fits(p)).collect::<Vec<_>>())
-        .find(|candidates| !candidates.is_empty())
-        .unwrap_or_default()
+/// The host part, lowercase, without a final DNS dot, and an IP address in its canonical spelling.
+fn normalized(name: &str) -> String {
+    let name = name.rsplit('@').next().unwrap_or(name);
+    let name = name.trim_end_matches('.').to_ascii_lowercase();
+    let bare = name.trim_start_matches('[').trim_end_matches(']');
+    bare.parse::<IpAddr>().map_or(name.clone(), |ip| ip.to_string())
+}
+
+fn label(peer: &TailnetPeer) -> Option<&str> {
+    peer.dns_name.as_deref().and_then(|d| d.split('.').next())
+}
+
+/// OpenSSH may resolve a bare name through the hosts file or LAN DNS, so only `tailscale ssh`
+/// proves a device by its bare MagicDNS label.
+fn proven_named<'a>(name: &str, transport: SshTransport, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPeer> {
+    let ip = name.parse::<IpAddr>().ok();
+    let bare_label = transport == SshTransport::Tailscale && !name.contains('.');
+    peers.iter().find(|p| {
+        p.dns_name.as_deref().is_some_and(|d| normalized(d) == name)
+            || ip.is_some_and(|ip| p.ips.iter().any(|i| i.parse::<IpAddr>().ok() == Some(ip)))
+            || (bare_label && label(p).is_some_and(|l| l.eq_ignore_ascii_case(name)))
+    })
 }
 
 /// Hosts that share a tailnet peer or SSH destination must not own independent execution targets.
@@ -242,15 +253,9 @@ pub fn host_identity_conflicts(
                 .or_default()
                 .insert(host.id.clone());
         }
-        // The one name the transport connects to: a resolved OpenSSH alias no longer
-        // claims its written name, which another host may really use.
-        if let Some(target) = resolved.or(host.ssh_target.as_deref()) {
-            let hostname = target
-                .rsplit('@')
-                .next()
-                .unwrap_or(target)
-                .trim_end_matches('.')
-                .to_ascii_lowercase();
+        // Both the written name and the OpenSSH resolution count, so two hosts that may reach
+        // one machine are blocked rather than trusted to a name guess.
+        for hostname in written_hostname(host).into_iter().chain(resolved).map(normalized) {
             owners
                 .entry(format!("ssh:{hostname}"))
                 .or_default()

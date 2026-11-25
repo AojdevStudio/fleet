@@ -213,7 +213,15 @@ pub fn plan_inputs(now: DateTime<Utc>) -> FleetPlanInputs {
             .hosts
             .iter()
             .filter_map(|h| h.ssh_target.clone())
-            .map(|t| (t.clone(), t))
+            // Like `ssh -G` with a HostName line per alias in ~/.ssh/config.
+            .map(|t| {
+                let hostname = if t.contains('.') {
+                    t.rsplit('@').next().unwrap_or(&t).to_string()
+                } else {
+                    format!("{t}.demo.ts.net")
+                };
+                (t, hostname)
+            })
             .collect(),
         inventory: Some(Ok(inventory)),
         snapshot: Some(snapshot()),

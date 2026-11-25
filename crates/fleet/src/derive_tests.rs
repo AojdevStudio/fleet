@@ -482,7 +482,8 @@ fn add_machine_names_the_hosts_it_waits_for() {
     };
     assert_eq!(host_id, "mac-mini-02");
     assert!(reason.contains("SSH hasn't resolved mac-mini-02"), "{reason}");
-    plan.ssh_hosts.insert("mac-mini-02".into(), "mac-mini-02".into());
+    plan.ssh_hosts
+        .insert("mac-mini-02".into(), "mac-mini-02.demo.ts.net".into());
     // `tailscale ssh` doesn't use SSH resolution, so a Tailscale host never waits for it.
     plan.ssh_hosts.remove("builder@build-linux-01.demo.ts.net");
     assert!(matches!(add_machine(&plan), AddMachineView::Ready { .. }));
@@ -503,7 +504,7 @@ fn add_machine_names_the_hosts_it_waits_for() {
 }
 
 #[test]
-fn add_machine_waits_when_a_host_name_fits_several_devices() {
+fn add_machine_waits_until_a_host_names_its_device() {
     let text = r#"
 [organization]
 name = "acme"
@@ -526,8 +527,10 @@ labels = ["fleet", "linux-build"]
         dns_name: Some("builder.ts.net".into()),
         ..peer("nB", "other", "linux", true)
     };
-    // The snapshot order says nothing about which device LAN DNS reaches, so neither is offered.
-    for order in [[a.clone(), b.clone()], [b, a]] {
+    // `builder.lan` names no device for sure, and the snapshot order says nothing about which
+    // one LAN DNS reaches, so neither is offered. Nor is a device no name fits at all.
+    let c = peer("nC", "compile-01", "linux", true);
+    for order in [vec![a.clone(), b.clone()], vec![b, a], vec![c]] {
         let mut f = Fixture::new();
         f.plan.inventory = Some(Ok(crate::desired::inventory::parse_inventory(
             text,
@@ -543,11 +546,11 @@ labels = ["fleet", "linux-build"]
         let [wait] = &hosts[..] else { panic!("one host waits") };
         assert_eq!(wait.host_id, "builder");
         assert!(
-            wait.reason.contains("fits more than one tailnet device"),
+            wait.reason
+                .contains("SSH connects to builder.lan, and no tailnet device has"),
             "{}",
             wait.reason
         );
-        assert!(wait.reason.contains("build-a.ts.net") && wait.reason.contains("builder.ts.net"));
     }
 }
 

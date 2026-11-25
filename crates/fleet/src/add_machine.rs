@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::desired::model::{Host, Platform, SshTransport};
-use crate::fleet_plan::peer_candidates;
+use crate::fleet_plan::{connected_hostname, proven_peer};
 use crate::model::TailnetPeer;
 
 /// What Add machine can offer.
@@ -50,12 +50,13 @@ pub(crate) fn wait_reason(host: &Host, ssh_hosts: &BTreeMap<String, String>, pee
             "SSH hasn't resolved {target} yet. If this lasts, check that `ssh -G {target}` works on this Mac."
         ));
     }
-    let candidates = peer_candidates(host, resolved.map(String::as_str), peers);
-    (candidates.len() > 1).then(|| {
-        let names: Vec<_> = candidates.iter().map(|p| p.address()).collect();
+    // With no tailnet devices there is nothing to offer, so nothing to prove.
+    let resolved = resolved.map(String::as_str);
+    (!peers.is_empty() && proven_peer(host, resolved, peers).is_none()).then(|| {
+        let name = connected_hostname(host, resolved).unwrap_or_default();
         format!(
-            "{target} fits more than one tailnet device: {}. Write the device's MagicDNS name or tailnet IP in ssh.",
-            names.join(", ")
+            "SSH connects to {name}, and no tailnet device has that MagicDNS name or tailnet IP, so the app \
+             can't tell which device this host is. Write the device's MagicDNS name or tailnet IP in ssh."
         )
     })
 }
