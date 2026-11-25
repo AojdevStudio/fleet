@@ -48,6 +48,19 @@ impl Engine {
         self.view_changed();
         Ok(())
     }
+
+    /// Save the removal of clears that no longer apply. Performs local disk I/O; call off the async runtime.
+    pub fn record_cleared(&self) {
+        let config = self.config();
+        if config.demo_mode {
+            return;
+        }
+        let mut clears = self.clears.locked();
+        let view = self.view_with(config, &clears);
+        if let Err(e) = clears.record(&view) {
+            tracing::warn!("saving cleared items failed: {e}");
+        }
+    }
 }
 
 #[cfg(test)]

@@ -16,9 +16,10 @@
 //!   - Anything else: absence after the app showed the finding since launch, and for a
 //!     machine finding, while the machine has a fresh SSH read.
 //! - Bring back drops the saved clear at once.
-//! - Every fleet view drops the clears that no longer apply, not only the poller's tick,
-//!   so a problem that a view showed gone comes back even if it returns at once.
-//! - A failed save changes nothing. The next view tries again.
+//! - Every fleet view expires the clears that no longer apply, in memory, so a problem
+//!   that a view showed gone comes back even if it returns before the next poll. The
+//!   poller saves the removal off the async runtime, and retries until the save works.
+//! - A failed Clear or Bring back changes nothing.
 //!
 //! Not covered: a value the app can't read (`Unknown`) hides a diagnostic warning, and that
 //! counts as gone. A "shown since launch" finding (GitHub, runner checks, the runner plan,
@@ -97,6 +98,8 @@ pub(crate) struct ClearStore {
     cleared: BTreeMap<String, Entry>,
     /// Cleared findings the app has shown since launch.
     shown: BTreeSet<String>,
+    /// Clears a view found no longer apply, kept until their removal is saved. They hide nothing.
+    expired: BTreeSet<String>,
     /// Set when the saved file couldn't be read. It is kept, and nothing is saved over it.
     load_error: Option<String>,
 }
@@ -133,6 +136,7 @@ impl ClearStore {
             path: Some(path),
             cleared,
             shown: BTreeSet::new(),
+            expired: BTreeSet::new(),
             load_error,
         }
     }
@@ -149,14 +153,17 @@ impl ClearStore {
                 })
                 .collect(),
             shown: BTreeSet::new(),
+            expired: BTreeSet::new(),
             load_error: None,
         }
     }
 
     pub fn is_cleared(&self, issue: &FleetIssue) -> bool {
-        self.cleared
-            .get(&issue.id)
-            .is_some_and(|e| e.fingerprint == issue.fingerprint)
+        !self.expired.contains(&issue.id)
+            && self
+                .cleared
+                .get(&issue.id)
+                .is_some_and(|e| e.fingerprint == issue.fingerprint)
     }
 
     pub fn clear(&mut self, issue: &FleetIssue) -> Result<(), String> {
@@ -167,6 +174,7 @@ impl ClearStore {
         };
         next.insert(issue.id.clone(), entry);
         self.commit(next)?;
+        self.expired.remove(&issue.id);
         self.shown.insert(issue.id.clone());
         Ok(())
     }
@@ -176,29 +184,40 @@ impl ClearStore {
         if next.remove(id).is_some() {
             self.commit(next)?;
         }
+        self.expired.remove(id);
         Ok(())
     }
 
-    /// Drop clears that no longer apply: a changed fingerprint, or a finding that went away.
-    pub fn record(&mut self, view: &FleetView) -> Result<(), String> {
+    /// Expire clears that no longer apply: a changed fingerprint, or a finding that went away.
+    /// Memory only, so any view can call it.
+    pub fn observe(&mut self, view: &FleetView) {
         let present: BTreeMap<&str, &FleetIssue> = view.issues.iter().map(|i| (i.id.as_str(), i)).collect();
-        let next: BTreeMap<String, Entry> = self
+        let lapsed: Vec<String> = self
             .cleared
             .iter()
             .filter(|(id, entry)| match present.get(id.as_str()) {
-                Some(issue) => issue.fingerprint == entry.fingerprint,
-                None => !entry.confirm.gone(self.shown.contains(*id), view),
+                Some(issue) => issue.fingerprint != entry.fingerprint,
+                None => entry.confirm.gone(self.shown.contains(*id), view),
             })
-            .map(|(id, entry)| (id.clone(), entry.clone()))
+            .map(|(id, _)| id.clone())
             .collect();
+        self.expired.extend(lapsed);
         self.shown.extend(
             self.cleared
                 .keys()
                 .filter(|id| present.contains_key(id.as_str()))
                 .cloned(),
         );
-        if next != self.cleared {
+    }
+
+    /// Observe `view`, then save the removal of every expired clear.
+    pub fn record(&mut self, view: &FleetView) -> Result<(), String> {
+        self.observe(view);
+        if !self.expired.is_empty() {
+            let mut next = self.cleared.clone();
+            next.retain(|id, _| !self.expired.contains(id));
             self.commit(next)?;
+            self.expired.clear();
         }
         let cleared = &self.cleared;
         self.shown.retain(|id| cleared.contains_key(id));

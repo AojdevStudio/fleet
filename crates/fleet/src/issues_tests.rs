@@ -334,6 +334,32 @@ fn a_failed_save_changes_nothing() {
     assert!(!issue(&view, "alert:disk").cleared);
 }
 
+#[cfg(unix)]
+#[test]
+fn a_recovery_the_app_showed_counts_when_its_save_fails() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let mut view = one_machine();
+    set_disk_alert(&mut view, &["/"], "/: 5.7% free.");
+    let mut store = ClearStore::load(dir.path().join("cleared-issues.json"));
+    tick(&mut view, &mut store);
+    store.clear(issue(&view, "alert:disk")).unwrap();
+    let mut recovered = view.clone();
+    recovered.machines[0].monitoring.alerts.clear();
+    recovered.monitoring.alerts.clear();
+    attach(&mut recovered, |i| store.is_cleared(i));
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o500)).unwrap();
+    let failed = store.record(&recovered);
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(failed.is_err());
+
+    attach(&mut view, |i| store.is_cleared(i));
+    assert!(!issue(&view, "alert:disk").cleared);
+    tick(&mut view, &mut store);
+    assert!(!issue(&view, "alert:disk").cleared);
+    assert!(!ClearStore::load(dir.path().join("cleared-issues.json")).is_cleared(issue(&view, "alert:disk")));
+}
+
 #[test]
 fn clears_survive_a_restart() {
     let dir = tempfile::tempdir().unwrap();

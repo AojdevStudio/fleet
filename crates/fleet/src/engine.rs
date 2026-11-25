@@ -136,16 +136,16 @@ impl Engine {
         self.config.read_locked().clone()
     }
 
-    /// The fleet view. Every view also drops clears whose problem changed or went away, so a
+    /// The fleet view. Every view also expires clears whose problem changed or went away, so a
     /// recovery the app showed counts even if the problem returns before the next poll.
-    /// Saves the cleared items file when that drops a clear.
+    /// No disk writes: [`Engine::record_cleared`] saves the removals.
     pub fn view(&self) -> FleetView {
         let config = self.config();
         let demo = config.demo_mode;
         let mut clears = self.clear_store(&config).locked();
         let view = self.view_with(config, &clears);
-        if !demo && let Err(e) = clears.record(&view) {
-            tracing::warn!("saving cleared items failed: {e}");
+        if !demo {
+            clears.observe(&view);
         }
         view
     }
