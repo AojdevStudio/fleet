@@ -341,6 +341,50 @@ fn a_runner_that_went_idle_after_the_job_scan_does_not_make_the_job_stuck() {
 }
 
 #[test]
+fn an_idle_run_restarts_after_a_gap_a_label_change_or_a_job_the_scan_saw() {
+    let waiting = || created(STUCK_AFTER.num_minutes() + 5, job(10, None, "queued", MAC, None));
+    let stuck = |f: &Fixture| {
+        let v = f.view();
+        v.queue
+            .jobs
+            .iter()
+            .find(|q| q.job.id == 10)
+            .unwrap()
+            .stuck
+            .as_ref()
+            .map(|s| s.reason)
+    };
+
+    // Runner polls failed long enough for the list to go stale. The runner may have run the job unseen.
+    let mut f = Fixture::new();
+    f.gh_runners(ago(400), vec![gh(1, "mac", "online", false, MAC)])
+        .jobs(ago(40), vec![waiting()]);
+    assert_eq!(stuck(&f), Some(QueueStuckReason::RunnersOffline));
+    f.gh_runners(ago(20), vec![gh(1, "mac", "online", false, MAC)]);
+    assert_eq!(stuck(&f), None);
+
+    // The runner gained the job's labels after the scan.
+    let mut f = Fixture::new();
+    f.gh_runners(ago(100), vec![gh(1, "mac", "online", false, &["self-hosted", "macOS"])])
+        .jobs(ago(40), vec![waiting()]);
+    assert_eq!(stuck(&f), Some(QueueStuckReason::NoLabelMatch));
+    f.gh_runners(ago(20), vec![gh(1, "mac", "online", false, MAC)]);
+    assert_eq!(stuck(&f), None);
+
+    // The runner list said idle, but the newer scan saw the runner working.
+    let mut f = Fixture::new();
+    f.gh_runners(ago(100), vec![gh(1, "mac", "online", false, MAC)])
+        .gh_runners(ago(50), vec![gh(1, "mac", "online", false, MAC)])
+        .jobs(
+            ago(30),
+            vec![waiting(), job(11, Some(1), "in_progress", MAC, Some(ago(40)))],
+        );
+    assert_eq!(stuck(&f), None);
+    f.jobs(ago(10), vec![waiting()]);
+    assert_eq!(stuck(&f), Some(QueueStuckReason::WaitedPastLimit));
+}
+
+#[test]
 fn without_a_runner_list_a_self_hosted_job_waits_with_matching_unknown() {
     let mut f = Fixture::new();
     f.jobs(

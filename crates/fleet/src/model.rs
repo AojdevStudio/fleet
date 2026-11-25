@@ -220,20 +220,34 @@ pub struct OrgObservation {
     pub rate_limit: Option<RateLimit>,
     pub missing_token: bool,
     /// The first runner list in the current unbroken run that showed each runner
-    /// online and idle. Keyed by repository and runner ID, like GitHub numbers them.
+    /// online and idle with its current labels. Keyed by repository and runner ID,
+    /// like GitHub numbers them.
     idle_since: HashMap<(Option<String>, u64), DateTime<Utc>>,
 }
 
 impl OrgObservation {
     /// Stores a new runner list and carries over when each still-idle runner went idle.
+    /// A gap long enough to make the last list stale, or a change of labels, starts
+    /// a new run, since the runner may have taken and finished a job unseen.
     pub fn set_runners(&mut self, runners: Timed<Vec<GhRunner>>) {
+        let previous = self
+            .runners
+            .as_ref()
+            .filter(|p| runners.at - p.at <= crate::derive::GITHUB_STALE_AFTER);
         self.idle_since = runners
             .value
             .iter()
             .filter(|r| r.status == "online" && !r.busy)
             .map(|r| {
                 let key = idle_key(r);
-                let since = self.idle_since.get(&key).copied().unwrap_or(runners.at);
+                let unchanged =
+                    previous.is_some_and(|p| p.value.iter().any(|old| idle_key(old) == key && old.labels == r.labels));
+                let since = self
+                    .idle_since
+                    .get(&key)
+                    .copied()
+                    .filter(|_| unchanged)
+                    .unwrap_or(runners.at);
                 (key, since)
             })
             .collect();

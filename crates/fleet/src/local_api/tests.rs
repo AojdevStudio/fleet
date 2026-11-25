@@ -69,6 +69,18 @@ async fn index_and_reads() {
     let (s, body) = call(&e, get("/v1/issues?category=queue")).await;
     assert_eq!(s, StatusCode::OK);
     assert_eq!(body["total"], 3);
+    let detail = |id: &str| {
+        body["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["id"] == id)
+            .map(|i| i["detail"].clone())
+    };
+    assert_eq!(
+        detail("queue:acme-demo:9007"),
+        Some(json!("Only runners registered to other repositories have its labels."))
+    );
 
     let (s, _) = call(&e, get("/v1/machines/nope")).await;
     assert_eq!(s, StatusCode::NOT_FOUND);

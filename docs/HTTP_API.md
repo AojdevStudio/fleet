@@ -101,13 +101,16 @@ runner matches, and the job is never stuck, because a missing list says nothing 
 
 A job waiting while every matching runner is working is not stuck. A runner that went idle
 after the scan began may have taken the job since, so it counts only after the next scan still
-sees the job queued. A job without a creation time is never `waitedPastLimit`. Runner-group
+sees the job queued. A runner the scan saw working doesn't count either. A runner's idle time
+starts again when its labels change or when runner polls failed long enough for the list to go
+stale. A job without a creation time is never `waitedPastLimit`. Runner-group
 access isn't in the API, so a job can still wait on a runner the group doesn't allow. `otherQueued` counts jobs that match no observed
 runner by label and don't ask for `self-hosted`, such as `ubuntu-latest`. A job that matches only
 another repository's runner stays in `jobs` as `otherRepository`.
 
-`/v1/issues?category=queue` still lists each self-hosted job no online runner can take, as
-before. The desktop leaves that category out of Needs attention, because the job board already
+`/v1/issues?category=queue` still lists each self-hosted job with no matching runner online, as
+before. Its `detail` is the job's `stuck.detail`, or says the runner list hasn't arrived yet. A
+job that matches only another repository's runners is now a queue finding too. The desktop leaves that category out of Needs attention, because the job board already
 shows every stuck job with its reason.
 
 `/v1/desired` returns each selected host's declaration, plan, blocked reasons, errors, check

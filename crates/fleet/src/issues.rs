@@ -320,11 +320,10 @@ fn queue_issues(view: &FleetView) -> Vec<FleetIssue> {
                 format!("queue:{}:{}", job.org, job.job.id),
                 Queue,
                 format!("{}: no compatible online runner observed", job.job.name),
-                if job.compatible_runners.is_empty() {
-                    format!("No observed runner has labels {}", job.job.labels.join(", "))
-                } else {
-                    "All observed label-compatible runners are offline or unknown".into()
-                },
+                job.stuck.as_ref().map_or_else(
+                    || "GitHub hasn't sent the runner list yet, so no runner is matched.".into(),
+                    |stuck| stuck.detail.clone(),
+                ),
             );
             issue.stale = !view.queue.complete;
             issue
