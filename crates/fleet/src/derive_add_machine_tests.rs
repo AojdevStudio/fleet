@@ -207,16 +207,13 @@ fn an_openssh_entry_uses_the_tailnet_ip_unless_magic_dns_is_on() {
         view.tailnet_devices
             .iter()
             .map(|d| {
-                let entry = &d.inventory_entry;
-                let line = |key: &str| {
-                    entry
-                        .lines()
-                        .find_map(|l| l.strip_prefix(key))
-                        .unwrap()
-                        .trim_matches('"')
-                        .to_string()
-                };
-                (line("ssh = "), line("ssh_transport = "))
+                let text = format!("{ORGANIZATION}\n{}", d.inventory_entry);
+                let inventory = crate::desired::inventory::parse_inventory(&text, &Default::default()).unwrap();
+                let host = &inventory.hosts[0];
+                (
+                    host.ssh_target.clone().unwrap(),
+                    host.ssh_transport.as_str().to_string(),
+                )
             })
             .collect::<Vec<_>>()
     };
