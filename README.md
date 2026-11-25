@@ -66,14 +66,13 @@ always uses demo data.
    kind of account it is. For a personal account it lists runners and jobs per repository, with
    no runner group and no `admin:org` scope. The `repo` scope (or the repository permissions
    **Administration: Read** and **Actions: Read**) is enough.
-3. Machines come from your tailnet; there's no Add step. Machines in the inventory or with
-   runners on GitHub are listed under **Machines**. Other desktop and server machines sit in a
-   collapsed **Other machines** group, where you can **Ignore** them (reversible under
-   **Ignored**). Phones and TVs are hidden.
-4. Make each machine reachable through your existing SSH setup. Inventory hosts use their `ssh`
-   target and `ssh_transport`; other machines use their tailnet address and advertised
-   Tailscale SSH, falling back to this Mac's OpenSSH configuration. OpenSSH host keys must
-   already be trusted; Tailscale SSH uses the tailnet's SSH policy.
+3. Your fleet is the hosts in the inventory. Only they are listed under **Machines**, checked
+   over SSH, and alerted on. A tailnet device outside the inventory is never contacted.
+   **Add machine** in the sidebar lists those devices by name and shows the `[[hosts]]` entry
+   to paste for each. Phones and TVs are left out.
+4. Make each inventory host reachable through your existing SSH setup, with its `ssh` target
+   and `ssh_transport`. OpenSSH host keys must already be trusted. Tailscale SSH uses the
+   tailnet's SSH policy.
 
 ## Using the app
 
@@ -118,7 +117,7 @@ While the app runs, it serves a read-only JSON API on `http://127.0.0.1:47622`:
 ```sh
 curl -s localhost:47622/                       # capabilities, limits and semantics
 curl -s localhost:47622/v1/summary             # counts, organization and tailnet status
-curl -s 'localhost:47622/v1/machines?scope=all' # fleet and discovered machines
+curl -s localhost:47622/v1/machines            # inventory machines
 curl -s 'localhost:47622/v1/runners?activity=busy'
 curl -s 'localhost:47622/v1/desired?machine=inv:studio'
 curl -s 'localhost:47622/v1/events?limit=100'   # retained machine history
