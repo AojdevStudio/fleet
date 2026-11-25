@@ -28,8 +28,9 @@ use crate::model::TailnetPeer;
 ///   they are still in the inventory.
 /// - Everything else is offered. An entry's `id` is one no inventory host or other entry uses.
 ///
-/// What it does not cover: an alias that resolves to a LAN address, or to a LAN name unlike the
-/// device's names, doesn't hide the device. So the user checks before pasting an entry. The rule
+/// What it does not cover: an alias whose own name is unlike the device's names, and that resolves
+/// to a LAN address or a LAN name also unlike them, doesn't hide the device. So the user checks
+/// before pasting an entry. The rule
 /// hides a device on any sign of a match, because a hidden device can still be added by hand.
 pub(crate) fn tailnet_devices(
     peers: &[TailnetPeer],
@@ -111,12 +112,12 @@ fn first_label(name: &str) -> &str {
 }
 
 /// The host part, lowercase, without a final dot, and an IP address in its canonical spelling.
-/// An `ssh://` URI loses its scheme, user and port.
+/// An `ssh://` URI loses its scheme, user, port and path.
 fn normalized(name: &str) -> String {
     let name = name.trim().to_ascii_lowercase();
-    let (uri, name) = name
-        .strip_prefix("ssh://")
-        .map_or((false, name.as_str()), |rest| (true, rest));
+    let (uri, name) = name.strip_prefix("ssh://").map_or((false, name.as_str()), |rest| {
+        (true, rest.split('/').next().unwrap_or(rest))
+    });
     let host = name.rsplit('@').next().unwrap_or(name);
     let host = match host.strip_prefix('[') {
         Some(bracketed) => bracketed.split(']').next().unwrap_or(bracketed),

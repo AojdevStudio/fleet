@@ -91,7 +91,11 @@ fn pasting_one_entry_keeps_a_device_with_the_same_hostname_offered() {
 
 #[test]
 fn add_machine_and_the_machine_row_agree_when_ssh_sends_a_target_elsewhere() {
-    for written in ["box.example.ts.net", "ssh://builder@box.example.ts.net:2222"] {
+    for written in [
+        "box.example.ts.net",
+        "ssh://builder@box.example.ts.net:2222",
+        "ssh://box.example.ts.net/",
+    ] {
         let mut f = fixture(
             &[host("box", written, "")],
             [

@@ -148,8 +148,9 @@ device each machine row shows, and a device whose MagicDNS name or tailnet IP is
 host's SSH target. For a host matched to no device, it also leaves out any device whose name or
 tailnet IP matches the host's `id`, `ssh` target or resolved SSH hostname, disabled hosts
 included. It hides a device on any sign of a match, so a hidden device can still be added by
-hand. An alias that resolves to a LAN address doesn't match, so check that a device isn't
-already in the inventory under another name before you paste its entry.
+hand. A LAN address that an alias resolves to never matches a device by itself. The host still
+hides a device its `id` or written target names, but an alias with an unrelated name doesn't. So
+check that a device isn't already in the inventory under another name before you paste its entry.
 
 - **Check now** (overview) or **Check** (a machine) reads GitHub with `gh` and probes hosts over
   SSH (`tailscale ssh` for `ssh_transport = "tailscale"`). The app checks once at launch, then
