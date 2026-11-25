@@ -183,7 +183,7 @@ pub struct TailnetSnapshot {
 }
 
 impl TailnetSnapshot {
-    /// The nodes other than this Mac, which machines and offers draw from.
+    /// The nodes other than this Mac, which machine rows and offers draw from.
     pub fn others(&self) -> impl Iterator<Item = &TailnetPeer> {
         self.peers
             .iter()

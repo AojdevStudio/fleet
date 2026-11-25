@@ -575,9 +575,26 @@ fn this_mac_proves_its_own_host_and_a_shared_label_proves_nothing() {
         f.view()
     };
     // The inventory lists this Mac (nSelf, my-mac.ts.net). It is proven, and it is never offered.
+    // A device that only shares its short name stays eligible.
     let other = peer("nOther", "other", "linux", true);
-    let here = view(&text("my-mac.ts.net", "openssh"), vec![other.clone()]);
-    assert_eq!(offered(&here), Some(vec!["nOther"]));
+    let twin = TailnetPeer {
+        dns_name: Some("my-mac-1.ts.net".into()),
+        ..peer("nTwin", "my-mac", "macOS", true)
+    };
+    let here = view(&text("my-mac.ts.net", "openssh"), vec![other.clone(), twin]);
+    assert_eq!(offered(&here), Some(vec!["nTwin", "nOther"]));
+    // Two hosts that both reach this Mac are one machine.
+    let second = "\n[[hosts]]\nid = \"also-here\"\nplatform = \"darwin-arm64\"\nssh = \"my-mac\"\n\
+                  ssh_transport = \"tailscale\"\nroot = \"~/gh-runners/other\"\nservice_mode = \"launchagent\"\n\
+                  labels = [\"fleet\", \"macos-build\"]\n";
+    let both = view(&(text("my-mac.ts.net", "openssh") + second), vec![other.clone()]);
+    assert!(
+        both.machines.iter().all(
+            |m| matches!(&m.connection, MachineConnection::Error { detail } if detail.contains("also-here, here"))
+        ),
+        "{:?}",
+        both.machines
+    );
     // `tailscale ssh builder` could reach either device named builder, so offers wait.
     let shared = TailnetPeer {
         dns_name: Some("builder.other.ts.net".into()),

@@ -98,13 +98,15 @@ pub(super) fn assemble(
         now,
     };
 
-    let (slots, mut claimed) = slots(&peers, inventory, &plan.ssh_hosts);
-    // With nothing to offer there is nothing to prove.
+    let slots = slots(&peers, all_peers, inventory, &plan.ssh_hosts);
+    // With nothing to offer there is nothing to prove. Offers start only once every host is
+    // proven, so the proven devices are exactly the ones to leave out.
     let proof_peers = if peers.is_empty() { &[][..] } else { all_peers };
+    let mut proven = HashSet::new();
     let mut waiting = Vec::new();
     for host in &inventory.hosts {
         match host_proof(host, &plan.ssh_hosts, proof_peers) {
-            Ok(proven) => claimed.extend(proven.map(|p| p.node_id.as_str())),
+            Ok(device) => proven.extend(device.map(|p| p.node_id.as_str())),
             Err(reason) => waiting.push(AddMachineWait {
                 host_id: host.id.clone(),
                 reason,
@@ -134,7 +136,7 @@ pub(super) fn assemble(
             AddMachineView::Ready {
                 devices: devices(
                     &peers,
-                    &claimed,
+                    &proven,
                     &inventory.organization.name,
                     inventory.hosts.iter().map(|h| h.id.clone()).collect(),
                 ),
@@ -148,11 +150,11 @@ pub(super) fn assemble(
 /// Tailnet devices for Add machine, by name. `host_ids` are the inventory's, which entries never reuse.
 fn devices(
     peers: &[TailnetPeer],
-    claimed: &HashSet<&str>,
+    proven: &HashSet<&str>,
     organization: &str,
     mut host_ids: HashSet<String>,
 ) -> Vec<TailnetDeviceView> {
-    let mut unclaimed: Vec<_> = peers.iter().filter(|p| !claimed.contains(p.node_id.as_str())).collect();
+    let mut unclaimed: Vec<_> = peers.iter().filter(|p| !proven.contains(p.node_id.as_str())).collect();
     unclaimed.sort_by_key(|p| (p.hostname.to_lowercase(), p.node_id.clone()));
     unclaimed
         .into_iter()
@@ -160,14 +162,15 @@ fn devices(
         .collect()
 }
 
-/// One slot per inventory host, matched to its tailnet peer, and the peers they claim.
+/// One slot per inventory host, matched to a tailnet peer other than this Mac. The conflict
+/// check sees `all_peers`, so two hosts that both reach this Mac are caught.
 fn slots<'a>(
     peers: &'a [TailnetPeer],
+    all_peers: &[TailnetPeer],
     inventory: &'a Inventory,
     ssh_hosts: &BTreeMap<String, String>,
-) -> (Vec<Slot<'a>>, HashSet<&'a str>) {
+) -> Vec<Slot<'a>> {
     let mut slots: Vec<Slot<'a>> = Vec::new();
-    let mut claimed_nodes: HashSet<&str> = HashSet::new();
 
     for host in &inventory.hosts {
         let resolved = host
@@ -176,9 +179,6 @@ fn slots<'a>(
             .and_then(|t| ssh_hosts.get(t))
             .map(String::as_str);
         let peer = peer_for_host(host, resolved, peers);
-        if let Some(p) = peer {
-            claimed_nodes.insert(&p.node_id);
-        }
         slots.push(Slot {
             id: peer.map_or_else(|| inventory_machine_key(&host.id), |p| tailnet_machine_key(&p.node_id)),
             peer,
@@ -187,7 +187,7 @@ fn slots<'a>(
         });
     }
 
-    let conflicts = host_identity_conflicts(inventory, ssh_hosts, peers);
+    let conflicts = host_identity_conflicts(inventory, ssh_hosts, all_peers);
     for slot in &mut slots {
         if let Some(error) = conflicts.get(&slot.host.id) {
             slot.identity_error = Some(error.clone());
@@ -196,7 +196,7 @@ fn slots<'a>(
             slot.peer = None;
         }
     }
-    (slots, claimed_nodes)
+    slots
 }
 
 fn machine_view(slot: &Slot<'_>, ctx: &DeriveCtx<'_>, matched: &mut HashSet<String>) -> MachineView {

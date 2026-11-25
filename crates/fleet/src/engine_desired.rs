@@ -162,7 +162,7 @@ impl Engine {
             .read_locked()
             .tailscale
             .as_ref()
-            .map(|snapshot| snapshot.value.others().cloned().collect::<Vec<_>>())
+            .map(|snapshot| snapshot.value.peers.clone())
             .unwrap_or_default();
         host_identity_conflicts(inventory, &ssh_hosts, &peers).remove(host_id)
     }
