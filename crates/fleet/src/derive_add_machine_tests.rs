@@ -187,3 +187,47 @@ fn a_host_at_this_macs_name_still_hides_the_devices_it_names() {
     assert!(row.tailnet.is_none(), "{:?}", row.tailnet);
     assert_eq!(offered(&view), ["nSpare"]);
 }
+
+#[test]
+fn an_openssh_entry_uses_the_tailnet_ip_unless_magic_dns_is_on() {
+    let ssh = |magic_dns: bool| {
+        let mut f = fixture(&[host("seed", "seed.lan", "")], []);
+        let status = format!(
+            r#"{{"BackendState": "Running",
+              "CurrentTailnet": {{"Name": "example.github", "MagicDNSEnabled": {magic_dns}}},
+              "Peer": {{
+                "nodekey:a": {{"ID": "nBox", "HostName": "box", "DNSName": "box.tail1.ts.net.", "OS": "linux",
+                              "TailscaleIPs": ["100.64.0.3", "fd7a:115c:a1e0::3"]}},
+                "nodekey:b": {{"ID": "nKeyed", "HostName": "keyed", "DNSName": "keyed.tail1.ts.net.", "OS": "linux",
+                              "TailscaleIPs": ["100.64.0.4"], "sshHostKeys": ["ssh-ed25519 fake"]}}
+              }}}}"#
+        );
+        f.obs.tailscale.as_mut().unwrap().value = crate::tailscale::parse_status(&status).unwrap();
+        let view = f.view();
+        view.tailnet_devices
+            .iter()
+            .map(|d| {
+                let entry = &d.inventory_entry;
+                let line = |key: &str| {
+                    entry
+                        .lines()
+                        .find_map(|l| l.strip_prefix(key))
+                        .unwrap()
+                        .trim_matches('"')
+                        .to_string()
+                };
+                (line("ssh = "), line("ssh_transport = "))
+            })
+            .collect::<Vec<_>>()
+    };
+    let pairs = |rows: [(&str, &str); 2]| rows.map(|(a, b)| (a.to_string(), b.to_string())).to_vec();
+    // `tailscale ssh` resolves the MagicDNS name itself, so a Tailscale SSH entry keeps it.
+    assert_eq!(
+        ssh(false),
+        pairs([("100.64.0.3", "openssh"), ("keyed.tail1.ts.net", "tailscale")])
+    );
+    assert_eq!(
+        ssh(true),
+        pairs([("box.tail1.ts.net", "openssh"), ("keyed.tail1.ts.net", "tailscale")])
+    );
+}

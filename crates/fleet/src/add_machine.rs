@@ -297,53 +297,6 @@ mod tests {
     }
 
     #[test]
-    fn an_openssh_entry_uses_the_tailnet_ip_unless_magic_dns_is_on() {
-        let status = |magic_dns: bool| {
-            format!(
-                r#"{{"BackendState": "Running",
-                  "CurrentTailnet": {{"Name": "example.github", "MagicDNSEnabled": {magic_dns}}},
-                  "Peer": {{
-                    "nodekey:a": {{"ID": "nBox", "HostName": "box", "DNSName": "box.tail1.ts.net.", "OS": "linux",
-                                  "TailscaleIPs": ["100.64.0.3", "fd7a:115c:a1e0::3"]}},
-                    "nodekey:b": {{"ID": "nKeyed", "HostName": "keyed", "DNSName": "keyed.tail1.ts.net.", "OS": "linux",
-                                  "TailscaleIPs": ["100.64.0.4"], "sshHostKeys": ["ssh-ed25519 fake"]}}
-                  }}}}"#
-            )
-        };
-        let ssh = |magic_dns: bool| -> Vec<(String, SshTransport)> {
-            let snap = crate::tailscale::parse_status(&status(magic_dns)).unwrap();
-            let mut peers = snap.peers;
-            peers.sort_by(|a, b| a.node_id.cmp(&b.node_id));
-            peers
-                .iter()
-                .map(|p| {
-                    let entry = device_view(p, "acme", snap.magic_dns, &mut HashSet::new()).unwrap();
-                    let inventory =
-                        parse_inventory(&format!("{ORGANIZATION}{}", entry.inventory_entry), &Default::default())
-                            .unwrap();
-                    let host = &inventory.hosts[0];
-                    (host.ssh_target.clone().unwrap(), host.ssh_transport)
-                })
-                .collect()
-        };
-        // `tailscale ssh` resolves the MagicDNS name itself, so a Tailscale SSH entry keeps it.
-        assert_eq!(
-            ssh(false),
-            [
-                ("100.64.0.3".into(), SshTransport::Openssh),
-                ("keyed.tail1.ts.net".into(), SshTransport::Tailscale)
-            ]
-        );
-        assert_eq!(
-            ssh(true),
-            [
-                ("box.tail1.ts.net".into(), SshTransport::Openssh),
-                ("keyed.tail1.ts.net".into(), SshTransport::Tailscale)
-            ]
-        );
-    }
-
-    #[test]
     fn entries_pasted_together_into_an_inventory_keep_it_valid() {
         let example = include_str!("../../../inventory/fleet.example.toml");
         let inventory = parse_inventory(example, &Default::default()).unwrap();

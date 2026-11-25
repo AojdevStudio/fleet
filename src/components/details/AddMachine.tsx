@@ -17,7 +17,7 @@ export function AddMachine({ view }: { view: FleetView }) {
       />
       <div className="mt-5">
         {view.tailnet.error !== null ? (
-          <p className="text-[12.5px] text-ink-2">Tailscale couldn't be read just now, so no devices are listed. Check that Tailscale is running.</p>
+          <p className="text-[12.5px] text-ink-2">Tailscale couldn't be read just now, so no devices are listed.</p>
         ) : (
           <List>
             {view.tailnetDevices.map((d) => (
