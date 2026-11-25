@@ -71,7 +71,6 @@ const OPERATION_STATUS: Record<OperationStatus, { label: string; tone: Tone }> =
   failed: { label: "Failed", tone: "bad" },
 };
 
-/** The change that's running or last ran. */
 /** The failed change's attention item, `last-operation`. */
 export function operationIssue(view: FleetView): FleetIssue | undefined {
   return view.issues.find((i) => i.id === "last-operation");
