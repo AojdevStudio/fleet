@@ -438,7 +438,10 @@ fn operation_issues(view: &FleetView) -> Vec<FleetIssue> {
                 Operation,
                 &operation.title,
                 error,
-                rules::error(rules::OPERATION_FAILED, &format!("{}: {error}", operation.title)),
+                rules::error(
+                    rules::OPERATION_FAILED,
+                    &format!("{} {}: {error}", operation.title, operation.started_at),
+                ),
             ))
         })
         .collect()
@@ -458,7 +461,8 @@ fn operation_issues(view: &FleetView) -> Vec<FleetIssue> {
 ///   error text for everything else.
 /// - Runner: the kind of each warning (not configured, not running).
 /// - Queue: the stuck reason, or that the runner list hasn't arrived.
-/// - Github, Tailnet, Storage, Operation: the error text.
+/// - Github, Tailnet, Storage: the error text. Operation: the error text and the start
+///   time, so a retry that fails the same way is a new problem.
 pub(crate) mod rules {
     use crate::desired::model::{DoctorCheck, FleetPlanAction, PlanItem};
     use crate::machine::OsFamily;
@@ -600,7 +604,7 @@ pub(crate) mod rules {
             }
             "disk-space" => "Free space on the fullest disk, or grow it.".into(),
             _ if id.starts_with("runner:") && check.value == "Not configured" => {
-                "Configure it with the apply command in this machine's runner plan.".into()
+                "Configure it as this machine's runner plan says.".into()
             }
             _ if id.starts_with("runner:") => "Start the runner's service, or restart it from its runner pane.".into(),
             _ => "Fix this on the machine. The Diagnostics section shows what was read.".into(),
@@ -692,7 +696,7 @@ pub(crate) mod rules {
             "autologon" => "Set up automatic logon for the runner user with Sysinternals Autologon.".into(),
             "session" => format!("Sign in as {name} on the machine so its logon-task runners start."),
             "runner" if check.status == crate::desired::model::CheckStatus::Warn => {
-                format!("Configure {name} with the apply command in this machine's runner plan.")
+                format!("Configure {name} as this machine's runner plan says.")
             }
             "runner" => format!("Start {name}'s service, or restart it from its runner pane."),
             "legacy" => format!("Check {name}'s service. It stays until its replacement is online."),
@@ -739,10 +743,7 @@ pub(crate) mod rules {
             .iter()
             .map(|w| {
                 if w.starts_with("The runner is not configured") {
-                    (
-                        "Configure it with the apply command in this machine's runner plan.",
-                        "not-configured",
-                    )
+                    ("Configure it as this machine's runner plan says.", "not-configured")
                 } else if w.starts_with("Runner service is") {
                     ("Start its service, or restart it from the runner pane.", "not-running")
                 } else {

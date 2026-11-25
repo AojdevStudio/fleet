@@ -211,6 +211,7 @@ fn alerts_and_tailscale_count_as_gone_only_when_their_source_says_so() {
 
     // A broken inventory lists no machines, so no alerts. Tailscale isn't read yet.
     let mut broken = view.clone();
+    broken.plan.organization = None;
     broken.machines.clear();
     broken.monitoring.alerts.clear();
     broken.tailnet.local_online = None;

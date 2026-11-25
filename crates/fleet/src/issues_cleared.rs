@@ -6,9 +6,9 @@
 //! - A new fingerprint brings it back, and the saved clear is dropped.
 //! - A finding that goes away and returns comes back. "Gone" needs evidence from the
 //!   source that raised it, saved with the clear as [`Confirm`]:
-//!   - An alert: absence while its machine is still listed. Monitoring keeps an alert
-//!     while its data is missing, but a machine that isn't listed (a broken inventory)
-//!     has no alerts at all.
+//!   - An alert or the inventory error: absence while the inventory is loaded. Monitoring
+//!     keeps an alert while its data is missing, but a broken inventory lists no machines,
+//!     so no alerts.
 //!   - A diagnostic, connection or runner finding on a machine: absence while the machine
 //!     has a fresh SSH read, which reads those again.
 //!   - A Tailscale finding: absence while Tailscale reports this Mac online.
@@ -35,7 +35,7 @@ const VERSION: u32 = 1;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 enum Confirm {
-    Listed { machine: Option<String> },
+    InventoryLoaded,
     FreshRead { machine: String },
     TailnetOnline,
     Shown { machine: Option<String> },
@@ -45,9 +45,8 @@ impl Confirm {
     fn of(issue: &FleetIssue) -> Self {
         use FleetIssueCategory::{Alert, Connection, Diagnostic, Runner, Tailnet};
         match (issue.category, &issue.machine_id) {
-            (Alert, machine) => Self::Listed {
-                machine: machine.clone(),
-            },
+            (Alert, _) => Self::InventoryLoaded,
+            _ if issue.id == "inventory" => Self::InventoryLoaded,
             (Diagnostic | Connection | Runner, Some(machine)) => Self::FreshRead {
                 machine: machine.clone(),
             },
@@ -65,9 +64,7 @@ impl Confirm {
                 .any(|m| m.id == id && matches!(m.connection, MachineConnection::Connected { .. }))
         };
         match self {
-            Self::Listed { machine } => machine
-                .as_deref()
-                .is_none_or(|id| view.machines.iter().any(|m| m.id == id)),
+            Self::InventoryLoaded => view.plan.organization.is_some(),
             Self::FreshRead { machine } => fresh(machine),
             Self::TailnetOnline => view.tailnet.local_online == Some(true),
             Self::Shown { machine } => shown && machine.as_deref().is_none_or(fresh),
