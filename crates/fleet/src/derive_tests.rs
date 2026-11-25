@@ -581,8 +581,41 @@ fn this_mac_proves_its_own_host_and_a_shared_label_proves_nothing() {
         dns_name: Some("my-mac-1.ts.net".into()),
         ..peer("nTwin", "my-mac", "macOS", true)
     };
-    let here = view(&text("my-mac.ts.net", "openssh"), vec![other.clone(), twin]);
+    let here = view(&text("my-mac.ts.net", "openssh"), vec![other.clone(), twin.clone()]);
     assert_eq!(offered(&here), Some(vec!["nTwin", "nOther"]));
+    // Pasting the twin's entry gives two machines: this Mac by its inventory ID, the twin by its node.
+    let crate::add_machine::AddMachineView::Ready { devices } = &here.add_machine else {
+        unreachable!()
+    };
+    let entry = &devices.iter().find(|d| d.node_id == "nTwin").unwrap().inventory_entry;
+    let entry = entry.replace("[[hosts]]", "[[hosts]]\nlabels = [\"fleet\", \"macos-build\"]");
+    let enrolled = view(
+        &format!("{}\n{entry}", text("my-mac.ts.net", "openssh")),
+        vec![other.clone(), twin],
+    );
+    let ids: Vec<_> = enrolled.machines.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(ids, ["inv:here", "ts:nTwin"]);
+    // A LAN name never guesses this Mac, so its plan isn't blocked by a host that is.
+    let lan = "\n[[hosts]]\nid = \"lan\"\nplatform = \"linux-x64\"\nssh = \"my-mac.lan\"\n\
+               root = \"~/gh-runners/acme\"\nservice_mode = \"systemd\"\nlabels = [\"fleet\", \"linux-build\"]\n";
+    let mut f = Fixture::new();
+    f.plan.inventory = Some(Ok(crate::desired::inventory::parse_inventory(
+        &(text("my-mac.ts.net", "openssh") + lan),
+        &Default::default(),
+    )
+    .unwrap()));
+    for target in ["my-mac.ts.net", "my-mac.lan"] {
+        f.plan.ssh_hosts.insert(target.into(), target.into());
+    }
+    let view_lan = f.view();
+    assert!(
+        view_lan
+            .machines
+            .iter()
+            .all(|m| !matches!(m.connection, MachineConnection::Error { .. })),
+        "{:?}",
+        view_lan.machines
+    );
     // Two hosts that both reach this Mac are one machine.
     let second = "\n[[hosts]]\nid = \"also-here\"\nplatform = \"darwin-arm64\"\nssh = \"my-mac\"\n\
                   ssh_transport = \"tailscale\"\nroot = \"~/gh-runners/other\"\nservice_mode = \"launchagent\"\n\

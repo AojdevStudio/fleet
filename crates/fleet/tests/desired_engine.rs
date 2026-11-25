@@ -547,7 +547,7 @@ fn hosts_that_may_reach_one_machine_by_name_are_blocked() {
     // name may still mean one machine, so both stay blocked instead of trusting a name guess.
     let resolved = [("builder@beta.fleet.ts.net".to_string(), "alpha.lan.example".to_string())];
     for ssh_hosts in [resolved.into(), Default::default()] {
-        let conflicts = host_identity_conflicts(&inventory, &ssh_hosts, &peers);
+        let conflicts = host_identity_conflicts(&inventory, &ssh_hosts, &peers, None);
         assert_eq!(conflicts.keys().collect::<Vec<_>>(), ["beta", "gamma"]);
     }
 }

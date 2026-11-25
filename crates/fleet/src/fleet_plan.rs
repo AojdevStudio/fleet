@@ -165,6 +165,42 @@ pub struct FleetPlanInputs {
 /// OpenSSH config, so a Tailscale host is the peer its written name names.
 /// The last resort is a guess by the name's first part, in snapshot order.
 pub fn peer_for_host<'a>(host: &Host, ssh_hostname: Option<&str>, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPeer> {
+    matched(host, ssh_hostname, peers, &|_| true)
+}
+
+/// Which tailnet node an inventory host is.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HostPeer<'a> {
+    /// The Mac running the app, which a host is only when its name proves it.
+    ThisMac(&'a TailnetPeer),
+    /// Another node, matched as `peer_for_host` does.
+    Other(&'a TailnetPeer),
+    Unmatched,
+}
+
+/// The one identity rule for machine rows and the conflict check. `peers` holds every node,
+/// and `self_node` is this Mac's ID. A name guess never ties a host to this Mac.
+pub fn host_peer<'a>(
+    host: &Host,
+    ssh_hostname: Option<&str>,
+    peers: &'a [TailnetPeer],
+    self_node: Option<&str>,
+) -> HostPeer<'a> {
+    let is_self = |p: &TailnetPeer| Some(p.node_id.as_str()) == self_node;
+    if let [peer] = proof_candidates(host, ssh_hostname, peers)[..]
+        && is_self(peer)
+    {
+        return HostPeer::ThisMac(peer);
+    }
+    matched(host, ssh_hostname, peers, &|p| !is_self(p)).map_or(HostPeer::Unmatched, HostPeer::Other)
+}
+
+fn matched<'a>(
+    host: &Host,
+    ssh_hostname: Option<&str>,
+    peers: &'a [TailnetPeer],
+    keep: &dyn Fn(&TailnetPeer) -> bool,
+) -> Option<&'a TailnetPeer> {
     let written = written_hostname(host)?;
     transport_hostname(host, ssh_hostname)
         .into_iter()
@@ -172,11 +208,11 @@ pub fn peer_for_host<'a>(host: &Host, ssh_hostname: Option<&str>, peers: &'a [Ta
         .map(normalized)
         .find_map(|name| {
             named_exactly(&name, host.ssh_transport, peers)
-                .first()
-                .copied()
+                .into_iter()
+                .find(|p| keep(p))
                 .or_else(|| {
                     let short = name.split('.').next().unwrap_or(&name);
-                    peers.iter().find(|p| {
+                    peers.iter().filter(|p| keep(p)).find(|p| {
                         label(p).is_some_and(|l| l.eq_ignore_ascii_case(short))
                             || p.hostname.eq_ignore_ascii_case(short)
                     })
@@ -241,10 +277,12 @@ fn named_exactly<'a>(name: &str, transport: SshTransport, peers: &'a [TailnetPee
 }
 
 /// Hosts that share a tailnet peer or SSH destination must not own independent execution targets.
+/// `peers` holds every node and `self_node` is this Mac's ID, as for `host_peer`.
 pub fn host_identity_conflicts(
     inventory: &Inventory,
     ssh_hosts: &BTreeMap<String, String>,
     peers: &[TailnetPeer],
+    self_node: Option<&str>,
 ) -> BTreeMap<String, String> {
     let mut owners: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for host in &inventory.hosts {
@@ -255,7 +293,7 @@ pub fn host_identity_conflicts(
                 .and_then(|target| ssh_hosts.get(target))
                 .map(String::as_str),
         );
-        if let Some(peer) = peer_for_host(host, resolved, peers) {
+        if let HostPeer::ThisMac(peer) | HostPeer::Other(peer) = host_peer(host, resolved, peers, self_node) {
             owners
                 .entry(format!("peer:{}", peer.node_id))
                 .or_default()

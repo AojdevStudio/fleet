@@ -13,7 +13,7 @@ use crate::desired::model::{FleetPlanAction, Host, Inventory, PlanItem, Platform
 use crate::desired::plan::generate_plan;
 use crate::desired::state::build_status_rows;
 use crate::fleet_plan::{
-    DesiredRunnerRole, FleetPlanInputs, MachineDesired, RunnerDesired, host_identity_conflicts, peer_for_host,
+    DesiredRunnerRole, FleetPlanInputs, HostPeer, MachineDesired, RunnerDesired, host_identity_conflicts, host_peer,
 };
 use crate::model::*;
 
@@ -98,7 +98,8 @@ pub(super) fn assemble(
         now,
     };
 
-    let slots = slots(&peers, all_peers, inventory, &plan.ssh_hosts);
+    let self_node = snapshot.and_then(|s| s.self_node_id.as_deref());
+    let slots = slots(all_peers, self_node, inventory, &plan.ssh_hosts);
     // With nothing to offer there is nothing to prove. Offers start only once every host is
     // proven, so the proven devices are exactly the ones to leave out.
     let proof_peers = if peers.is_empty() { &[][..] } else { all_peers };
@@ -162,11 +163,11 @@ fn devices(
         .collect()
 }
 
-/// One slot per inventory host, matched to a tailnet peer other than this Mac. The conflict
-/// check sees `all_peers`, so two hosts that both reach this Mac are caught.
+/// One slot per inventory host, matched to a tailnet peer other than this Mac. A host proven to
+/// be this Mac keeps its inventory ID, and the conflict check catches two such hosts.
 fn slots<'a>(
     peers: &'a [TailnetPeer],
-    all_peers: &[TailnetPeer],
+    self_node: Option<&str>,
     inventory: &'a Inventory,
     ssh_hosts: &BTreeMap<String, String>,
 ) -> Vec<Slot<'a>> {
@@ -178,7 +179,10 @@ fn slots<'a>(
             .as_deref()
             .and_then(|t| ssh_hosts.get(t))
             .map(String::as_str);
-        let peer = peer_for_host(host, resolved, peers);
+        let peer = match host_peer(host, resolved, peers, self_node) {
+            HostPeer::Other(peer) => Some(peer),
+            HostPeer::ThisMac(_) | HostPeer::Unmatched => None,
+        };
         slots.push(Slot {
             id: peer.map_or_else(|| inventory_machine_key(&host.id), |p| tailnet_machine_key(&p.node_id)),
             peer,
@@ -187,7 +191,7 @@ fn slots<'a>(
         });
     }
 
-    let conflicts = host_identity_conflicts(inventory, ssh_hosts, all_peers);
+    let conflicts = host_identity_conflicts(inventory, ssh_hosts, peers, self_node);
     for slot in &mut slots {
         if let Some(error) = conflicts.get(&slot.host.id) {
             slot.identity_error = Some(error.clone());
