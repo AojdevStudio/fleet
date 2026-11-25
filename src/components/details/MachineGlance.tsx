@@ -19,10 +19,12 @@ export function MachineGlance({ m }: { m: MachineView }) {
   const now = useNow();
   const t = m.tailnet;
   const sshTarget = m.desired?.host.sshTarget;
-  const tailnet: Fact = !t
+  const tailnet: Fact = m.thisMac
+    ? { tone: "muted", value: "Not used", sub: THIS_MAC, hollow: true }
+    : !t
     ? { tone: "bad", value: "Not found", sub: sshTarget ? <CopyValue value={sshTarget} label="SSH target" truncate /> : "no tailnet match" }
     : t.online
-      ? { tone: "ok", value: "Online", sub: m.thisMac ? THIS_MAC : hasTailscaleSsh(m) ? "Tailscale SSH on" : "SSH over the tailnet" }
+      ? { tone: "ok", value: "Online", sub: hasTailscaleSsh(m) ? "Tailscale SSH on" : "SSH over the tailnet" }
       : { tone: "muted", value: "Offline", sub: t.lastSeen ? `last seen ${timeAgo(t.lastSeen, now)}` : "not seen recently" };
 
   const c = m.connection;
