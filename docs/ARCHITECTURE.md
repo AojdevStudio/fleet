@@ -51,8 +51,9 @@ Add machine (`add_machine.rs`) lists desktop and server devices by name from the
 snapshot, in `FleetView.tailnetDevices`, each with a `[[hosts]]` entry whose ID no inventory host
 or other entry uses. `tailnet_devices` holds the whole matching rule in one function. Tailscale
 reports this Mac apart from its peers, and machine assembly also drops the self node by ID, so
-this Mac is never offered. An entry's `ssh` is the device's MagicDNS name, else its tailnet IP. A
-device with neither gets no entry. The device a host's machine row shows is left out. A device
+this Mac is never offered. An entry's `ssh` is the device's MagicDNS name when `tailscale ssh`
+reaches it or Tailscale reports MagicDNS on, else its first tailnet IP. A device with no usable
+target gets no entry. The device a host's machine row shows is left out. A device
 whose exact MagicDNS name or tailnet IP is already a host's SSH target is never offered, so a
 pasted entry can't repeat one. For a host whose row shows no device (no match, this Mac, or an
 identity conflict), any device the host plausibly names (by `id`, written SSH target or `ssh -G`

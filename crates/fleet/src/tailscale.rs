@@ -60,6 +60,8 @@ pub fn parse_status(json: &str) -> Result<TailnetSnapshot, String> {
     #[serde(rename_all = "PascalCase")]
     struct Tailnet {
         name: Option<String>,
+        #[serde(rename = "MagicDNSEnabled", default)]
+        magic_dns_enabled: bool,
     }
     #[derive(Deserialize)]
     #[serde(rename_all = "PascalCase")]
@@ -116,6 +118,7 @@ pub fn parse_status(json: &str) -> Result<TailnetSnapshot, String> {
         local_online: s.self_.as_ref().map(|n| n.online),
         self_node_id: s.self_.map(|n| n.id),
         self_names,
+        magic_dns: s.current_tailnet.as_ref().is_some_and(|t| t.magic_dns_enabled),
         tailnet_name: s.current_tailnet.and_then(|t| t.name),
         peers,
     })
@@ -150,6 +153,7 @@ mod tests {
             ["100.64.0.1", "dev-laptop.tail1.ts.net"]
         );
         assert_eq!(snap.tailnet_name.as_deref(), Some("example.github"));
+        assert!(snap.magic_dns);
         assert_eq!(snap.peers.len(), 3);
         // This Mac is never one of its own peers, so Add machine can't offer it.
         assert!(snap.peers.iter().all(|p| p.node_id != "nSelf"));
@@ -163,6 +167,14 @@ mod tests {
         assert!(boxx.last_seen.is_some());
         let phone = snap.peers.iter().find(|p| p.node_id == "nPhone").unwrap();
         assert_eq!(phone.os, "iOS");
+    }
+
+    #[test]
+    fn magic_dns_is_off_unless_tailscale_reports_it_on() {
+        let off = r#"{"BackendState": "Running", "CurrentTailnet": {"Name": "t", "MagicDNSEnabled": false}}"#;
+        assert!(!parse_status(off).unwrap().magic_dns);
+        let unreported = r#"{"BackendState": "Running", "CurrentTailnet": {"Name": "t"}}"#;
+        assert!(!parse_status(unreported).unwrap().magic_dns);
     }
 
     #[test]

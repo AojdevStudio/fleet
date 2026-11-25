@@ -11,7 +11,8 @@ use crate::desired::model::{Host, Inventory, Platform, SshTransport};
 use crate::model::TailnetPeer;
 
 /// The rule for which tailnet devices Add machine offers, sorted by name, each with its entry.
-/// `rows` pairs each inventory host with the device its machine row shows, if any.
+/// `rows` pairs each inventory host with the device its machine row shows, if any. `magic_dns` is
+/// whether Tailscale reports MagicDNS on.
 ///
 /// What it covers:
 /// - `peers` never holds this Mac's own node: Tailscale reports it apart from its peers, and
@@ -37,6 +38,7 @@ pub(crate) fn tailnet_devices(
     inventory: &Inventory,
     ssh_hosts: &BTreeMap<String, String>,
     rows: &[(&Host, Option<&TailnetPeer>)],
+    magic_dns: bool,
 ) -> Vec<TailnetDeviceView> {
     let shown: HashSet<&str> = rows
         .iter()
@@ -57,7 +59,7 @@ pub(crate) fn tailnet_devices(
     let mut taken = inventory.hosts.iter().map(|h| h.id.clone()).collect();
     offered
         .into_iter()
-        .filter_map(|p| device_view(p, &inventory.organization.name, &mut taken))
+        .filter_map(|p| device_view(p, &inventory.organization.name, magic_dns, &mut taken))
         .collect()
 }
 
@@ -83,7 +85,7 @@ fn unmatched_host_names_device(hosts: &[&Host], ssh_hosts: &BTreeMap<String, Str
 }
 
 /// Whether some host's written or `ssh -G` SSH name is exactly `peer`'s MagicDNS name or one of
-/// its tailnet IPs. Its entry's `ssh` value is always one of those.
+/// its tailnet IPs. Its entry's `ssh` value is always one of those, whether MagicDNS is on or off.
 fn ssh_target_reaches_device(hosts: &[Host], ssh_hosts: &BTreeMap<String, String>, peer: &TailnetPeer) -> bool {
     let device: HashSet<String> = peer
         .dns_name
@@ -138,17 +140,21 @@ pub struct TailnetDeviceView {
     pub inventory_entry: String,
 }
 
-/// `None` for a device no inventory platform fits, such as a phone, and for a device with neither
-/// a MagicDNS name nor a tailnet IP, since its entry would have no unique `ssh` target. `taken` holds the host IDs
-/// already in use, so a pasted entry never duplicates one. This entry's ID is added to it.
-fn device_view(peer: &TailnetPeer, organization: &str, taken: &mut HashSet<String>) -> Option<TailnetDeviceView> {
+/// `None` for a device no inventory platform fits, such as a phone, and for a device with no `ssh`
+/// target that resolves. `taken` holds the host IDs already in use, so a pasted entry never
+/// duplicates one. This entry's ID is added to it.
+fn device_view(
+    peer: &TailnetPeer,
+    organization: &str,
+    magic_dns: bool,
+    taken: &mut HashSet<String>,
+) -> Option<TailnetDeviceView> {
     let platform = match peer.os.to_ascii_lowercase().as_str() {
         "macos" => Platform::DarwinArm64,
         "linux" => Platform::LinuxX64,
         "windows" => Platform::WindowsX64,
         _ => return None,
     };
-    let ssh = peer.dns_name.clone().or_else(|| peer.ips.first().cloned())?;
     let root = if platform.is_windows() {
         format!("C:\\gh-runners\\{organization}")
     } else {
@@ -159,6 +165,12 @@ fn device_view(peer: &TailnetPeer, organization: &str, taken: &mut HashSet<Strin
     } else {
         SshTransport::Tailscale
     };
+    // `tailscale ssh` resolves a MagicDNS name itself. OpenSSH resolves it only with MagicDNS on.
+    let name = peer
+        .dns_name
+        .as_ref()
+        .filter(|_| magic_dns || transport == SshTransport::Tailscale);
+    let ssh = name.or(peer.ips.first()).cloned()?;
     let platform_note = match platform {
         Platform::WindowsX64 => " # Tailscale doesn't report the CPU: use windows-arm64 on an ARM machine.",
         Platform::DarwinArm64 => " # Tailscale doesn't report the CPU: an Intel Mac isn't supported.",
@@ -255,7 +267,7 @@ mod tests {
                 Vec::new(),
             ),
         ] {
-            let device = device_view(&peer("Dev Box", os, keys), "acme", &mut HashSet::new()).unwrap();
+            let device = device_view(&peer("Dev Box", os, keys), "acme", true, &mut HashSet::new()).unwrap();
             assert_eq!(device.name, "Dev Box");
             let inventory = parse_inventory(
                 &format!("{ORGANIZATION}{}", device.inventory_entry),
@@ -274,14 +286,61 @@ mod tests {
 
     #[test]
     fn devices_no_platform_fits_or_without_an_ssh_target_are_not_offered() {
-        assert!(device_view(&peer("phone", "iOS", Vec::new()), "acme", &mut HashSet::new()).is_none());
-        assert!(device_view(&peer("tv", "android", Vec::new()), "acme", &mut HashSet::new()).is_none());
+        assert!(device_view(&peer("phone", "iOS", Vec::new()), "acme", true, &mut HashSet::new()).is_none());
+        assert!(device_view(&peer("tv", "android", Vec::new()), "acme", true, &mut HashSet::new()).is_none());
         let bare = TailnetPeer {
             dns_name: None,
             ips: Vec::new(),
             ..peer("bare", "linux", Vec::new())
         };
-        assert!(device_view(&bare, "acme", &mut HashSet::new()).is_none());
+        assert!(device_view(&bare, "acme", true, &mut HashSet::new()).is_none());
+    }
+
+    #[test]
+    fn an_openssh_entry_uses_the_tailnet_ip_unless_magic_dns_is_on() {
+        let status = |magic_dns: bool| {
+            format!(
+                r#"{{"BackendState": "Running",
+                  "CurrentTailnet": {{"Name": "example.github", "MagicDNSEnabled": {magic_dns}}},
+                  "Peer": {{
+                    "nodekey:a": {{"ID": "nBox", "HostName": "box", "DNSName": "box.tail1.ts.net.", "OS": "linux",
+                                  "TailscaleIPs": ["100.64.0.3", "fd7a:115c:a1e0::3"]}},
+                    "nodekey:b": {{"ID": "nKeyed", "HostName": "keyed", "DNSName": "keyed.tail1.ts.net.", "OS": "linux",
+                                  "TailscaleIPs": ["100.64.0.4"], "sshHostKeys": ["ssh-ed25519 fake"]}}
+                  }}}}"#
+            )
+        };
+        let ssh = |magic_dns: bool| -> Vec<(String, SshTransport)> {
+            let snap = crate::tailscale::parse_status(&status(magic_dns)).unwrap();
+            let mut peers = snap.peers;
+            peers.sort_by(|a, b| a.node_id.cmp(&b.node_id));
+            peers
+                .iter()
+                .map(|p| {
+                    let entry = device_view(p, "acme", snap.magic_dns, &mut HashSet::new()).unwrap();
+                    let inventory =
+                        parse_inventory(&format!("{ORGANIZATION}{}", entry.inventory_entry), &Default::default())
+                            .unwrap();
+                    let host = &inventory.hosts[0];
+                    (host.ssh_target.clone().unwrap(), host.ssh_transport)
+                })
+                .collect()
+        };
+        // `tailscale ssh` resolves the MagicDNS name itself, so a Tailscale SSH entry keeps it.
+        assert_eq!(
+            ssh(false),
+            [
+                ("100.64.0.3".into(), SshTransport::Openssh),
+                ("keyed.tail1.ts.net".into(), SshTransport::Tailscale)
+            ]
+        );
+        assert_eq!(
+            ssh(true),
+            [
+                ("box.tail1.ts.net".into(), SshTransport::Openssh),
+                ("keyed.tail1.ts.net".into(), SshTransport::Tailscale)
+            ]
+        );
     }
 
     #[test]
@@ -296,7 +355,7 @@ mod tests {
             peer("BOX", "linux", Vec::new()),
         ]
         .iter()
-        .map(|p| device_view(p, "acme", &mut taken).unwrap().inventory_entry)
+        .map(|p| device_view(p, "acme", true, &mut taken).unwrap().inventory_entry)
         .collect();
         let combined = parse_inventory(&format!("{example}\n{}", entries.join("\n")), &Default::default())
             .unwrap_or_else(|e| panic!("{e}"));

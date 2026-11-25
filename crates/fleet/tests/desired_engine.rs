@@ -532,6 +532,7 @@ async fn ssh_aliases_resolve_to_their_tailnet_machine() {
             self_names: Default::default(),
             local_online: Some(true),
             tailnet_name: None,
+            magic_dns: true,
             peers: vec![TailnetPeer {
                 node_id: "nMini".into(),
                 hostname: "Build Mac Mini".into(),
@@ -890,6 +891,7 @@ async fn execution_rejects_a_new_peer_ownership_blocker_even_when_plan_items_are
                 self_names: Default::default(),
                 local_online: Some(true),
                 tailnet_name: None,
+                magic_dns: true,
                 peers,
             })
         }

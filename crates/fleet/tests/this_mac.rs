@@ -158,6 +158,7 @@ fn fixture_answering(inventory: &str, local_output: String) -> Fixture {
         self_names: [SELF_IP.to_string(), "laptop.demo.ts.net".into()].into(),
         local_online: Some(true),
         tailnet_name: None,
+        magic_dns: true,
         peers: vec![peer("nSelf", "laptop"), peer("nMini", "mini")],
     }));
     let boundaries = ssh_fleet.clone();

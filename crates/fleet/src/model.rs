@@ -182,6 +182,9 @@ pub struct TailnetSnapshot {
     pub self_names: BTreeSet<String>,
     pub local_online: Option<bool>,
     pub tailnet_name: Option<String>,
+    /// Whether Tailscale reports MagicDNS on. False when it doesn't say. A peer can have a
+    /// MagicDNS name even when MagicDNS is off, and then OpenSSH can't resolve that name.
+    pub magic_dns: bool,
     pub peers: Vec<TailnetPeer>,
 }
 

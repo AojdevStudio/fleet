@@ -42,6 +42,7 @@ impl Fixture {
                 self_names: Default::default(),
                 local_online: Some(true),
                 tailnet_name: None,
+                magic_dns: true,
                 peers: vec![peer("nSelf", "my-mac", "macOS", true)],
             },
         ));
