@@ -1,11 +1,12 @@
-//! runner-up central pools: one read-only SSH read of the coordinator per poll.
+//! runner-up central pools: one read-only SSH read of the coordinator per poll,
+//! or a local read when the coordinator is this Mac.
 
 use std::sync::Arc;
 
 use chrono::Utc;
 
 use super::Engine;
-use crate::desired::model::Inventory;
+use crate::desired::model::{Host, Inventory};
 use crate::model::{PoolsObservation, Timed};
 use crate::runner_up::{self, PoolSource};
 use crate::sync::RwLockExt;
@@ -30,12 +31,23 @@ impl Engine {
             self.obs.write_locked().pools = None;
             return;
         };
-        let source = self.pool_source.clone();
+        let ssh = self.pool_source.clone();
+        let local: Arc<dyn PoolSource> = self.this_mac.clone();
+        let local_hosts = self.this_mac_hosts(&inventory);
         let read = runner_up.clone();
-        let result = tokio::task::spawn_blocking(move || read_coordinator(&inventory, source.as_ref()))
-            .await
-            .map_err(|e| format!("The runner-up read stopped unexpectedly: {e}"))
-            .and_then(|r| r);
+        let result = tokio::task::spawn_blocking(move || {
+            let source = |host: &Host| {
+                if local_hosts.contains(&host.id) {
+                    local.clone()
+                } else {
+                    ssh.clone()
+                }
+            };
+            read_coordinator(&inventory, &source)
+        })
+        .await
+        .map_err(|e| format!("The runner-up read stopped unexpectedly: {e}"))
+        .and_then(|r| r);
         let now = Utc::now();
         {
             let mut obs = self.obs.write_locked();
@@ -64,7 +76,11 @@ impl Engine {
 }
 
 /// The coordinator read, and tart on another Mac when the inventory says so.
-fn read_coordinator(inventory: &Inventory, source: &dyn PoolSource) -> Result<runner_up::PoolsReport, String> {
+/// `source` picks how each host is read: locally for this Mac, else over SSH.
+fn read_coordinator(
+    inventory: &Inventory,
+    source: &dyn Fn(&Host) -> Arc<dyn PoolSource>,
+) -> Result<runner_up::PoolsReport, String> {
     let Some(config) = &inventory.runner_up else {
         return Err("The inventory has no [runner_up] section.".into());
     };
@@ -84,12 +100,12 @@ fn read_coordinator(inventory: &Inventory, source: &dyn PoolSource) -> Result<ru
     let tart_host = tart_host.filter(|mac| mac.enabled);
     let with_tart =
         tart_host.is_none() && !tart_disabled && host.platform == crate::desired::model::Platform::DarwinArm64;
-    let output = source
+    let output = source(host)
         .read(host, &runner_up::read_script(config, with_tart))
         .map_err(|e| e.to_string())?;
     let tart = match tart_host {
         // A tart read that fails leaves the VM list unknown, not the pools.
-        Some(mac) => source.read(mac, &runner_up::tart_script()).ok(),
+        Some(mac) => source(mac).read(mac, &runner_up::tart_script()).ok(),
         None => None,
     };
     runner_up::parse_read(&output, tart.as_deref())

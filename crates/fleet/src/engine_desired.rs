@@ -158,18 +158,22 @@ impl Engine {
     /// The `gh` and SSH boundaries. The host that is this Mac goes to the local runner instead of SSH.
     fn boundaries(&self, inventory: &Inventory) -> (Arc<dyn FleetGithub>, Arc<dyn FleetRemote>) {
         let (github, ssh) = (self.desired_io.boundaries)(inventory);
-        let ssh_hosts = self.desired.locked().ssh_hosts.clone();
-        let local_hosts = crate::this_mac::hosts(
-            inventory,
-            &ssh_hosts,
-            self.obs.read_locked().tailscale.as_ref().map(|t| &t.value),
-        );
         let remote = crate::this_mac::LocalOrSsh {
             ssh,
             local: self.this_mac.clone(),
-            local_hosts,
+            local_hosts: self.this_mac_hosts(inventory),
         };
         (github, Arc::new(remote))
+    }
+
+    /// The inventory hosts that are this Mac, from the latest tailnet read and SSH resolution.
+    pub(super) fn this_mac_hosts(&self, inventory: &Inventory) -> std::collections::BTreeSet<String> {
+        let ssh_hosts = self.desired.locked().ssh_hosts.clone();
+        crate::this_mac::hosts(
+            inventory,
+            &ssh_hosts,
+            self.obs.read_locked().tailscale.as_ref().map(|t| &t.value),
+        )
     }
 
     fn host_identity_conflict(&self, inventory: &Inventory, host_id: &str) -> Option<String> {

@@ -539,3 +539,18 @@ fn the_demo_shows_one_cleared_item() {
     );
     assert_eq!(view.summary.attention as usize, view.issues.len() - 1);
 }
+
+#[test]
+fn this_macs_failed_read_never_reads_as_an_ssh_problem() {
+    let mut view = one_machine();
+    let machine = &mut view.machines[0];
+    machine.this_mac = true;
+    machine.connection = MachineConnection::Error {
+        detail: "permission denied".into(),
+    };
+    attach(&mut view, |_| false);
+    let issue = issue(&view, &format!("{}:connection", view.machines[0].id));
+    assert!(issue.title.ends_with(": the local check failed"), "{}", issue.title);
+    assert!(issue.action.contains("without SSH"), "{}", issue.action);
+    assert!(!view.issues.iter().any(|i| i.title.contains("SSH unavailable")));
+}

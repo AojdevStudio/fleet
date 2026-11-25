@@ -78,7 +78,10 @@ impl MachineState {
         }
         let muted = self.maintenance_until.is_some_and(|t| t > now);
         self.observe_network(m, network_at, muted, &mut changes);
-        self.observe_ssh(&m.connection, &mut changes);
+        // This Mac is read locally, so it has no SSH to lose or recover.
+        if !m.this_mac {
+            self.observe_ssh(&m.connection, &mut changes);
+        }
         if let Some(health) = m
             .health
             .as_ref()

@@ -288,10 +288,11 @@ are verified. Don't also enable `services.github-runners` for inventory runners.
 
 The app can list the Mac it runs on as a fleet machine without SSH to itself, so Remote Login
 can stay off. A host is this Mac when its written `ssh` target is `localhost`, `127.0.0.1` or
-`::1`, or when its SSH target names this Mac's own tailnet node. A Windows host never is. For
-that host the app runs the same health probe, runner probe, checks and runner scripts as local
-processes (`/bin/bash -s`) instead of over SSH. Its runners link by their `host-<id>` label as
-on any host.
+`::1`, or when its SSH target, as written or as SSH resolves it, is exactly this Mac's tailnet
+DNS name, hostname or tailnet IP. A name that only starts with the same label doesn't count. A
+Windows host never is. For that host the app runs the same health probe, runner probe, checks,
+runner scripts and runner-up reads as local processes (`/bin/bash -s`) instead of over SSH. Its
+runners link by their `host-<id>` label as on any host.
 
 ```toml
 [[hosts]]

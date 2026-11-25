@@ -11,6 +11,7 @@ use fleet::engine::desired::{DesiredIo, SshTransportIdentity};
 use fleet::engine::{Engine, MemorySecrets};
 use fleet::machine::{MachineReport, MachineSource, parse_inspection};
 use fleet::model::{MachineConnection, MachineView, TailnetPeer, TailnetSnapshot};
+use fleet::runner_up::PoolSource;
 
 const ORGANIZATION: &str = r#"
 [organization]
@@ -55,6 +56,17 @@ impl MachineSource for FakeSsh {
     }
 }
 
+/// The SSH coordinator read; records the host ids it reaches.
+#[derive(Default)]
+struct FakePools(Mutex<Vec<String>>);
+
+impl PoolSource for FakePools {
+    fn read(&self, host: &Host, _script: &str) -> Result<String, RemoteError> {
+        self.0.lock().unwrap().push(host.id.clone());
+        Ok(fleet::runner_up::fixture::output())
+    }
+}
+
 fn peer(id: &str, hostname: &str) -> TailnetPeer {
     TailnetPeer {
         node_id: id.into(),
@@ -74,20 +86,28 @@ struct Fixture {
     engine: Arc<Engine>,
     ssh_health: Arc<FakeSsh>,
     ssh_fleet: FakeFleet,
+    ssh_pools: Arc<FakePools>,
     local: Arc<RecordingRunner>,
 }
 
 fn fixture(inventory: &str) -> Fixture {
+    fixture_answering(inventory, LOCAL_OUTPUT.into())
+}
+
+/// `local_output` is what every local script prints.
+fn fixture_answering(inventory: &str, local_output: String) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("fleet.toml");
     std::fs::write(&path, inventory).unwrap();
     let ssh_health = Arc::new(FakeSsh::default());
     let ssh_fleet = FakeFleet::default();
-    let local = RecordingRunner::new(|_| LOCAL_OUTPUT.into());
+    let ssh_pools = Arc::new(FakePools::default());
+    let local = RecordingRunner::new(move |_| local_output.clone());
     let boundaries = ssh_fleet.clone();
     let engine = Engine::load(dir.path().join("config.json"), Arc::new(MemorySecrets::default()))
         .unwrap()
         .with_machine_source(ssh_health.clone())
+        .with_pool_source(ssh_pools.clone())
         .with_this_mac_source(Arc::new(RemoteClient::local(local.clone(), Duration::from_secs(5))))
         .with_desired_io(DesiredIo {
             boundaries: Arc::new(move |_| (Arc::new(boundaries.clone()) as _, Arc::new(boundaries.clone()) as _)),
@@ -112,6 +132,7 @@ fn fixture(inventory: &str) -> Fixture {
         engine: Arc::new(engine),
         ssh_health,
         ssh_fleet,
+        ssh_pools,
         local,
     }
 }
@@ -173,4 +194,22 @@ async fn a_host_on_the_tailnet_self_node_is_read_locally() {
 async fn a_localhost_host_is_read_locally() {
     let f = fixture(&format!("{ORGANIZATION}{}{MINI}", laptop("ci@localhost")));
     assert_read_locally(&f).await;
+}
+
+#[tokio::test]
+async fn a_coordinator_on_this_mac_is_read_locally() {
+    let inventory = format!(
+        "{ORGANIZATION}[runner_up]\nhost = \"laptop\"\nconfig = \"~/.config/runner-up/config.json\"\n{}{MINI}",
+        laptop("laptop")
+    );
+    let f = fixture_answering(&inventory, fleet::runner_up::fixture::output());
+    f.engine.poll_tailscale().await;
+    f.engine.poll_pools().await;
+    assert!(f.ssh_pools.0.lock().unwrap().is_empty());
+    let run = f.local.last().unwrap();
+    assert_eq!(run.command, ["/bin/bash", "-s"]);
+    assert!(run.input.unwrap().contains("runner-up"));
+    let pools = f.engine.view().pools.unwrap();
+    assert_eq!(pools.error, None);
+    assert_eq!(pools.places.len(), 5);
 }

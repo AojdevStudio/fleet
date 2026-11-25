@@ -275,7 +275,11 @@ fn issues_for_machine(machine: &MachineView) -> Vec<FleetIssue> {
                         format!("{} couldn't be checked", machine.display_name)
                     },
                     error,
-                    rules::ssh(error),
+                    if machine.this_mac {
+                        rules::local()
+                    } else {
+                        rules::ssh(error)
+                    },
                 ));
             }
         } else {
@@ -331,7 +335,12 @@ fn issues_for_machine(machine: &MachineView) -> Vec<FleetIssue> {
                 Connection,
                 format!("{}: {title}", machine.display_name),
                 detail,
-                rules::connection(&machine.connection),
+                match &machine.connection {
+                    MachineConnection::Error { .. } | MachineConnection::Stale { .. } if machine.this_mac => {
+                        rules::local()
+                    }
+                    connection => rules::connection(connection),
+                },
             );
             issue.stale = matches!(machine.connection, MachineConnection::Stale { .. });
             issues.push(issue);
@@ -555,6 +564,14 @@ pub(crate) mod rules {
                 advice("Nothing to do.", "none")
             }
         }
+    }
+
+    /// A failed local read of this Mac. No SSH is involved, so SSH advice never applies.
+    pub(super) fn local() -> Advice {
+        advice(
+            "Read the error, fix it on this Mac, then select Check now. This Mac is read without SSH.",
+            "local",
+        )
     }
 
     /// An SSH failure, by kind. The fingerprint is the kind, so a new timeout or

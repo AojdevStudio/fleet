@@ -56,6 +56,8 @@ fn this_mac_is_the_tailnet_self_node_or_a_loopback_target() {
         ("v6", "darwin-arm64", "::1"),
         ("mini", "darwin-arm64", "mini"),
         ("win", "windows-x64", "localhost"),
+        // Shares only its first label with this Mac's node, so it stays on SSH.
+        ("office", "darwin-arm64", "laptop.office.example"),
     ]);
     let ssh_hosts = BTreeMap::from([("me".to_string(), "laptop.example.ts.net".to_string())]);
     let tailnet = tailnet();

@@ -1,8 +1,9 @@
 //! The Mac this app runs on, when the inventory lists it as a host.
 //!
 //! One rule says which host that is: the host's written `ssh` target is
-//! `localhost`, `127.0.0.1` or `::1`, or its SSH target names the tailnet's
-//! self node. A Windows host never is. The app never opens SSH to that host:
+//! `localhost`, `127.0.0.1` or `::1`, or its SSH target (as written or as SSH
+//! resolves it) is exactly the tailnet self node's DNS name, hostname or a
+//! tailnet IP. A Windows host never is. The app never opens SSH to that host:
 //! its health probe, runner probe, checks and runner scripts run as local
 //! processes with `/bin/bash -s`.
 
@@ -13,9 +14,9 @@ use std::time::Duration;
 use crate::desired::model::{DoctorCheck, Host, Inventory, LocalRunner, Runner, RunnerRole};
 use crate::desired::process::SubprocessRunner;
 use crate::desired::remote::{FleetRemote, InstallRequest, RemoteClient, RemoteError, Transient};
-use crate::fleet_plan::peer_for_host;
 use crate::machine::MachineSource;
 use crate::model::TailnetSnapshot;
+use crate::runner_up::PoolSource;
 
 type Result<T> = std::result::Result<T, RemoteError>;
 
@@ -24,19 +25,29 @@ const LOOPBACK: [&str; 3] = ["localhost", "127.0.0.1", "::1"];
 const LOCAL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Whether `host` is the Mac this app runs on. `ssh_hostname` is what SSH
-/// resolves the host's target to, as for [`peer_for_host`].
+/// resolves the host's target to (`ssh -G`). Names match exactly, never by
+/// their first label, because a wrong match would run a script on this Mac.
 pub fn is_this_mac(host: &Host, ssh_hostname: Option<&str>, tailnet: Option<&TailnetSnapshot>) -> bool {
     if host.is_windows() {
         return false;
     }
-    let written = host.ssh_target.as_deref().and_then(|t| t.rsplit('@').next());
-    if written.is_some_and(|w| LOOPBACK.iter().any(|l| w.eq_ignore_ascii_case(l))) {
+    let Some(written) = host.ssh_target.as_deref().and_then(|t| t.rsplit('@').next()) else {
+        return false;
+    };
+    if LOOPBACK.iter().any(|l| written.eq_ignore_ascii_case(l)) {
         return true;
     }
-    tailnet.is_some_and(|t| {
-        t.self_node_id
-            .as_deref()
-            .is_some_and(|id| peer_for_host(host, ssh_hostname, &t.peers).is_some_and(|peer| peer.node_id == id))
+    let Some(node) = tailnet.and_then(|t| {
+        let id = t.self_node_id.as_deref()?;
+        t.peers.iter().find(|p| p.node_id == id)
+    }) else {
+        return false;
+    };
+    ssh_hostname.into_iter().chain([written]).any(|name| {
+        let name = name.trim_end_matches('.');
+        name.eq_ignore_ascii_case(&node.hostname)
+            || node.dns_name.as_deref().is_some_and(|d| d.eq_ignore_ascii_case(name))
+            || node.ips.iter().any(|ip| ip == name)
     })
 }
 
@@ -57,10 +68,10 @@ pub fn hosts(
         .collect()
 }
 
-/// Runs scripts on this Mac: health reads and runner operations. Tests replace it.
-pub trait LocalSource: FleetRemote + MachineSource {}
+/// Runs scripts on this Mac: health reads, pool reads and runner operations. Tests replace it.
+pub trait LocalSource: FleetRemote + MachineSource + PoolSource {}
 
-impl<T: FleetRemote + MachineSource> LocalSource for T {}
+impl<T: FleetRemote + MachineSource + PoolSource> LocalSource for T {}
 
 /// The real local runner.
 pub fn local_client() -> RemoteClient {
