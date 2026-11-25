@@ -26,8 +26,8 @@ describe("attention rows", () => {
     expect(html).toContain("Add organization");
   });
 
-  it("leaves alerts, history storage and the running change to their own sections", () => {
-    const issues = [issue("alert", "Offline", null, "alert"), issue("storage", "Can't save", null, "storage"), issue("operation", "Failed", null, "operation")];
+  it("leaves alerts, stuck jobs, history storage and the running change to their own sections", () => {
+    const issues = [issue("alert", "Offline", null, "alert"), issue("queue", "No runner", null, "queue"), issue("storage", "Can't save", null, "storage"), issue("operation", "Failed", null, "operation")];
     expect(renderToStaticMarkup(<Attention issues={issues} />)).toBe("");
   });
 });

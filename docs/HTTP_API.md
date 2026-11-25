@@ -68,7 +68,7 @@ Unknown query fields and invalid enum values are errors. The enums are:
 | `os` | `macos`, `linux`, `windows`, `other` |
 | `connection` | `connected`, `stale`, `offline`, `error`, `disabled`, `pending` |
 | `activity` | `busy`, `idle`, `offline`, `unknown` (busy and idle need fresh GitHub data) |
-| `category` | `alert`, `diagnostic`, `inventory`, `connection`, `runner`, `github`, `tailnet`, `storage`, `operation` |
+| `category` | `alert`, `diagnostic`, `inventory`, `connection`, `runner`, `queue`, `github`, `tailnet`, `storage`, `operation` |
 
 `q` is a case-insensitive substring of a machine's ID, display name or host. Runner `label`
 matches observed GitHub labels; `repo` matches the runner's linked current job, not repository
@@ -106,8 +106,9 @@ access isn't in the API, so a job can still wait on a runner the group doesn't a
 runner by label and don't ask for `self-hosted`, such as `ubuntu-latest`. A job that matches only
 another repository's runner stays in `jobs` as `otherRepository`.
 
-Stuck jobs are not attention findings. The `queue` issue category was removed, so
-`/v1/issues?category=queue` gets 400.
+`/v1/issues?category=queue` still lists each self-hosted job no online runner can take, as
+before. The desktop leaves that category out of Needs attention, because the job board already
+shows every stuck job with its reason.
 
 `/v1/desired` returns each selected host's declaration, plan, blocked reasons, errors, check
 timestamps, runner check findings and per-runner desired status. Its global `plan` stays

@@ -165,8 +165,8 @@ fn queue_counts_label_compatible_runners() {
             "No runner has the labels self-hosted, gpu."
         ))
     );
-    // A stuck job shows on the queue only, never again as an attention item.
-    assert_eq!(v.summary.attention, 0);
+    // The API keeps a self-hosted job no online runner can take as a queue finding.
+    assert_eq!(v.summary.attention, 1);
 }
 
 fn in_repo(repository: &str, runner: GhRunner) -> GhRunner {
@@ -398,14 +398,14 @@ fn the_board_counts_each_runner_and_job_once() {
     assert_eq!(reason(9008), Some(QueueStuckReason::RunnersOffline));
     assert_eq!(reason(9009), Some(QueueStuckReason::WaitedPastLimit));
 
-    let issues = serde_json::to_string(&view.issues).unwrap();
-    for q in &stuck {
-        assert!(
-            !issues.contains(&q.job.name),
-            "{} is also an attention item",
-            q.job.name
-        );
-    }
+    // Queue findings stay in the API, and the desktop hides that one category.
+    let queue_findings = view
+        .issues
+        .iter()
+        .filter(|i| stuck.iter().any(|q| i.title.contains(&q.job.name)))
+        .inspect(|i| assert_eq!(i.category, crate::issues::FleetIssueCategory::Queue, "{}", i.title))
+        .count();
+    assert!(queue_findings > 0);
 }
 
 #[test]

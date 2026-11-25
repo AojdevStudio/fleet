@@ -65,6 +65,10 @@ async fn index_and_reads() {
 
     let (_, body) = call(&e, get("/v1/queue")).await;
     assert_eq!(body["queue"]["jobs"].as_array().unwrap().len(), 6);
+    // v1 scripts still read queued jobs no online runner can take as queue findings.
+    let (s, body) = call(&e, get("/v1/issues?category=queue")).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(body["total"], 3);
 
     let (s, _) = call(&e, get("/v1/machines/nope")).await;
     assert_eq!(s, StatusCode::NOT_FOUND);
@@ -438,7 +442,6 @@ async fn rejects_invalid_input_and_demo_troubleshooting_with_structured_errors()
         "/v1/events?before=garbage",
         "/v1/events?machine=x&machineKey=y",
         "/v1/monitoring?before=00000000000000000001",
-        "/v1/issues?category=queue",
     ] {
         let (status, body) = call(&engine, get(path)).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {body}");
@@ -500,6 +503,12 @@ async fn schema_has_every_route_and_resolves_all_model_references() {
         }
     }
     refs(&schema, &schema);
+    assert!(
+        schema["components"]["schemas"]["FleetIssueCategory"]["enum"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("queue"))
+    );
     for route in super::schema::endpoint_descriptions().as_object().unwrap().keys() {
         let (method, path) = route.split_once(' ').unwrap();
         assert!(

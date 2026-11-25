@@ -71,8 +71,8 @@ export function Overview({ view }: { view: FleetView }) {
   );
 }
 
-/** Findings shown elsewhere on the overview: alerts, history storage and the running change. */
-const SHOWN_ELSEWHERE: FleetIssueCategory[] = ["alert", "storage", "operation"];
+/** Findings shown elsewhere on the overview: alerts, stuck jobs, history storage and the running change. */
+const SHOWN_ELSEWHERE: FleetIssueCategory[] = ["alert", "queue", "storage", "operation"];
 
 export function Attention({ issues }: { issues: FleetIssue[] }) {
   const select = useUi((s) => s.select);
