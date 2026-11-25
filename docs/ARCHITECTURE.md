@@ -115,7 +115,7 @@ replace duplicate disk and offline rows. Each issue carries an action text and a
 both set in `issues.rs`. Clear saves an issue's ID and fingerprint in `cleared-issues.json`
 beside the app settings. The issue stays hidden while the fingerprint holds, and comes back
 when it changes or when the issue returns after its source showed it gone: a loaded
-inventory for an alert or the inventory error, a fresh SSH read for a machine finding, a Tailscale read for a Tailscale finding. Clear and bring
+inventory for the inventory error, that plus readable history for an alert, a fresh SSH read for a machine finding, a Tailscale read for a Tailscale finding. Clear and bring
 back are Tauri commands; demo data keeps clears in memory. The OpenAPI 3.1 contract derives view schemas from the
 Rust types. `POST /v1/checks` runs the same read-only refresh, inventory check and runner checks
 as the app, waiting for automatic checks already in flight; the regular poller still coalesces

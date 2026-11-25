@@ -6,9 +6,10 @@
 //! - A new fingerprint brings it back, and the saved clear is dropped.
 //! - A finding that goes away and returns comes back. "Gone" needs evidence from the
 //!   source that raised it, saved with the clear as [`Confirm`]:
-//!   - An alert or the inventory error: absence while the inventory is loaded. Monitoring
-//!     keeps an alert while its data is missing, but a broken inventory lists no machines,
-//!     so no alerts.
+//!   - The inventory error: absence while the inventory is loaded.
+//!   - An alert: absence while the inventory is loaded and machine history was read.
+//!     Monitoring keeps an alert while its data is missing, but a broken inventory lists
+//!     no machines, and unreadable history has no alerts.
 //!   - A diagnostic, connection or runner finding on a machine: absence while the machine
 //!     has a fresh SSH read, which reads those again.
 //!   - A Tailscale finding: absence while Tailscale reports this Mac online.
@@ -18,8 +19,9 @@
 //! - A failed save changes nothing. The poller tries again on its next tick.
 //!
 //! Not covered: a value the app can't read (`Unknown`) hides a diagnostic warning, and that
-//! counts as gone. A non-machine finding fixed while the app is closed, that returns with
-//! the same fingerprint before the app sees it gone, stays cleared.
+//! counts as gone. A "shown since launch" finding (GitHub, runner checks, the runner plan,
+//! runner group, failed change) that is gone when the app starts and returns with the same
+//! fingerprint stays cleared, because the app never saw it gone.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -36,6 +38,7 @@ const VERSION: u32 = 1;
 #[serde(tag = "kind", rename_all = "kebab-case")]
 enum Confirm {
     InventoryLoaded,
+    AlertsKnown,
     FreshRead { machine: String },
     TailnetOnline,
     Shown { machine: Option<String> },
@@ -45,7 +48,7 @@ impl Confirm {
     fn of(issue: &FleetIssue) -> Self {
         use FleetIssueCategory::{Alert, Connection, Diagnostic, Runner, Tailnet};
         match (issue.category, &issue.machine_id) {
-            (Alert, _) => Self::InventoryLoaded,
+            (Alert, _) => Self::AlertsKnown,
             _ if issue.id == "inventory" => Self::InventoryLoaded,
             (Diagnostic | Connection | Runner, Some(machine)) => Self::FreshRead {
                 machine: machine.clone(),
@@ -65,6 +68,7 @@ impl Confirm {
         };
         match self {
             Self::InventoryLoaded => view.plan.organization.is_some(),
+            Self::AlertsKnown => view.plan.organization.is_some() && view.monitoring.storage_error.is_none(),
             Self::FreshRead { machine } => fresh(machine),
             Self::TailnetOnline => view.tailnet.local_online == Some(true),
             Self::Shown { machine } => shown && machine.as_deref().is_none_or(fresh),

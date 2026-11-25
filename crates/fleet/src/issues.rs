@@ -604,7 +604,7 @@ pub(crate) mod rules {
             }
             "disk-space" => "Free space on the fullest disk, or grow it.".into(),
             _ if id.starts_with("runner:") && check.value == "Not configured" => {
-                "Configure it as this machine's runner plan says.".into()
+                "Select Check now, then configure it as its step under Changes says.".into()
             }
             _ if id.starts_with("runner:") => "Start the runner's service, or restart it from its runner pane.".into(),
             _ => "Fix this on the machine. The Diagnostics section shows what was read.".into(),
@@ -696,7 +696,7 @@ pub(crate) mod rules {
             "autologon" => "Set up automatic logon for the runner user with Sysinternals Autologon.".into(),
             "session" => format!("Sign in as {name} on the machine so its logon-task runners start."),
             "runner" if check.status == crate::desired::model::CheckStatus::Warn => {
-                format!("Configure {name} as this machine's runner plan says.")
+                format!("Select Check now, then configure {name} as its step under Changes says.")
             }
             "runner" => format!("Start {name}'s service, or restart it from its runner pane."),
             "legacy" => format!("Check {name}'s service. It stays until its replacement is online."),
@@ -743,7 +743,10 @@ pub(crate) mod rules {
             .iter()
             .map(|w| {
                 if w.starts_with("The runner is not configured") {
-                    ("Configure it as this machine's runner plan says.", "not-configured")
+                    (
+                        "Select Check now, then configure it as its step under Changes says.",
+                        "not-configured",
+                    )
                 } else if w.starts_with("Runner service is") {
                     ("Start its service, or restart it from the runner pane.", "not-running")
                 } else {

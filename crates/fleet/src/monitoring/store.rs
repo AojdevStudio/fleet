@@ -86,7 +86,8 @@ impl MonitorStore {
             Err(e) => (
                 Journal::default(),
                 Some(format!(
-                    "Couldn't read machine history: {e} The existing file has been preserved; new events cannot be saved."
+                    "Couldn't read machine history at {}: {e} The existing file has been preserved; new events cannot be saved.",
+                    path.display()
                 )),
             ),
         };

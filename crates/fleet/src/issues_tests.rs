@@ -230,6 +230,22 @@ fn alerts_and_tailscale_count_as_gone_only_when_their_source_says_so() {
     assert!(!issue(&view, "tailnet-offline").cleared);
 }
 
+#[test]
+fn unreadable_history_does_not_count_as_an_alert_going_away() {
+    let mut view = one_machine();
+    let mut store = ClearStore::in_memory(Default::default());
+    set_disk_alert(&mut view, &["/"], "/: 5.7% free.");
+    tick(&mut view, &mut store);
+    store.clear(issue(&view, "alert:disk")).unwrap();
+    let mut unreadable = view.clone();
+    unreadable.machines[0].monitoring.alerts.clear();
+    unreadable.monitoring.alerts.clear();
+    unreadable.monitoring.storage_error = Some("Couldn't read machine history.".into());
+    tick(&mut unreadable, &mut store);
+    tick(&mut view, &mut store);
+    assert!(issue(&view, "alert:disk").cleared);
+}
+
 #[cfg(unix)]
 #[test]
 fn a_failed_save_changes_nothing() {
