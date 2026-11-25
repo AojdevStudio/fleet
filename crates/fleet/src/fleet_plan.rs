@@ -165,31 +165,34 @@ pub struct FleetPlanInputs {
 pub fn peer_for_host<'a>(host: &Host, ssh_hostname: Option<&str>, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPeer> {
     let target = host.ssh_target.as_deref()?;
     let written = target.rsplit('@').next()?;
-    let resolved = match host.ssh_transport {
-        SshTransport::Openssh => ssh_hostname,
-        SshTransport::Tailscale => None,
-    };
-    resolved
+    transport_hostname(host, ssh_hostname)
         .into_iter()
         .chain([written])
         .find_map(|name| peer_named(&name.to_ascii_lowercase(), peers))
 }
 
+/// The resolved hostname the host's transport connects to. Only OpenSSH reads `ssh -G`.
+fn transport_hostname<'a>(host: &Host, ssh_hostname: Option<&'a str>) -> Option<&'a str> {
+    match host.ssh_transport {
+        SshTransport::Openssh => ssh_hostname,
+        SshTransport::Tailscale => None,
+    }
+}
+
+/// MagicDNS labels come before reported hostnames, which tailnet devices can share.
 fn peer_named<'a>(name: &str, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPeer> {
     let short = name.split('.').next().unwrap_or(name);
+    let label = |p: &'a TailnetPeer| p.dns_name.as_deref().and_then(|d| d.split('.').next());
     peers
         .iter()
         .find(|p| p.dns_name.as_deref().is_some_and(|d| d.eq_ignore_ascii_case(name)))
         .or_else(|| peers.iter().find(|p| p.ips.iter().any(|ip| ip == name)))
         .or_else(|| {
-            peers.iter().find(|p| {
-                p.hostname.eq_ignore_ascii_case(short)
-                    || p.dns_name
-                        .as_deref()
-                        .and_then(|d| d.split('.').next())
-                        .is_some_and(|d| d.eq_ignore_ascii_case(short))
-            })
+            peers
+                .iter()
+                .find(|p| label(p).is_some_and(|d| d.eq_ignore_ascii_case(short)))
         })
+        .or_else(|| peers.iter().find(|p| p.hostname.eq_ignore_ascii_case(short)))
 }
 
 /// Hosts that share a tailnet peer or SSH destination must not own independent execution targets.
@@ -200,19 +203,20 @@ pub fn host_identity_conflicts(
 ) -> BTreeMap<String, String> {
     let mut owners: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for host in &inventory.hosts {
-        let resolved = host.ssh_target.as_ref().and_then(|target| ssh_hosts.get(target));
-        if let Some(peer) = peer_for_host(host, resolved.map(String::as_str), peers) {
+        let resolved = transport_hostname(
+            host,
+            host.ssh_target
+                .as_ref()
+                .and_then(|target| ssh_hosts.get(target))
+                .map(String::as_str),
+        );
+        if let Some(peer) = peer_for_host(host, resolved, peers) {
             owners
                 .entry(format!("peer:{}", peer.node_id))
                 .or_default()
                 .insert(host.id.clone());
         }
-        for target in host
-            .ssh_target
-            .as_deref()
-            .into_iter()
-            .chain(resolved.map(String::as_str))
-        {
+        for target in host.ssh_target.as_deref().into_iter().chain(resolved) {
             let hostname = target
                 .rsplit('@')
                 .next()

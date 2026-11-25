@@ -505,7 +505,7 @@ fn add_machine_names_the_hosts_it_waits_for() {
 #[test]
 fn a_tailscale_host_claims_the_peer_tailscale_ssh_reaches() {
     let mut f = Fixture::new();
-    let inventory = r#"
+    let text = r#"
 [organization]
 name = "acme"
 url = "https://github.com/acme"
@@ -521,17 +521,47 @@ service_mode = "systemd"
 labels = ["fleet", "linux-build"]
 runners = [{ name = "alpha-01", directory = "runner-01" }]
 "#;
-    let inventory = crate::desired::inventory::parse_inventory(inventory, &Default::default()).unwrap();
+    let inventory = crate::desired::inventory::parse_inventory(text, &Default::default()).unwrap();
     f.plan.inventory = Some(Ok(inventory));
     // OpenSSH maps `alpha` to a different peer, but `tailscale ssh` resolves it through MagicDNS.
     f.plan.ssh_hosts.insert("builder@alpha".into(), "beta.ts.net".into());
+    // A device reporting the same hostname comes first, but MagicDNS names `alpha` only once.
     let peers = &mut f.obs.tailscale.as_mut().unwrap().value.peers;
+    peers.push(TailnetPeer {
+        dns_name: Some("alpha-1.ts.net".into()),
+        ..peer("nAlphaTwin", "alpha", "linux", true)
+    });
     peers.push(peer("nAlpha", "alpha", "linux", true));
     peers.push(peer("nBeta", "beta", "linux", true));
     let view = f.view();
     let alpha = view.machines.iter().find(|m| m.display_name == "alpha").unwrap();
     assert_eq!(alpha.id, "ts:nAlpha");
-    assert_eq!(offered(&view), Some(vec!["nBeta"]));
+    assert_eq!(offered(&view), Some(vec!["nAlphaTwin", "nBeta"]));
+
+    // Pasting the offered `beta` entry gives two machines, not a shared SSH destination.
+    let crate::add_machine::AddMachineView::Ready { devices } = &view.add_machine else {
+        unreachable!()
+    };
+    let beta = &devices.iter().find(|d| d.node_id == "nBeta").unwrap().inventory_entry;
+    let beta = beta.replace("[[hosts]]", "[[hosts]]\nlabels = [\"fleet\", \"linux-build\"]");
+    let enrolled = format!("{text}\n{beta}");
+    f.plan.inventory = Some(Ok(crate::desired::inventory::parse_inventory(
+        &enrolled,
+        &Default::default(),
+    )
+    .unwrap()));
+    let view = f.view();
+    let ids: Vec<_> = view
+        .machines
+        .iter()
+        .map(|m| (m.display_name.as_str(), m.id.as_str()))
+        .collect();
+    assert_eq!(ids, [("alpha", "ts:nAlpha"), ("beta", "ts:nBeta")]);
+    assert!(
+        view.machines
+            .iter()
+            .all(|m| m.desired.as_ref().unwrap().error.is_none())
+    );
 }
 
 #[test]
