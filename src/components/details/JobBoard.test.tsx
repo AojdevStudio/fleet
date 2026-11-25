@@ -14,7 +14,7 @@ function copies(job: QueuedJobView, n: number): QueuedJobView[] {
 }
 
 describe("job board", () => {
-  it("renders every queued job in its column", () => {
+  it("renders every queued job in a bounded column that scrolls", () => {
     const view = previewFleet();
     const waiting = view.queue.jobs.find((q) => !q.stuck)!;
     const stuck = view.queue.jobs.find((q) => q.stuck)!;
@@ -22,6 +22,9 @@ describe("job board", () => {
     const html = board(view);
     for (const q of view.queue.jobs) expect(html).toContain(`${q.job.name}`);
     expect(html.split(stuck.stuck!.detail).length - 1).toBe(7);
+    for (const title of ["Running now", "Up next", "Stuck"]) {
+      expect(html).toMatch(new RegExp(`<div role="region" aria-label="${title}" tabindex="0" class="max-h-\\[360px\\][^"]*overflow-y-auto`));
+    }
   });
 
   it("says matching is unknown before the runner list arrives", () => {

@@ -68,7 +68,13 @@ function Column({ title, tone, count, note, empty, children }: {
         </div>
         <p className="mt-0.5 truncate text-[12px] text-ink-2" title={note}>{note}</p>
       </div>
-      {count === 0 ? <EmptyLine>{empty}</EmptyLine> : <div className={`divide-y ${alert ? "divide-warn/15" : "divide-line"}`}>{children}</div>}
+      {count === 0 ? <EmptyLine>{empty}</EmptyLine> : (
+        // Bounded so a long backlog keeps the rest of the overview in reach. Focusable so arrow keys scroll it.
+        <div role="region" aria-label={title} tabIndex={0}
+          className={`max-h-[360px] divide-y overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${alert ? "divide-warn/15" : "divide-line"}`}>
+          {children}
+        </div>
+      )}
     </Card>
   );
 }
