@@ -37,7 +37,11 @@ pub fn derive(
     source: DataSource,
 ) -> FleetView {
     let mut view = derive_without_issues(config, obs, plan, now, source);
-    crate::issues::attach(&mut view);
+    let cleared = match source {
+        DataSource::Demo => crate::demo::cleared_issues(),
+        DataSource::Live => Default::default(),
+    };
+    crate::issues::attach(&mut view, &cleared);
     view
 }
 

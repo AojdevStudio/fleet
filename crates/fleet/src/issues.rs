@@ -1,5 +1,7 @@
 //! Shared attention findings for the desktop and local HTTP clients.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -10,6 +12,10 @@ use crate::monitoring::FleetAlertKind;
 use FleetIssueCategory::{
     Alert, Connection, Diagnostic, Github, Inventory, Operation, Queue, Runner, Storage, Tailnet,
 };
+use rules::Advice;
+
+#[path = "issues_cleared.rs"]
+pub(crate) mod cleared;
 
 /// The observation responsible for a finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -48,11 +54,19 @@ pub struct FleetIssue {
     pub category: FleetIssueCategory,
     pub title: String,
     pub detail: String,
+    /// What to do, in one or two sentences. A grouped finding has one line per problem.
+    pub action: String,
     pub machine_id: Option<String>,
     pub runner_key: Option<String>,
     pub stale: bool,
     pub muted: bool,
     pub fix: Option<FleetIssueFix>,
+    /// Hidden by Clear while the same problem lasts. Cleared findings don't count in `summary.attention`.
+    pub cleared: bool,
+    /// What makes this the same problem for Clear. See [`rules`].
+    #[serde(skip)]
+    #[ts(skip)]
+    pub(crate) fingerprint: String,
 }
 
 impl FleetIssue {
@@ -61,24 +75,29 @@ impl FleetIssue {
         category: FleetIssueCategory,
         title: impl Into<String>,
         detail: impl Into<String>,
+        advice: Advice,
     ) -> Self {
         Self {
             id: id.into(),
             category,
             title: title.into(),
             detail: detail.into(),
+            action: advice.action,
             machine_id: None,
             runner_key: None,
             stale: false,
             muted: false,
             fix: None,
+            cleared: false,
+            fingerprint: advice.fingerprint,
         }
     }
 }
 
-/// Rebuild findings after monitoring has attached its current alerts.
-pub(crate) fn attach(view: &mut FleetView) {
-    let issues: Vec<FleetIssue> = [
+/// Rebuild findings after monitoring has attached its current alerts. `cleared` maps
+/// an issue ID to the fingerprint it had when it was cleared.
+pub(crate) fn attach(view: &mut FleetView, cleared: &BTreeMap<String, String>) {
+    let mut issues: Vec<FleetIssue> = [
         alert_issues(view),
         fleet_issues(view),
         machine_issues(view),
@@ -91,7 +110,10 @@ pub(crate) fn attach(view: &mut FleetView) {
     .into_iter()
     .flatten()
     .collect();
-    view.summary.attention = count_u32(issues.len());
+    for issue in &mut issues {
+        issue.cleared = cleared.get(&issue.id) == Some(&issue.fingerprint);
+    }
+    view.summary.attention = count_u32(issues.iter().filter(|i| !i.cleared).count());
     view.issues = issues;
 }
 
@@ -112,6 +134,7 @@ fn alert_issues(view: &FleetView) -> Vec<FleetIssue> {
                     }
                 ),
                 &alert.detail,
+                rules::alert(alert),
             );
             issue.machine_id = view
                 .machines
@@ -128,30 +151,45 @@ fn alert_issues(view: &FleetView) -> Vec<FleetIssue> {
 /// Problems with the inventory, Tailscale, local storage and the runner group.
 fn fleet_issues(view: &FleetView) -> Vec<FleetIssue> {
     let mut issues = Vec::new();
-    for (id, title, error, category) in [
+    for (id, title, error, category, action) in [
         (
             "inventory",
             "The inventory has a problem",
             &view.plan.inventory_error,
             Inventory,
+            rules::INVENTORY,
         ),
         (
             "plan-github",
             "GitHub couldn't be read for the inventory check",
             &view.plan.github_error,
             Inventory,
+            rules::PLAN_GITHUB,
         ),
-        ("doctor", "Runner checks failed", &view.plan.checks_error, Inventory),
-        ("tailnet", "Tailscale", &view.tailnet.error, Tailnet),
+        (
+            "doctor",
+            "Runner checks failed",
+            &view.plan.checks_error,
+            Inventory,
+            rules::CHECKS_FAILED,
+        ),
+        (
+            "tailnet",
+            "Tailscale",
+            &view.tailnet.error,
+            Tailnet,
+            rules::TAILNET_ERROR,
+        ),
         (
             "monitoring-storage",
             "History storage has a problem",
             &view.monitoring.storage_error,
             Storage,
+            rules::HISTORY_STORAGE,
         ),
     ] {
         if let Some(error) = error {
-            issues.push(FleetIssue::new(id, category, title, error));
+            issues.push(FleetIssue::new(id, category, title, error, rules::error(action, error)));
         }
     }
     if view.tailnet.local_online == Some(false) && view.tailnet.error.is_none() {
@@ -159,7 +197,8 @@ fn fleet_issues(view: &FleetView) -> Vec<FleetIssue> {
             "tailnet-offline",
             Tailnet,
             "Tailscale is offline",
-            "This Mac is disconnected from the tailnet. Open Tailscale and connect.",
+            "This Mac is disconnected from the tailnet.",
+            rules::tailnet_offline(),
         ));
     }
     for (index, item) in view
@@ -174,6 +213,7 @@ fn fleet_issues(view: &FleetView) -> Vec<FleetIssue> {
             Inventory,
             "Runner group needs attention",
             &item.reason,
+            rules::plan_steps(std::slice::from_ref(&item)),
         ));
     }
     issues
@@ -221,6 +261,7 @@ fn issues_for_machine(machine: &MachineView) -> Vec<FleetIssue> {
                     .map(|c| format!("{}: {}", c.title, c.value))
                     .collect::<Vec<_>>()
                     .join(" · "),
+                rules::diagnostics(machine.os, &warnings),
             ));
         }
     }
@@ -232,6 +273,7 @@ fn issues_for_machine(machine: &MachineView) -> Vec<FleetIssue> {
                     Inventory,
                     format!("{} couldn't be checked", machine.display_name),
                     error,
+                    rules::ssh(error),
                 ));
             }
         } else {
@@ -257,6 +299,7 @@ fn issues_for_machine(machine: &MachineView) -> Vec<FleetIssue> {
                         })
                         .collect::<Vec<_>>()
                         .join(" · "),
+                    rules::plan_steps(&steps),
                 ));
             }
         }
@@ -266,6 +309,7 @@ fn issues_for_machine(machine: &MachineView) -> Vec<FleetIssue> {
                 Inventory,
                 format!("{}: {}", machine.display_name, check.check),
                 &check.detail,
+                rules::doctor(check),
             ));
         }
     }
@@ -282,6 +326,7 @@ fn issues_for_machine(machine: &MachineView) -> Vec<FleetIssue> {
                 Connection,
                 format!("{}: {title}", machine.display_name),
                 detail,
+                rules::connection(&machine.connection),
             );
             issue.stale = matches!(machine.connection, MachineConnection::Stale { .. });
             issues.push(issue);
@@ -302,6 +347,7 @@ fn runner_issues(view: &FleetView) -> Vec<FleetIssue> {
                 Runner,
                 &runner.name,
                 runner.warnings.join(" · "),
+                rules::runner_warnings(&runner.warnings),
             );
             issue.runner_key = Some(runner.key.clone());
             issue.machine_id.clone_from(&runner.machine_id);
@@ -324,6 +370,7 @@ fn queue_issues(view: &FleetView) -> Vec<FleetIssue> {
                     || "GitHub hasn't sent the runner list yet, so no runner is matched.".into(),
                     |stuck| stuck.detail.clone(),
                 ),
+                rules::queue(job.stuck.as_ref().map(|s| s.reason)),
             );
             issue.stale = !view.queue.complete;
             issue
@@ -341,7 +388,8 @@ fn github_issues(view: &FleetView) -> Vec<FleetIssue> {
             "watch-org",
             Github,
             format!("Watch {} on GitHub live", org.name),
-            "Runner state comes from the last check. Add the organization in Settings for live status and jobs.",
+            "Runner state comes from the last check.",
+            rules::error(rules::WATCH_ORG, &org.name),
         );
         issue.fix = Some(FleetIssueFix::AddOrganization);
         issues.push(issue);
@@ -357,6 +405,7 @@ fn github_issues(view: &FleetView) -> Vec<FleetIssue> {
                 Github,
                 format!("GitHub: {}", org.login),
                 error,
+                rules::error(rules::ORG_SIGN_IN, error),
             );
             issue.fix = Some(FleetIssueFix::OrganizationSignIn);
             issues.push(issue);
@@ -376,6 +425,7 @@ fn control_check_issues(view: &FleetView) -> Vec<FleetIssue> {
                 Inventory,
                 &check.check,
                 &check.detail,
+                rules::doctor(check),
             )
         })
         .collect()
@@ -387,89 +437,298 @@ fn operation_issues(view: &FleetView) -> Vec<FleetIssue> {
         .iter()
         .filter_map(|operation| {
             let error = operation.error.as_ref()?;
-            Some(FleetIssue::new("last-operation", Operation, &operation.title, error))
+            Some(FleetIssue::new(
+                "last-operation",
+                Operation,
+                &operation.title,
+                error,
+                rules::error(rules::OPERATION_FAILED, &format!("{}: {error}", operation.title)),
+            ))
         })
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::machine_diagnostics::{DiagnosticGroup, MachineDiagnostic, MachineDiagnostics};
-    use crate::monitoring::{FleetMachineAlert, FleetMonitoring};
-    use chrono::Utc;
+/// What to do about each finding, and its fingerprint: what makes it the same
+/// problem for Clear. A cleared finding stays hidden while its fingerprint holds.
+///
+/// Fingerprints by category. Live values never count, so a new reading of the
+/// same problem keeps it cleared.
+/// - Alert: the kind. For low disk, also the mount points (not the free space).
+/// - Diagnostic: the IDs of the warning checks (not their values).
+/// - Connection: the state (stale, offline, SSH error). For SSH errors, also the
+///   kind of failure (key, host key, unreachable, other).
+/// - Inventory: a runner check's ID and status; a runner plan's runners and their
+///   steps; the kind of SSH failure for a machine that couldn't be checked; the
+///   error text for everything else.
+/// - Runner: the kind of each warning (not configured, not running).
+/// - Queue: the stuck reason, or that the runner list hasn't arrived.
+/// - Github, Tailnet, Storage, Operation: the error text.
+pub(crate) mod rules {
+    use crate::desired::model::{DoctorCheck, FleetPlanAction, PlanItem};
+    use crate::machine::OsFamily;
+    use crate::machine_diagnostics::MachineDiagnostic;
+    use crate::model::{MachineConnection, QueueStuckReason};
+    use crate::monitoring::{FleetAlertKind, FleetMachineAlert};
 
-    #[test]
-    fn alerts_replace_duplicate_disk_and_offline_findings_but_keep_other_diagnostics() {
-        let now = Utc::now();
-        let (config, observations) = crate::demo::dataset(now);
-        let mut view = crate::derive::derive(
-            &config,
-            &observations,
-            &crate::demo_desired::plan_inputs(now),
-            now,
-            DataSource::Live,
-        );
-        view.machines.truncate(1);
-        view.monitoring = FleetMonitoring::default();
-        let machine = &mut view.machines[0];
-        machine.desired = None;
-        machine.runners.clear();
-        machine.connection = MachineConnection::Connected { checked_at: now };
-        machine.diagnostics = Some(MachineDiagnostics {
-            as_of: now,
-            stale: false,
-            checks: ["disk-space", "sleep"]
-                .map(|id| MachineDiagnostic {
-                    id: id.into(),
-                    group: DiagnosticGroup::System,
-                    title: id.into(),
-                    status: DiagnosticStatus::Warn,
-                    value: "warning".into(),
-                    detail: "evidence".into(),
-                })
-                .to_vec(),
-        });
-        let alert = FleetMachineAlert {
-            id: "disk".into(),
-            machine_key: machine.preferences_key(),
-            machine_name: machine.display_name.clone(),
-            kind: FleetAlertKind::LowDisk,
-            since: now,
-            detail: "Low disk space".into(),
-            stale: true,
-            muted: true,
+    pub(crate) struct Advice {
+        pub action: String,
+        pub fingerprint: String,
+    }
+
+    fn advice(action: impl Into<String>, fingerprint: impl Into<String>) -> Advice {
+        Advice {
+            action: action.into(),
+            fingerprint: fingerprint.into(),
+        }
+    }
+
+    pub(super) const INVENTORY: &str = "Fix the inventory file named in the detail, then select Check now.";
+    pub(super) const PLAN_GITHUB: &str = "Check this Mac's network and GitHub sign-in, then select Check now.";
+    pub(super) const CHECKS_FAILED: &str = "Fix the error in the detail, then run Runner checks again.";
+    pub(super) const TAILNET_ERROR: &str = "Check that Tailscale is installed and running on this Mac.";
+    pub(super) const HISTORY_STORAGE: &str =
+        "Move the history file named in the detail out of the way, then restart the app.";
+    pub(super) const WATCH_ORG: &str = "Add the organization in Settings for live status and jobs.";
+    pub(super) const ORG_SIGN_IN: &str = "Sign in to this organization again in Settings.";
+    pub(super) const OPERATION_FAILED: &str = "Fix what the error names, then review the change again.";
+
+    /// A finding whose fingerprint is its error text.
+    pub(super) fn error(action: &str, error: &str) -> Advice {
+        advice(action, error)
+    }
+
+    pub(super) fn tailnet_offline() -> Advice {
+        advice("Open Tailscale on this Mac and connect.", "offline")
+    }
+
+    pub(super) fn alert(alert: &FleetMachineAlert) -> Advice {
+        match alert.kind {
+            FleetAlertKind::Offline => advice(
+                "Check that the machine is powered on and connected to the tailnet.",
+                "offline",
+            ),
+            FleetAlertKind::LowDisk => {
+                let mounts = alert.mounts.join(", ");
+                advice(
+                    format!("Free space on {mounts}, or grow the disk."),
+                    format!("low-disk:{mounts}"),
+                )
+            }
+        }
+    }
+
+    pub(super) fn connection(connection: &MachineConnection) -> Advice {
+        match connection {
+            MachineConnection::Stale { .. } => advice(
+                "Check that the machine is awake and reachable over SSH. The app keeps trying.",
+                "stale",
+            ),
+            MachineConnection::Offline { .. } => {
+                advice("Check that the machine is powered on and on the tailnet.", "offline")
+            }
+            MachineConnection::Error { detail } => {
+                let ssh = ssh(detail);
+                advice(ssh.action, format!("error:{}", ssh.fingerprint))
+            }
+            MachineConnection::Connected { .. } | MachineConnection::Pending | MachineConnection::Disabled => {
+                advice("Nothing to do.", "none")
+            }
+        }
+    }
+
+    /// An SSH failure, by kind. The fingerprint is the kind, so a new timeout or
+    /// address in the same failure keeps it cleared.
+    pub(super) fn ssh(detail: &str) -> Advice {
+        let detail = detail.to_ascii_lowercase();
+        let has = |needles: &[&str]| needles.iter().any(|n| detail.contains(n));
+        let (kind, action) = if has(&["permission denied"]) {
+            (
+                "key",
+                "Add this Mac's SSH key to the machine, or read its health another way.",
+            )
+        } else if has(&["host key"]) {
+            ("host-key", "Check the machine's host key, then save it in known_hosts.")
+        } else if has(&["set the environment variable"]) {
+            (
+                "target",
+                "Set the environment variable named in the detail, then select Check now.",
+            )
+        } else if has(&[
+            "timed out",
+            "connection refused",
+            "no route",
+            "could not resolve",
+            "unreachable",
+        ]) {
+            (
+                "unreachable",
+                "Check that the machine is on and its SSH server is running.",
+            )
+        } else {
+            (
+                "other",
+                "Check that this Mac can reach the machine over SSH, then select Check now.",
+            )
         };
-        machine.monitoring.alerts = vec![alert.clone()];
-        view.monitoring.alerts = vec![alert];
-        attach(&mut view);
-        let diagnostic = view
-            .issues
+        advice(action, kind)
+    }
+
+    /// One line per warning, each led by its title.
+    pub(super) fn diagnostics(os: Option<OsFamily>, warnings: &[&MachineDiagnostic]) -> Advice {
+        let lines: Vec<_> = warnings
             .iter()
-            .find(|i| i.category == FleetIssueCategory::Diagnostic)
-            .unwrap();
-        assert_eq!(diagnostic.detail, "sleep: warning");
-        assert_eq!(
-            view.issues
-                .iter()
-                .filter(|i| i.category == FleetIssueCategory::Alert)
-                .count(),
-            1
-        );
-        let alert = view
-            .issues
+            .map(|c| format!("{}: {}", c.title, diagnostic(os, c)))
+            .collect();
+        let ids: Vec<_> = warnings.iter().map(|c| c.id.as_str()).collect();
+        advice(lines.join("\n"), ids.join(","))
+    }
+
+    fn diagnostic(os: Option<OsFamily>, check: &MachineDiagnostic) -> String {
+        let windows = os == Some(OsFamily::Windows);
+        let id = check.id.as_str();
+        match id {
+            "tailscale-state" => "Open Tailscale on the machine and connect it.".into(),
+            "tailscale-unattended" => "Turn on Run unattended in the Tailscale menu on that PC.".into(),
+            "tailscale-startup" if windows => "Set the Tailscale service to start automatically.".into(),
+            "tailscale-startup" => "Run `sudo systemctl enable --now tailscaled` on the machine.".into(),
+            "power-sleep" if windows => "Run `powercfg /change standby-timeout-ac 0` on that PC.".into(),
+            "power-sleep" => "Run `sudo pmset -c sleep 0` on that Mac.".into(),
+            "power-recovery" => "Run `sudo pmset -a autorestart 1` on that Mac.".into(),
+            "power-hibernate" => "Run `powercfg /change hibernate-timeout-ac 0` on that PC.".into(),
+            "power-idle" => "Set `IdleAction=ignore` in /etc/systemd/logind.conf, then restart systemd-logind.".into(),
+            "disk-space" => "Free space on the fullest disk, or grow it.".into(),
+            _ if id.starts_with("runner:") && check.value == "Not configured" => {
+                "Review and apply the runner plan on the machine pane to configure it.".into()
+            }
+            _ if id.starts_with("runner:") => "Start the runner's service, or restart it from its runner pane.".into(),
+            _ => "Fix this on the machine. The Diagnostics section shows what was read.".into(),
+        }
+    }
+
+    /// One line per runner, each led by the runner's name.
+    pub(super) fn plan_steps(steps: &[&PlanItem]) -> Advice {
+        let lines: Vec<_> = steps
             .iter()
-            .find(|i| i.category == FleetIssueCategory::Alert)
-            .unwrap();
-        assert!(alert.stale && alert.muted);
-        assert_eq!(view.summary.attention as usize, view.issues.len());
-        view.machines[0].connection = MachineConnection::Offline { last_seen: None };
-        view.machines[0].monitoring.alerts[0].kind = FleetAlertKind::Offline;
-        view.monitoring.alerts[0].kind = FleetAlertKind::Offline;
-        attach(&mut view);
-        assert!(!view.issues.iter().any(|i| matches!(
-            i.category,
-            FleetIssueCategory::Diagnostic | FleetIssueCategory::Connection
-        )));
+            .map(|p| {
+                let who = if p.runner.is_empty() { "Runner group" } else { &p.runner };
+                format!("{who}: {}", plan_action(p.action))
+            })
+            .collect();
+        let print: Vec<_> = steps
+            .iter()
+            .map(|p| format!("{}:{}", p.runner, p.action.as_str()))
+            .collect();
+        advice(lines.join("\n"), print.join(","))
+    }
+
+    fn plan_action(action: FleetPlanAction) -> &'static str {
+        use FleetPlanAction::*;
+        match action {
+            Install => "Review and apply the plan to install it.",
+            ReconcileLabels => "Add the listed labels to the runner, or remove them from the inventory.",
+            AssignGroup => "Apply the plan to move it into the runner group.",
+            StartService => "Apply the plan to start its service.",
+            RetireLegacy => "Retire the legacy runner from the machine pane.",
+            Decommission => "Apply the plan to stop and deregister it.",
+            Restart => "Restart it from its runner pane.",
+            Inspect => "Read the reason, then check the runner on the machine and in GitHub.",
+            InspectOffline => "Read its logs on the runner pane to see why GitHub reports it offline.",
+            InspectGroup => "Create the runner group in GitHub, or fix runner_group in the inventory.",
+            PreserveLegacy => "Wait. The legacy runner stays until its replacement is online.",
+            PreserveService => "Wait for its job to finish, then start its service.",
+            PreserveDecommission => "Wait for its job to finish, then decommission it.",
+            RepairRegistration => "Check it by hand. GitHub has no runner for its local configuration.",
+            RecoverLocal => "Configure it at its inventory path, or remove it from GitHub.",
+            HardenGroup => "Set the runner group to allow all private repositories, no public ones, and all workflows.",
+            NoChange => "Nothing to do.",
+        }
+    }
+
+    /// A Runner checks result. The fingerprint is the check ID and status.
+    pub(super) fn doctor(check: &DoctorCheck) -> Advice {
+        let (base, name) = check.check.split_once(':').unwrap_or((&check.check, ""));
+        let action = match base {
+            "ssh" => ssh(&check.detail).action,
+            "prerequisite" => format!("Install {name} on the machine, then run Runner checks again."),
+            "disk" => "Free space on the machine's home volume.".into(),
+            "power" => match name {
+                "ac-sleep" => "Run `powercfg /change standby-timeout-ac 0` on that PC.".into(),
+                "ac-display" => "Run `powercfg /change monitor-timeout-ac 0` on that PC.".into(),
+                "ac-lid" => "Set the lid close action on AC power to Do nothing.".into(),
+                "connected-standby" => {
+                    "Turn on network connectivity in standby on AC power, then restart the machine.".into()
+                }
+                _ => "Turn off automatic sleep on AC power, and turn on restart after power failure.".into(),
+            },
+            "service-mode" => "Keep the runner user logged in, for example with automatic login.".into(),
+            "sudo" => "Allow non-interactive sudo for the SSH account, or do the install steps by hand.".into(),
+            "administrator" => "Use an administrator account for SSH on this machine.".into(),
+            "service-identity" => "Check that the service account's profile and certificates are in place.".into(),
+            "autologon" => "Set up automatic logon for the runner user with Sysinternals Autologon.".into(),
+            "session" => format!("Sign in as {name} on the machine so its logon-task runners start."),
+            "runner" if check.status == crate::desired::model::CheckStatus::Warn => {
+                format!("Review and apply the runner plan on the machine pane to configure {name}.")
+            }
+            "runner" => format!("Start {name}'s service, or restart it from its runner pane."),
+            "legacy" => format!("Check {name}'s service. It stays until its replacement is online."),
+            "decommission" => format!("Decommission {name} from the machine pane."),
+            "runner-probe" => {
+                "Check that the runner folders can be read over SSH, then run Runner checks again.".into()
+            }
+            "github-auth" => "Fix GitHub access as the detail says, then run Runner checks again.".into(),
+            "inventory" => "Fix the inventory file, then run Runner checks again.".into(),
+            _ => "Fix what the detail names on the machine, then run Runner checks again.".into(),
+        };
+        advice(action, format!("{}:{}", check.check, check.status.as_str()))
+    }
+
+    /// A queued job no online runner can take. The fingerprint is the stuck reason, so a job
+    /// that waits for a new reason comes back. The ID already names the job.
+    pub(super) fn queue(reason: Option<QueueStuckReason>) -> Advice {
+        use QueueStuckReason::*;
+        let (action, kind) = match reason {
+            None => (
+                "Wait for GitHub to send the runner list, then open the job on the board.",
+                "runners-unknown",
+            ),
+            Some(OtherRepository) => (
+                "Register a runner with its labels to the job's repository or the organization.",
+                "other-repository",
+            ),
+            Some(NoLabelMatch) => (
+                "Give a runner every label the job asks for, or change the labels in the workflow.",
+                "no-label-match",
+            ),
+            Some(RunnersOffline) => (
+                "Bring a matching runner online. The board shows which runners match.",
+                "runners-offline",
+            ),
+            Some(WaitedPastLimit) => ("Open the job on the board to see why it waits.", "waited-past-limit"),
+        };
+        advice(action, kind)
+    }
+
+    /// One line per warning. The fingerprint is the kind of each warning.
+    pub(super) fn runner_warnings(warnings: &[String]) -> Advice {
+        let (actions, kinds): (Vec<_>, Vec<_>) = warnings
+            .iter()
+            .map(|w| {
+                if w.starts_with("The runner is not configured") {
+                    (
+                        "Review and apply the runner plan on the machine pane to configure it.",
+                        "not-configured",
+                    )
+                } else if w.starts_with("Runner service is") {
+                    ("Start its service, or restart it from the runner pane.", "not-running")
+                } else {
+                    ("Check the runner on its machine.", w.as_str())
+                }
+            })
+            .unzip();
+        advice(actions.join("\n"), kinds.join(","))
     }
 }
+
+#[cfg(test)]
+#[path = "issues_tests.rs"]
+mod tests;

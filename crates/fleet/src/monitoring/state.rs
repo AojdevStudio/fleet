@@ -271,6 +271,7 @@ impl MachineState {
                 kind: FleetAlertKind::Offline,
                 since,
                 detail: "Offline for at least three minutes.".into(),
+                mounts: Vec::new(),
                 stale: !network_fresh || m.tailnet.is_none(),
                 muted,
             });
@@ -280,8 +281,10 @@ impl MachineState {
         let mut disk_groups: BTreeMap<(u64, u64), Vec<&str>> = BTreeMap::new();
         let mut disk_since = None;
         let mut disk_stale = false;
+        let mut mounts = Vec::new();
         for (mount, disk) in &self.disks {
             if let Some(since) = disk.active_since {
+                mounts.push(mount.clone());
                 disk_stale |= m.health.as_ref().is_none_or(|h| {
                     h.stale || !h.disks.iter().any(|d| d.mount_point == *mount) || disk.at != Some(h.as_of)
                 });
@@ -311,6 +314,7 @@ impl MachineState {
                 kind: FleetAlertKind::LowDisk,
                 since,
                 detail,
+                mounts,
                 stale: disk_stale,
                 muted,
             });

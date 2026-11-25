@@ -111,7 +111,11 @@ Settings.
 The local HTTP API ([HTTP_API.md](HTTP_API.md)) captures one fleet snapshot per request off
 the async runtime and adds provenance and a content-based revision to the response. The shared
 `issues` derivation feeds both the desktop's attention rows and `/v1/issues`; active alerts
-replace duplicate disk and offline rows. The OpenAPI 3.1 contract derives view schemas from the
+replace duplicate disk and offline rows. Each issue carries an action text and a fingerprint,
+both set in `issues.rs`. Clear saves an issue's ID and fingerprint in `cleared-issues.json`
+beside the app settings. The issue stays hidden while the fingerprint holds, and comes back
+when it changes or when the issue returns after a fresh read showed it gone. Clear and bring
+back are Tauri commands; demo data keeps clears in memory. The OpenAPI 3.1 contract derives view schemas from the
 Rust types. `POST /v1/checks` runs the same read-only refresh, inventory check and runner checks
 as the app, waiting for automatic checks already in flight; the regular poller still coalesces
 redundant refreshes.

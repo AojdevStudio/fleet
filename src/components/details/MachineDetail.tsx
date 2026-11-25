@@ -19,6 +19,7 @@ import { MachinePreferencesForm } from "../MachinePreferencesForm";
 import { MachineMonitoring } from "./Monitoring";
 import { RunnerChecks } from "./RunnerChecks";
 import { RunnerTable } from "./RunnerTable";
+import { ActionText, Attention } from "./Attention";
 import { CopyValue } from "../CopyValue";
 
 const OS_NAME = { macos: "macOS", linux: "Linux", windows: "Windows", other: "Other" } as const;
@@ -62,7 +63,8 @@ export function MachineDetail({ machine: m, view }: { machine: MachineView; view
       {op && requestTargetsMachine(op.request, m) && <OperationCard op={op} />}
       {d && <MachineChanges d={d} change={change} live={live && !busy} />}
       <ChangePanel change={change} busy={busy} />
-      <ConnectionNotice m={m} />
+      <Attention machineId={m.id} issues={view.issues.filter((i) => i.machineId === m.id && i.category !== "connection")} />
+      <ConnectionNotice m={m} action={view.issues.find((i) => i.id === `${m.id}:connection` && !i.cleared)?.action} />
       <MachineMonitoring key={`${view.source}:${m.id}`} machine={m} view={view} />
       <MachineDiagnostics machine={m} />
 
@@ -100,7 +102,8 @@ function runnerSummary(m: MachineView): string {
   return `${c.busy} working · ${c.idle} idle · ${c.offline} offline${c.unknown ? ` · ${c.unknown} unknown` : ""}`;
 }
 
-function ConnectionNotice({ m }: { m: MachineView }) {
+/** The connection state, with what to do from its attention item. */
+function ConnectionNotice({ m, action }: { m: MachineView; action?: string }) {
   const now = useNow();
   const c = m.connection;
   switch (c.kind) {
@@ -108,18 +111,20 @@ function ConnectionNotice({ m }: { m: MachineView }) {
       return (
         <Callout tone="warn" title={`Showing the last SSH read, from ${timeAgo(c.checkedAt, now)}`}>
           {c.reason} Health below is not current.
+          {action && <ActionText action={action} />}
         </Callout>
       );
     case "offline":
       return (
         <Callout tone="warn" title="Offline on the tailnet">
           {c.lastSeen ? `Last seen ${timeAgo(c.lastSeen, now)}.` : "Not seen recently."} Runners show their last known state.
+          {action && <ActionText action={action} />}
         </Callout>
       );
     case "error":
       // The inventory check reports the same failure above.
       if (m.desired?.error === c.detail) return null;
-      return <Callout tone="bad" title="Couldn't read this machine over SSH">{c.detail}</Callout>;
+      return <Callout tone="bad" title="Couldn't read this machine over SSH">{c.detail}{action && <ActionText action={action} />}</Callout>;
     default:
       return null;
   }

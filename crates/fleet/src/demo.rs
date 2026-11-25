@@ -432,3 +432,8 @@ fn report(
         .collect(),
     }
 }
+
+/// Findings the demo shows as cleared, so the Cleared list has an entry: issue ID to fingerprint.
+pub(crate) fn cleared_issues() -> std::collections::BTreeMap<String, String> {
+    [("ts:nWin:check".to_owned(), "unreachable".to_owned())].into()
+}

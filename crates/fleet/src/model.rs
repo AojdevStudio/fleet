@@ -367,7 +367,7 @@ pub struct FleetView {
     pub generated_at: DateTime<Utc>,
     pub source: DataSource,
     pub summary: FleetSummary,
-    /// Shared attention findings; summary.attention is this collection’s length.
+    /// Shared attention findings; summary.attention counts the ones that aren't cleared.
     pub issues: Vec<crate::issues::FleetIssue>,
     /// The inventory's hosts. Nothing outside the inventory is a machine.
     pub machines: Vec<MachineView>,

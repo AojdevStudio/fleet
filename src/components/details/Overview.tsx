@@ -1,12 +1,10 @@
-import type { FleetIssue } from "../../bindings/FleetIssue";
-import type { FleetIssueCategory } from "../../bindings/FleetIssueCategory";
 import type { FleetView } from "../../bindings/FleetView";
 import { useNow } from "../../hooks";
 import { plural, timeAgo } from "../../lib/format";
-import { emitEvent, isLive } from "../../lib/tauri";
-import { useUi } from "../../store";
-import { calloutSurface, Card, Section } from "../ui";
-import { Icon } from "../icons";
+import { isLive } from "../../lib/tauri";
+import { Section } from "../ui";
+import { activeAlerts } from "../../lib/monitoring";
+import { Attention, ClearedList } from "./Attention";
 import { OperationCard } from "./changes";
 import { InventoryProblem, PageHeader } from "./shared";
 import { JobBoard } from "./JobBoard";
@@ -26,6 +24,7 @@ export function Overview({ view }: { view: FleetView }) {
   }
 
   const orgs = view.orgs.map((o) => o.login).join(", ");
+  const alerts = activeAlerts(view, view.monitoring.alerts);
   return (
     <div>
       <PageHeader
@@ -38,9 +37,10 @@ export function Overview({ view }: { view: FleetView }) {
       <JobBoard view={view} />
 
       <Attention issues={view.issues.filter((i) => i.id !== "inventory")} />
+      <ClearedList issues={view.issues} />
       <MonitoringError view={view} />
-      {view.monitoring.alerts.length > 0 && <Section title="Active alerts" count={view.monitoring.alerts.length}>
-        <ActiveAlerts alerts={view.monitoring.alerts} view={view} showMachine />
+      {alerts.length > 0 && <Section title="Active alerts" count={alerts.length}>
+        <ActiveAlerts alerts={alerts} view={view} showMachine />
       </Section>}
 
       <Section title="Machines" count={machines.length} action={
@@ -68,53 +68,6 @@ export function Overview({ view }: { view: FleetView }) {
         />
       )}
     </div>
-  );
-}
-
-/** Findings shown elsewhere on the overview: alerts, stuck jobs, history storage and the running change. */
-const SHOWN_ELSEWHERE: FleetIssueCategory[] = ["alert", "queue", "storage", "operation"];
-
-export function Attention({ issues }: { issues: FleetIssue[] }) {
-  const select = useUi((s) => s.select);
-  const items = issues
-    .filter((issue) => !SHOWN_ELSEWHERE.includes(issue.category))
-    .map((issue) => {
-      const { runnerKey, machineId } = issue;
-      return {
-        key: issue.id,
-        text: issue.title,
-        sub: issue.detail,
-        action: issue.fix === "addOrganization" ? "Add organization" : undefined,
-        onClick: issue.fix ? () => emitEvent("open-settings")
-          : runnerKey ? () => select({ kind: "runner", key: runnerKey })
-          : machineId ? () => select({ kind: "machine", id: machineId })
-          : undefined,
-      };
-    });
-  if (items.length === 0) return null;
-  return (
-    <Section title="Needs attention" count={items.length}>
-      <Card className={`divide-y divide-warn/15 overflow-hidden ${calloutSurface.warn}`}>
-        {items.map((i) => {
-          const content = (
-            <>
-              <span className="text-warn"><Icon name="alert" size={13} /></span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">{i.text}</div>
-                <div className="mt-0.5 line-clamp-2 break-words text-[13px] text-ink-2" title={i.sub}>{i.sub}</div>
-              </div>
-              {i.onClick && (i.action
-                ? <span className="flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-card px-2.5 py-1 text-[12.5px] font-medium">{i.action}<Icon name="chevron" size={12} /></span>
-                : <span className="text-ink-3"><Icon name="chevron" size={11} /></span>)}
-            </>
-          );
-          const className = "flex min-h-[40px] w-full items-center gap-3 px-4 py-3 text-left";
-          return i.onClick
-            ? <button key={i.key} type="button" onClick={i.onClick} className={`${className} hover:bg-warn/5`}>{content}</button>
-            : <div key={i.key} className={className}>{content}</div>;
-        })}
-      </Card>
-    </Section>
   );
 }
 

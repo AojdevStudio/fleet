@@ -52,7 +52,11 @@ pub fn start(app: AppHandle, engine: Arc<Engine>) -> Poller {
             loop {
                 tick.tick().await;
                 let monitor = engine.clone();
-                match tauri::async_runtime::spawn_blocking(move || monitor.record_monitoring(chrono::Utc::now())).await
+                match tauri::async_runtime::spawn_blocking(move || {
+                    monitor.record_cleared();
+                    monitor.record_monitoring(chrono::Utc::now())
+                })
+                .await
                 {
                     Ok(events) => deliver_notifications(&app, &engine, events).await,
                     Err(error) => tracing::warn!("recording machine history failed: {error}"),

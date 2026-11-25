@@ -6,11 +6,12 @@ import type { FleetView } from "../../bindings/FleetView";
 import type { MachineView } from "../../bindings/MachineView";
 import { useNow } from "../../hooks";
 import { formatClock, timeAgo } from "../../lib/format";
-import { eventStyle, HISTORY_PAGE_SIZE, mergeEvents, monitoringMachine } from "../../lib/monitoring";
+import { activeAlerts, alertIssue, eventStyle, HISTORY_PAGE_SIZE, mergeEvents, monitoringMachine } from "../../lib/monitoring";
 import { commands, isLive } from "../../lib/tauri";
 import { useUi } from "../../store";
 import { Button, Callout, Card, calloutSurface, EmptyLine, ErrorText, Pill, Section, StatusDot } from "../ui";
 import { Icon } from "../icons";
+import { ActionText, ClearButton } from "./Attention";
 
 export function MonitoringError({ view }: { view: FleetView }) {
   if (!view.monitoring.storageError) return null;
@@ -27,6 +28,7 @@ export function ActiveAlerts({ alerts, view, showMachine = false, embedded = fal
   return <Container className={`divide-y divide-warn/15 overflow-hidden ${calloutSurface.warn} ${embedded ? "border-t" : ""}`}>
     {alerts.map((alert) => {
       const machine = monitoringMachine(view, alert.machineKey);
+      const issue = alertIssue(view, alert);
       return <div key={alert.id} className="flex items-start gap-3 px-4 py-3">
         <span className="mt-0.5 text-warn"><Icon name="alert" /></span>
         <div className="min-w-0 flex-1">
@@ -39,8 +41,10 @@ export function ActiveAlerts({ alerts, view, showMachine = false, embedded = fal
             {alert.stale && <Pill tone="muted" hollow>Awaiting fresh data</Pill>}
           </div>
           <p className="mt-1 whitespace-pre-line break-words text-[12px] text-ink-2">{alert.detail}</p>
+          {issue && <ActionText action={issue.action} />}
           <p className="mt-1 text-[11px] text-ink-3" title={new Date(alert.since).toLocaleString()}>First observed {timeAgo(alert.since, now)}</p>
         </div>
+        {issue && <ClearButton issue={issue} />}
       </div>;
     })}
   </Container>;
@@ -56,7 +60,7 @@ export function MachineMonitoring({ machine, view }: { machine: MachineView; vie
     onSuccess: () => qc.invalidateQueries({ queryKey: ["fleet"] }),
   });
   const disabled = machine.connection.kind === "disabled";
-  const alerts = machine.monitoring.alerts;
+  const alerts = activeAlerts(view, machine.monitoring.alerts);
   return <>
     <Section title="Monitoring">
       <Card className="overflow-hidden">

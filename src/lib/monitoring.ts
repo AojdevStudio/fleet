@@ -1,4 +1,6 @@
 import type { FleetEventKind } from "../bindings/FleetEventKind";
+import type { FleetIssue } from "../bindings/FleetIssue";
+import type { FleetMachineAlert } from "../bindings/FleetMachineAlert";
 import type { FleetMachineEvent } from "../bindings/FleetMachineEvent";
 import type { FleetView } from "../bindings/FleetView";
 import type { Tone } from "./status";
@@ -32,4 +34,14 @@ export function monitoringMachine(view: FleetView, key: string) {
 export function mergeEvents(first: FleetMachineEvent[], second: FleetMachineEvent[]): FleetMachineEvent[] {
   return [...new Map([...second, ...first].map((e) => [e.id, e])).values()]
     .sort((a, b) => b.id.localeCompare(a.id));
+}
+
+/** The attention item for an alert: `alert:<id>` in crates/fleet/src/issues.rs. */
+export function alertIssue(view: FleetView, alert: FleetMachineAlert): FleetIssue | undefined {
+  return view.issues.find((i) => i.id === `alert:${alert.id}`);
+}
+
+/** Alerts that aren't cleared. Cleared alerts are listed under Cleared on the overview. */
+export function activeAlerts(view: FleetView, alerts: FleetMachineAlert[]): FleetMachineAlert[] {
+  return alerts.filter((a) => !alertIssue(view, a)?.cleared);
 }

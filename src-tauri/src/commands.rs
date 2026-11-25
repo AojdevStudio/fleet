@@ -196,6 +196,28 @@ pub async fn set_machine_maintenance(app: AppHandle, engine: EngineState<'_>, id
     Ok(())
 }
 
+/// Hide an attention item while the same problem lasts.
+#[tauri::command]
+pub async fn clear_issue(app: AppHandle, engine: EngineState<'_>, id: String) -> Result<()> {
+    let owned = engine.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || owned.clear_issue(&id))
+        .await
+        .map_err(|e| AppError::Invalid(e.to_string()))??;
+    emit_view(&app, &engine);
+    Ok(())
+}
+
+/// Show a cleared attention item again.
+#[tauri::command]
+pub async fn restore_issue(app: AppHandle, engine: EngineState<'_>, id: String) -> Result<()> {
+    let owned = engine.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || owned.restore_issue(&id))
+        .await
+        .map_err(|e| AppError::Invalid(e.to_string()))??;
+    emit_view(&app, &engine);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_monitoring_events(
     engine: EngineState<'_>,

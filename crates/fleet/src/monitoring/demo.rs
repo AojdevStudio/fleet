@@ -41,6 +41,7 @@ pub(crate) fn attach(view: &mut FleetView, now: DateTime<Utc>) {
                 kind: FleetAlertKind::LowDisk,
                 since: now - Duration::minutes(13),
                 detail,
+                mounts: vec!["/".into()],
                 stale: false,
                 muted: false,
             };

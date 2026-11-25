@@ -63,6 +63,8 @@ pub struct FleetMachineAlert {
     pub kind: FleetAlertKind,
     pub since: DateTime<Utc>,
     pub detail: String,
+    /// Low disk: the mount points below the threshold, sorted. Empty for offline.
+    pub mounts: Vec<String>,
     pub stale: bool,
     pub muted: bool,
 }

@@ -10,7 +10,7 @@
     "runnersOffline": 1,
     "runnersUnknown": 2,
     "queuedJobs": 6,
-    "attention": 9
+    "attention": 8
   },
   "issues": [
     {
@@ -18,99 +18,117 @@
       "category": "alert",
       "title": "mac-mini-02: low disk space",
       "detail": "/: 5.7% free (13.0 GiB of 228.2 GiB).",
+      "action": "Free space on /, or grow the disk.",
       "machineId": "ts:nMini",
       "runnerKey": null,
       "stale": false,
       "muted": false,
-      "fix": null
+      "fix": null,
+      "cleared": false
     },
     {
       "id": "ts:nLinux:check",
       "category": "inventory",
       "title": "build-linux-01 couldn't be checked",
       "detail": "SSH connection timed out.",
+      "action": "Check that the machine is on and its SSH server is running.",
       "machineId": "ts:nLinux",
       "runnerKey": null,
       "stale": false,
       "muted": false,
-      "fix": null
+      "fix": null,
+      "cleared": false
     },
     {
       "id": "ts:nMini:changes",
       "category": "inventory",
       "title": "mac-mini-02: runner plan needs attention",
       "detail": "mini-02: add macos-build; remove old-label",
+      "action": "mini-02: Add the listed labels to the runner, or remove them from the inventory.",
       "machineId": "ts:nMini",
       "runnerKey": null,
       "stale": false,
       "muted": false,
-      "fix": null
+      "fix": null,
+      "cleared": false
     },
     {
       "id": "ts:nNew:check",
       "category": "inventory",
       "title": "mac-mini-03 couldn't be checked",
       "detail": "SSH permission denied. Check the host's SSH login and tailnet access.",
+      "action": "Add this Mac's SSH key to the machine, or read its health another way.",
       "machineId": "ts:nNew",
       "runnerKey": null,
       "stale": false,
       "muted": false,
-      "fix": null
+      "fix": null,
+      "cleared": false
     },
     {
       "id": "ts:nStudio:changes",
       "category": "inventory",
       "title": "studio: runner plan needs attention",
       "detail": "Studio-Old-2: replacement studio-2 is healthy; exact directory ~/actions-runner-2 will be preserved",
+      "action": "Studio-Old-2: Retire the legacy runner from the machine pane.",
       "machineId": "ts:nStudio",
       "runnerKey": null,
       "stale": false,
       "muted": false,
-      "fix": null
+      "fix": null,
+      "cleared": false
     },
     {
       "id": "ts:nWin:check",
       "category": "inventory",
       "title": "win-builder couldn't be checked",
       "detail": "Host unreachable.",
+      "action": "Check that the machine is on and its SSH server is running.",
       "machineId": "ts:nWin",
       "runnerKey": null,
       "stale": false,
       "muted": false,
-      "fix": null
+      "fix": null,
+      "cleared": true
     },
     {
       "id": "queue:acme-demo:9007",
       "category": "queue",
       "title": "Dependabot: no compatible online runner observed",
       "detail": "Only runners registered to other repositories have its labels.",
+      "action": "Register a runner with its labels to the job's repository or the organization.",
       "machineId": null,
       "runnerKey": null,
       "stale": false,
       "muted": false,
-      "fix": null
+      "fix": null,
+      "cleared": false
     },
     {
       "id": "queue:acme-demo:9004",
       "category": "queue",
       "title": "train-small: no compatible online runner observed",
       "detail": "No runner has the labels self-hosted, gpu, a100.",
+      "action": "Give a runner every label the job asks for, or change the labels in the workflow.",
       "machineId": null,
       "runnerKey": null,
       "stale": false,
       "muted": false,
-      "fix": null
+      "fix": null,
+      "cleared": false
     },
     {
       "id": "queue:acme-demo:9008",
       "category": "queue",
       "title": "package (windows): no compatible online runner observed",
       "detail": "Every runner that matches it is offline or has no recent status.",
+      "action": "Bring a matching runner online. The board shows which runners match.",
       "machineId": null,
       "runnerKey": null,
       "stale": false,
       "muted": false,
-      "fix": null
+      "fix": null,
+      "cleared": false
     }
   ],
   "machines": [
@@ -651,6 +669,9 @@
             "kind": "lowDisk",
             "since": "2026-10-03T11:47:00Z",
             "detail": "/: 5.7% free (13.0 GiB of 228.2 GiB).",
+            "mounts": [
+              "/"
+            ],
             "stale": false,
             "muted": false
           }
@@ -1995,6 +2016,9 @@
         "kind": "lowDisk",
         "since": "2026-10-03T11:47:00Z",
         "detail": "/: 5.7% free (13.0 GiB of 228.2 GiB).",
+        "mounts": [
+          "/"
+        ],
         "stale": false,
         "muted": false
       }
