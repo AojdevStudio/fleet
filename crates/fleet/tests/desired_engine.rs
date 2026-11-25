@@ -483,6 +483,58 @@ fn inventory_hosts_match_tailnet_machines_by_their_ssh_target() {
     let tailscale = inventory.find_host("mini").unwrap();
     let reached = peer_for_host(tailscale, Some("win-builder.example.ts.net"), &peers);
     assert_eq!(reached.map(|p| p.node_id.as_str()), Some("n4"));
+    // A dotted non-MagicDNS name keeps snapshot order: `builder.lan` is A, which reports
+    // hostname `builder`, though B's MagicDNS label is `builder`.
+    let lan = vec![
+        peer("nA", "builder", "build-a.example.ts.net"),
+        peer("nB", "other", "builder.example.ts.net"),
+    ];
+    let mut openssh = alias.clone();
+    openssh.ssh_target = Some("builder.lan".into());
+    let matched = peer_for_host(&openssh, None, &lan);
+    assert_eq!(matched.map(|p| p.node_id.as_str()), Some("nA"));
+}
+
+#[test]
+fn a_resolved_openssh_alias_does_not_share_its_written_name() {
+    use fleet::fleet_plan::host_identity_conflicts;
+    use fleet::model::TailnetPeer;
+    let peer = |id: &str, host: &str| TailnetPeer {
+        node_id: id.into(),
+        hostname: host.into(),
+        dns_name: Some(format!("{host}.fleet.ts.net")),
+        os: "linux".into(),
+        ips: vec![],
+        online: true,
+        last_seen: None,
+        tags: vec![],
+        ssh_host_keys: vec![],
+    };
+    let host = |id: &str, ssh: &str, transport: &str| {
+        format!(
+            "[[hosts]]\nid = \"{id}\"\nplatform = \"linux-x64\"\nssh = \"{ssh}\"\nssh_transport = \"{transport}\"\n\
+             root = \"~/gh-runners/acme\"\nservice_mode = \"systemd\"\nlabels = [\"fleet\", \"linux-build\"]\n"
+        )
+    };
+    let text = format!(
+        "[organization]\nname = \"acme\"\nurl = \"https://github.com/acme\"\nrunner_group = \"trusted\"\n\n{}\n{}",
+        host("gamma", "builder@beta.fleet.ts.net", "openssh"),
+        host("beta", "beta.fleet.ts.net", "tailscale"),
+    );
+    let inventory = fleet::desired::inventory::parse_inventory(&text, &Default::default()).unwrap();
+    let peers = vec![peer("nAlpha", "alpha"), peer("nBeta", "beta")];
+    // OpenSSH sends `beta.fleet.ts.net` to alpha, so gamma is alpha and beta is beta.
+    let resolved = [(
+        "builder@beta.fleet.ts.net".to_string(),
+        "alpha.fleet.ts.net".to_string(),
+    )];
+    assert_eq!(
+        host_identity_conflicts(&inventory, &resolved.into(), &peers),
+        Default::default()
+    );
+    // Until the alias resolves, the written names are all there is, so they still conflict.
+    let unresolved = host_identity_conflicts(&inventory, &Default::default(), &peers);
+    assert_eq!(unresolved.keys().collect::<Vec<_>>(), ["beta", "gamma"]);
 }
 
 #[test]

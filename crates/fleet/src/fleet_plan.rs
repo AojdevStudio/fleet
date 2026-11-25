@@ -179,20 +179,27 @@ fn transport_hostname<'a>(host: &Host, ssh_hostname: Option<&'a str>) -> Option<
     }
 }
 
-/// MagicDNS labels come before reported hostnames, which tailnet devices can share.
+/// A bare name is what MagicDNS resolves, so its MagicDNS label comes before reported
+/// hostnames, which devices can share. A dotted name such as `builder.lan` names no label,
+/// so its first part matches a label or a hostname in snapshot order.
 fn peer_named<'a>(name: &str, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPeer> {
     let short = name.split('.').next().unwrap_or(name);
-    let label = |p: &'a TailnetPeer| p.dns_name.as_deref().and_then(|d| d.split('.').next());
+    let labelled = |p: &&'a TailnetPeer| {
+        p.dns_name
+            .as_deref()
+            .and_then(|d| d.split('.').next())
+            .is_some_and(|d| d.eq_ignore_ascii_case(short))
+    };
     peers
         .iter()
         .find(|p| p.dns_name.as_deref().is_some_and(|d| d.eq_ignore_ascii_case(name)))
         .or_else(|| peers.iter().find(|p| p.ips.iter().any(|ip| ip == name)))
+        .or_else(|| peers.iter().find(labelled).filter(|_| !name.contains('.')))
         .or_else(|| {
             peers
                 .iter()
-                .find(|p| label(p).is_some_and(|d| d.eq_ignore_ascii_case(short)))
+                .find(|p| labelled(p) || p.hostname.eq_ignore_ascii_case(short))
         })
-        .or_else(|| peers.iter().find(|p| p.hostname.eq_ignore_ascii_case(short)))
 }
 
 /// Hosts that share a tailnet peer or SSH destination must not own independent execution targets.
@@ -216,7 +223,9 @@ pub fn host_identity_conflicts(
                 .or_default()
                 .insert(host.id.clone());
         }
-        for target in host.ssh_target.as_deref().into_iter().chain(resolved) {
+        // The one name the transport connects to: a resolved OpenSSH alias no longer
+        // claims its written name, which another host may really use.
+        if let Some(target) = resolved.or(host.ssh_target.as_deref()) {
             let hostname = target
                 .rsplit('@')
                 .next()

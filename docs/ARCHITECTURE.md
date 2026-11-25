@@ -47,9 +47,11 @@ Inventory SSH aliases resolve through `ssh -G`. Machines are the inventory's hos
 device no host claims gets no machine view, no SSH read, no issue and no monitoring state. Add
 machine lists such desktop and server devices by name from the tailnet snapshot, with a
 `[[hosts]]` entry built in `add_machine.rs`, with an ID no inventory host or other entry uses.
-It offers nothing until SSH has resolved every host's target (an unset `${VAR}` target or a
-failed `ssh -G` holds it back), since a host may own a peer its written name doesn't match. It
-also offers nothing without a loaded inventory.
+It offers nothing until it knows every host's peer, since a host may own a peer its written name
+doesn't match. An unset `${VAR}` target holds it back, and so does a failed `ssh -G` of an
+OpenSSH target. A `tailscale` host needs no `ssh -G`, because `tailscale ssh` reaches the written
+name. Add machine then names the hosts it waits for. It also offers nothing without a loaded
+inventory.
 Monitoring keys history by inventory host. History that older versions saved under a tailnet key
 (`ts:<node id>`) belonged to devices outside the inventory, so it is dropped when the history loads.
 When the inventory fails to load, the overview says why, with the error and the inventory path.
