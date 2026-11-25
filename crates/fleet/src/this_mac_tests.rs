@@ -69,11 +69,22 @@ fn this_mac_is_only_a_plain_loopback_target_that_ssh_keeps_local() {
     resolution.insert("localhost".into(), resolved("localhost", "runner"));
     resolution.insert("127.0.0.1".into(), resolved("builder.example", "ci"));
     assert_eq!(this_mac(&resolution, Some("ci")), ["v6"]);
+    // Any loopback address SSH resolves to still stays on this Mac.
+    resolution.insert("127.0.0.1".into(), resolved("127.0.0.2", "ci"));
+    assert_eq!(this_mac(&resolution, Some("ci")), ["v4", "v6"]);
     resolution.remove("::1");
-    assert!(
-        this_mac(&resolution, Some("ci")).is_empty(),
-        "unresolved is not this Mac"
-    );
+    assert_eq!(this_mac(&resolution, Some("ci")), ["v4"], "unresolved is not this Mac");
+}
+
+#[test]
+fn a_target_from_an_environment_variable_is_never_this_mac() {
+    let text = "[organization]\nname = \"example\"\nurl = \"https://github.com/example\"\nrunner_group = \"trusted\"\n\
+                [[hosts]]\nid = \"env\"\nplatform = \"darwin-arm64\"\nssh = \"${FLEET_TARGET}\"\n\
+                root = \"~/gh-runners/example\"\nservice_mode = \"launchagent\"\nlabels = [\"host-env\"]\nrunners = []\n";
+    let environ = HashMap::from([("FLEET_TARGET".to_string(), "localhost".to_string())]);
+    let inventory = parse_inventory(text, &environ).unwrap();
+    assert_eq!(inventory.hosts[0].ssh_target.as_deref(), Some("localhost"));
+    assert!(hosts(&inventory, &plain_resolution(&inventory), Some("ci")).is_empty());
 }
 
 #[test]

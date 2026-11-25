@@ -31,10 +31,9 @@ impl Engine {
             self.obs.write_locked().pools = None;
             return;
         };
-        self.resolve_ssh_hosts(&inventory).await;
+        let local_hosts = self.resolve_ssh_hosts(&inventory).await.this_mac;
         let ssh = self.pool_source.clone();
         let local: Arc<dyn PoolSource> = self.this_mac.clone();
-        let local_hosts = self.this_mac_hosts();
         let read = runner_up.clone();
         let result = tokio::task::spawn_blocking(move || {
             let source = |host: &Host| {

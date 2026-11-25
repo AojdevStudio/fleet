@@ -1,19 +1,20 @@
 //! The Mac this app runs on, when the inventory lists it as a host.
 //!
-//! A host is this Mac only when its `ssh` target is exactly `localhost`,
-//! `127.0.0.1` or `::1`, with no login, over OpenSSH, and `ssh -G` for that
-//! target still connects to a loopback address as the account the app runs
-//! as. Any other host, including one named like this Mac on the tailnet, is
+//! A host is this Mac only when its `ssh` value is written as exactly
+//! `localhost`, `127.0.0.1` or `::1`, with no login, over OpenSSH, and `ssh -G`
+//! for that target still connects to a loopback address as the account the
+//! app runs as. Any other host, including one named like this Mac on the tailnet, is
 //! checked over SSH. This Mac is only read, with local processes
 //! (`/bin/bash -s`): its health probe, runner probe, checks, logs and
 //! runner-up reads. The app never changes runners on it.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use std::net::IpAddr;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use crate::desired::model::{DoctorCheck, Host, Inventory, LocalRunner, Runner, RunnerRole, SshTransport};
-use crate::desired::process::SubprocessRunner;
+use crate::desired::process::{CommandRunner, NonZeroExit, SubprocessRunner};
 use crate::desired::remote::{FleetRemote, InstallRequest, RemoteClient, RemoteError, Transient};
 use crate::engine::desired::SshTransportIdentity;
 use crate::machine::MachineSource;
@@ -28,22 +29,40 @@ const LOCAL_TIMEOUT: Duration = Duration::from_secs(30);
 /// Why every runner change on this Mac is refused.
 pub const CHANGE_REFUSED: &str = "The app doesn't change runners on the Mac it runs on. Use Runner Fleet on this Mac.";
 
-/// The account the app runs as, which local scripts run as too.
-pub fn app_user() -> Option<String> {
-    std::env::var("USER").ok().filter(|u| !u.is_empty())
+/// The account the app's process runs as, which local scripts run as too.
+/// It comes from the OS (`id -un`), like the login `ssh` picks by default,
+/// because `$USER` can name another account.
+pub fn app_user() -> Option<&'static str> {
+    static USER: OnceLock<Option<String>> = OnceLock::new();
+    USER.get_or_init(|| {
+        let command = ["/usr/bin/id".to_string(), "-un".into()];
+        SubprocessRunner
+            .run(&command, None, Duration::from_secs(5), NonZeroExit::Error)
+            .map(|result| result.stdout.trim().to_string())
+            .inspect_err(|e| tracing::warn!("couldn't read the app's account: {e}"))
+            .ok()
+            .filter(|user| !user.is_empty())
+    })
+    .as_deref()
+}
+
+/// `localhost` or any loopback IP address, as `ssh -G` prints a hostname.
+fn is_loopback(hostname: &str) -> bool {
+    let hostname = hostname.trim_end_matches('.');
+    hostname.eq_ignore_ascii_case("localhost") || hostname.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }
 
 /// Whether `host` is the Mac this app runs on. `resolved` is what `ssh -G`
-/// gives for the host's target. Without it the host is not this Mac.
+/// gives for the host's target. Without it the host is not this Mac. The
+/// written `ssh` value counts, so `${NAME}` is never this Mac.
 pub fn is_this_mac(host: &Host, resolved: Option<&SshTransportIdentity>, app_user: Option<&str>) -> bool {
-    let (Some(target), Some(resolved)) = (host.ssh_target.as_deref(), resolved) else {
+    let Some(resolved) = resolved else {
         return false;
     };
-    let hostname = resolved.hostname().trim_end_matches('.');
     host.ssh_transport == SshTransport::Openssh
         && !host.is_windows()
-        && LOOPBACK.contains(&target)
-        && LOOPBACK.iter().any(|l| hostname.eq_ignore_ascii_case(l))
+        && LOOPBACK.contains(&host.ssh_setting.as_str())
+        && is_loopback(resolved.hostname())
         && app_user.is_some_and(|user| resolved.user() == Some(user))
 }
 

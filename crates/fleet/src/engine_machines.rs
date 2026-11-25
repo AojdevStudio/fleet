@@ -84,21 +84,22 @@ impl Engine {
             return;
         }
 
-        if let Ok(inventory) = self.read_inventory().await {
-            self.resolve_ssh_hosts(&inventory).await;
-        }
+        let this_mac = match self.read_inventory().await {
+            Ok(inventory) => self.resolve_ssh_hosts(&inventory).await.this_mac,
+            Err(_) => Default::default(),
+        };
         let view = self.view();
         let targets = view
             .machines
             .into_iter()
             .filter(|m| machine.is_none_or(|id| m.id == id || m.preferences_key() == id))
-            .filter(|m| m.this_mac || m.tailnet.as_ref().is_none_or(|p| p.online))
-            .filter_map(|m| m.desired.map(|d| (d.host, m.this_mac)))
+            .filter_map(|m| m.desired.map(|d| (d.host, m.tailnet)))
+            .filter(|(host, tailnet)| this_mac.contains(&host.id) || tailnet.as_ref().is_none_or(|p| p.online))
             .filter(|(host, _)| host.enabled)
-            .map(|(host, this_mac)| (inventory_machine_key(&host.id), host, this_mac))
+            .map(|(host, _)| (inventory_machine_key(&host.id), host))
             .collect::<Vec<_>>();
-        let mut reads = stream::iter(targets.into_iter().map(|(id, target, this_mac)| {
-            let source: Arc<dyn MachineSource> = if this_mac {
+        let mut reads = stream::iter(targets.into_iter().map(|(id, target)| {
+            let source: Arc<dyn MachineSource> = if this_mac.contains(&target.id) {
                 self.this_mac.clone()
             } else {
                 self.machine_source.clone()

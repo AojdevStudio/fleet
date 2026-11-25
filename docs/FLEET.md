@@ -289,10 +289,12 @@ are verified. Don't also enable `services.github-runners` for inventory runners.
 The app can list the Mac it runs on as a fleet machine without SSH to itself, so Remote Login
 can stay off. A host is this Mac only when all of these hold:
 
-- Its `ssh` target is exactly `localhost`, `127.0.0.1` or `::1`, with no `user@` part.
+- Its `ssh` value is written as exactly `localhost`, `127.0.0.1` or `::1`, with no `user@`
+  part. A `${NAME}` value never counts, whatever it expands to.
 - Its `ssh_transport` is `openssh` (the default), and it isn't a Windows host.
-- `ssh -G` for that target still names a loopback address as its `hostname`, and its `user` is
-  the account the app runs as. A `HostName` or `User` line in `~/.ssh/config` can change either.
+- `ssh -G` for that target still names `localhost` or a loopback address as its `hostname`,
+  and its `user` is the account the app's process runs as (what `id -un` prints, not `$USER`).
+  A `HostName` or `User` line in `~/.ssh/config` can change either.
 
 Any other host is checked over SSH, even one named like this Mac on the tailnet. Two inventory
 hosts that are both this Mac are an identity conflict.

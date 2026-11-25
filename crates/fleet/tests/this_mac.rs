@@ -94,7 +94,9 @@ fn peer(id: &str, hostname: &str) -> TailnetPeer {
 }
 
 fn app_user() -> String {
-    fleet::this_mac::app_user().expect("tests need USER set")
+    fleet::this_mac::app_user()
+        .expect("the OS names the app's account")
+        .to_string()
 }
 
 /// What the fake `ssh -G` prints for every target: its login, and a
@@ -294,10 +296,38 @@ fn assert_nothing_changed(f: &Fixture) {
 #[tokio::test]
 async fn a_runner_change_on_this_mac_is_refused() {
     let f = fixture(&format!("{ORGANIZATION}{LAPTOP_WITH_RUNNER}{MINI}"));
-    let refused = f.engine.desired_review(restart()).await.unwrap_err();
-    assert_eq!(refused.to_string(), fleet::this_mac::CHANGE_REFUSED);
+    let (host, runner) = ("laptop".to_string(), "laptop-01".to_string());
+    // Apply, Retire and Decommission are off everywhere, but this Mac says why it is different.
+    for request in [
+        restart(),
+        ChangeRequest::Apply {
+            host: host.clone(),
+            runner: None,
+        },
+        ChangeRequest::Retire {
+            host: host.clone(),
+            runner: runner.clone(),
+        },
+        ChangeRequest::Decommission { host, runner },
+    ] {
+        let refused = f.engine.desired_review(request).await.unwrap_err();
+        assert_eq!(refused.to_string(), fleet::this_mac::CHANGE_REFUSED);
+    }
     assert!(f.local.runs().is_empty(), "a refused review runs nothing");
     assert_nothing_changed(&f);
+}
+
+#[tokio::test]
+async fn a_remote_peer_that_shares_this_macs_hostname_still_matches() {
+    let f = fixture(&format!("{ORGANIZATION}{}{MINI}", laptop("localhost")));
+    {
+        let mut tailnet = f.tailnet.lock().unwrap();
+        tailnet.peers[0].hostname = "mini".into();
+        tailnet.peers[0].dns_name = Some("mini-1.demo.ts.net".into());
+    }
+    check_everything(&f).await;
+    assert_eq!(machine(&f.engine, "mini").tailnet.unwrap().node_id, "nMini");
+    assert!(machine(&f.engine, "laptop").this_mac);
 }
 
 #[tokio::test]
