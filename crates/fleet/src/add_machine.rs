@@ -159,7 +159,8 @@ fn device_view(peer: &TailnetPeer, organization: &str, taken: &mut HashSet<Strin
     } else {
         SshTransport::Tailscale
     };
-    let ssh = peer.dns_name.as_ref().or(peer.ips.first()).cloned()?;
+    // Entries are offered only with MagicDNS on, and use the MagicDNS name. A peer without one gets none.
+    let ssh = peer.dns_name.clone()?;
     let platform_note = match platform {
         Platform::WindowsX64 => " # Tailscale doesn't report the CPU: use windows-arm64 on an ARM machine.",
         Platform::DarwinArm64 => " # Tailscale doesn't report the CPU: an Intel Mac isn't supported.",
@@ -283,6 +284,13 @@ mod tests {
             ..peer("bare", "linux", Vec::new())
         };
         assert!(device_view(&bare, "acme", &mut HashSet::new()).is_none());
+        // An IP alone is no target: the entry would need MagicDNS to work for both transports.
+        let ip_only = TailnetPeer {
+            dns_name: None,
+            ips: vec!["100.64.0.30".into()],
+            ..peer("ip-only", "linux", Vec::new())
+        };
+        assert!(device_view(&ip_only, "acme", &mut HashSet::new()).is_none());
     }
 
     #[test]

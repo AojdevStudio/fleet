@@ -76,6 +76,10 @@ describe("reconcileSelection", () => {
       // Without a loaded inventory nothing says which devices are new, so the row stays hidden.
       expect(reconcileSelection({ ...failed, plan: { ...failed.plan, organization: null } }, { kind: "add-machine" })).toEqual({ kind: "overview" });
     }
+    // With MagicDNS off, Add machine stays to say why it offers nothing.
+    const noMagic = { ...view, tailnetDevices: [], tailnet: { ...view.tailnet, available: true, error: null, magicDns: false } };
+    expect(reconcileSelection(noMagic, { kind: "add-machine" })).toEqual({ kind: "add-machine" });
+    expect(flattenNav(noMagic, new Set(), closed).map((i) => selectionId(i.selection)).at(-1)).toBe("add-machine");
     expect(reconcileSelection(view, { kind: "machine", id: "gone" })).toEqual({ kind: "overview" });
     expect(reconcileSelection(view, { kind: "runner", key: "gh:acme-demo:501" })).toEqual({ kind: "runner", key: "gh:acme-demo:501" });
     expect(reconcileSelection(view, { kind: "runner", key: "gone" })).toEqual({ kind: "overview" });

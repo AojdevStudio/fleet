@@ -114,7 +114,7 @@ fn add_machine_and_the_machine_row_agree_when_ssh_sends_a_target_elsewhere() {
 }
 
 #[test]
-fn an_entry_without_a_magicdns_name_uses_the_tailnet_ip_and_never_the_hostname() {
+fn a_device_without_a_magicdns_name_is_never_offered() {
     let mut f = fixture(
         &[host("main", "box", "")],
         [
@@ -129,13 +129,8 @@ fn an_entry_without_a_magicdns_name_uses_the_tailnet_ip_and_never_the_hostname()
     let view = f.view();
     let row = view.machines.iter().find(|m| m.display_name == "main").unwrap();
     assert_eq!(row.id, "ts:nBuild");
-    assert_eq!(offered(&view), ["nBox", "nSpare"]);
-    // `ssh = "box"` would repeat the inventory's target, so the entry uses the tailnet IP.
-    assert!(
-        view.tailnet_devices[0]
-            .inventory_entry
-            .contains("ssh = \"100.64.0.30\"\n")
-    );
+    // Neither the hostname nor the IP is a target both transports reach, so `nBox` gets no entry.
+    assert_eq!(offered(&view), ["nSpare"]);
 }
 
 #[test]

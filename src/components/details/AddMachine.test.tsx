@@ -21,6 +21,14 @@ describe("Add machine", () => {
     expect(html).not.toContain("Copy entry");
   });
 
+  it("puts the failed read before the MagicDNS message", () => {
+    const view = previewFleet();
+    const both = { ...view, tailnetDevices: [], tailnet: { ...view.tailnet, error: "Tailscale CLI failed", magicDns: false } };
+    const html = renderToStaticMarkup(<AddMachine view={both} />);
+    expect(html).toContain("Tailscale couldn&#x27;t be read just now");
+    expect(html).not.toContain("MagicDNS is off");
+  });
+
   it("says MagicDNS is off and offers no entry", () => {
     const view = previewFleet();
     const off = { ...view, tailnetDevices: [], tailnet: { ...view.tailnet, magicDns: false } };

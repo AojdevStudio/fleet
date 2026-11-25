@@ -144,7 +144,8 @@ by name and shows the `[[hosts]]` entry to paste for each. It reads only the tai
 app already holds and never contacts a listed device. Tailscale doesn't report a machine's CPU,
 so check `platform` before you save: a Windows entry may need `windows-arm64`, and an Intel Mac
 can't be added, since only `darwin-arm64` is supported. Add machine needs MagicDNS. An entry
-uses the device's MagicDNS name, and Tailscale SSH when the device offers it. With MagicDNS off,
+uses the device's MagicDNS name, and Tailscale SSH when the device offers it. A device without a
+MagicDNS name gets no entry. With MagicDNS off,
 the pane offers no entry and says to turn MagicDNS on or add the machine by hand, because no
 target works for both OpenSSH and `tailscale ssh` without it. If the latest Tailscale read failed,
 the pane lists no devices and says why.

@@ -74,9 +74,14 @@ export function filterNavView(view: FleetView, query: string): FleetView {
   };
 }
 
-/** Add machine shows while it offers devices, and with a loaded inventory after a failed Tailscale poll, so it can say why it offers none. */
+/**
+ * Add machine shows while it offers devices. With a loaded inventory it also shows after a failed
+ * Tailscale poll, or when Tailscale reports MagicDNS off, so it can say why it offers none.
+ */
 export function showsAddMachine(view: FleetView): boolean {
-  return view.tailnetDevices.length > 0 || (view.plan.organization !== null && view.tailnet.error !== null);
+  if (view.tailnetDevices.length > 0) return true;
+  if (view.plan.organization === null) return false;
+  return view.tailnet.error !== null || (view.tailnet.available && !view.tailnet.magicDns);
 }
 
 /** Sidebar rows in visual order, honoring collapsed machines and groups. */
