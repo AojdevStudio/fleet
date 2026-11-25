@@ -105,9 +105,17 @@ pub fn parse_status(json: &str) -> Result<TailnetSnapshot, String> {
             ssh_host_keys: n.ssh_host_keys,
         })
         .collect();
+    let self_names = s
+        .self_
+        .iter()
+        .flat_map(|n| n.tailscale_i_ps.iter().chain([&n.dns_name]))
+        .map(|name| name.trim_end_matches('.').to_ascii_lowercase())
+        .filter(|name| !name.is_empty())
+        .collect();
     Ok(TailnetSnapshot {
         local_online: s.self_.as_ref().map(|n| n.online),
         self_node_id: s.self_.map(|n| n.id),
+        self_names,
         tailnet_name: s.current_tailnet.and_then(|t| t.name),
         peers,
     })
@@ -137,6 +145,10 @@ mod tests {
         }"#;
         let snap = parse_status(json).unwrap();
         assert_eq!(snap.self_node_id.as_deref(), Some("nSelf"));
+        assert_eq!(
+            snap.self_names.into_iter().collect::<Vec<_>>(),
+            ["100.64.0.1", "dev-laptop.tail1.ts.net"]
+        );
         assert_eq!(snap.tailnet_name.as_deref(), Some("example.github"));
         assert_eq!(snap.peers.len(), 3);
         let mini = snap.peers.iter().find(|p| p.node_id == "nMini").unwrap();

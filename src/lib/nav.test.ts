@@ -4,12 +4,12 @@ import { previewFleet } from "./preview";
 
 const view = previewFleet();
 
-const closed = { unlinked: false };
+const closed = { unlinked: false, pools: false };
 
 describe("navigation search", () => {
   it("keeps matching runners under their parent and keyboard navigation within the results", () => {
     const filtered = filterNavView(view, "  STUDIO-1 ");
-    expect(flattenNav(filtered, new Set(), { unlinked: true }).map((i) => selectionId(i.selection))).toEqual([
+    expect(flattenNav(filtered, new Set(), { unlinked: true, pools: true }).map((i) => selectionId(i.selection))).toEqual([
       "overview", "queue", "moving", "retiring", "machine:ts:nStudio", "runner:gh:acme-demo:101",
     ]);
     expect(view.machines.find((m) => m.id === "ts:nStudio")?.runners).toHaveLength(3);
@@ -41,9 +41,12 @@ describe("flattenNav", () => {
   });
 
   it("hides runners of collapsed machines and shows the open groups", () => {
-    const ids = flattenNav(view, new Set(["ts:nLinux"]), { unlinked: true }).map((i) => selectionId(i.selection));
+    const ids = flattenNav(view, new Set(["ts:nLinux"]), { unlinked: true, pools: false }).map((i) => selectionId(i.selection));
     expect(ids).not.toContain("runner:gh:acme-demo:301");
     expect(ids).toContain("runner:gh:acme-demo:501");
+    expect(ids).not.toContain("runner:gh:acme-demo:601");
+    const pools = flattenNav(view, new Set(), { unlinked: false, pools: true }).map((i) => selectionId(i.selection));
+    expect(pools.slice(-2)).toEqual(["runner:gh:acme-demo:602", "runner:gh:acme-demo:601"]);
   });
 });
 

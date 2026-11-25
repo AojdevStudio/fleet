@@ -269,9 +269,17 @@ fn issues_for_machine(machine: &MachineView) -> Vec<FleetIssue> {
                 issues.push(FleetIssue::new(
                     format!("{}:check", machine.id),
                     Inventory,
-                    format!("{} couldn't be checked", machine.display_name),
+                    if machine.this_mac {
+                        format!("{}: the local check failed", machine.display_name)
+                    } else {
+                        format!("{} couldn't be checked", machine.display_name)
+                    },
                     error,
-                    rules::ssh(error),
+                    if machine.this_mac {
+                        rules::local()
+                    } else {
+                        rules::ssh(error)
+                    },
                 ));
             }
         } else {
@@ -307,13 +315,19 @@ fn issues_for_machine(machine: &MachineView) -> Vec<FleetIssue> {
                 Inventory,
                 format!("{}: {}", machine.display_name, check.check),
                 &check.detail,
-                rules::doctor(check),
+                match check.check.split(':').next() {
+                    Some("ssh" | "runner-probe") if machine.this_mac => rules::local(),
+                    _ => rules::doctor(check),
+                },
             ));
         }
     }
     if !offline_alert && machine.desired.as_ref().is_none_or(|d| d.error.is_none()) {
         let problem = match &machine.connection {
             MachineConnection::Stale { reason, .. } => Some(("stale", reason.as_str())),
+            MachineConnection::Error { detail } if machine.this_mac => {
+                Some(("the local check failed", detail.as_str()))
+            }
             MachineConnection::Error { detail } => Some(("SSH unavailable", detail.as_str())),
             MachineConnection::Offline { .. } => Some(("offline", "Offline on the tailnet")),
             MachineConnection::Connected { .. } | MachineConnection::Pending | MachineConnection::Disabled => None,
@@ -324,7 +338,12 @@ fn issues_for_machine(machine: &MachineView) -> Vec<FleetIssue> {
                 Connection,
                 format!("{}: {title}", machine.display_name),
                 detail,
-                rules::connection(&machine.connection),
+                match &machine.connection {
+                    MachineConnection::Error { .. } | MachineConnection::Stale { .. } if machine.this_mac => {
+                        rules::local()
+                    }
+                    connection => rules::connection(connection),
+                },
             );
             issue.stale = matches!(machine.connection, MachineConnection::Stale { .. });
             issues.push(issue);
@@ -337,6 +356,7 @@ fn runner_issues(view: &FleetView) -> Vec<FleetIssue> {
     view.machines
         .iter()
         .flat_map(|m| &m.runners)
+        .chain(&view.pool_runners)
         .chain(&view.unmatched_runners)
         .filter(|runner| !runner.warnings.is_empty())
         .map(|runner| {
@@ -547,6 +567,14 @@ pub(crate) mod rules {
                 advice("Nothing to do.", "none")
             }
         }
+    }
+
+    /// A failed local read of this Mac. No SSH is involved, so SSH advice never applies.
+    pub(super) fn local() -> Advice {
+        advice(
+            "Read the error, fix it on this Mac, then select Check now. This Mac is read without SSH.",
+            "local",
+        )
     }
 
     /// An SSH failure, by kind. The fingerprint is the kind, so a new timeout or

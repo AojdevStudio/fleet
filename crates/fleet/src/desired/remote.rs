@@ -175,6 +175,8 @@ pub struct RemoteClient {
     runner: Arc<dyn CommandRunner>,
     timeout: Duration,
     programs: Programs,
+    /// Runs every script on this Mac with `/bin/bash -s`, never over SSH.
+    local: bool,
 }
 
 impl std::fmt::Debug for RemoteClient {
@@ -182,6 +184,7 @@ impl std::fmt::Debug for RemoteClient {
         f.debug_struct("RemoteClient")
             .field("timeout", &self.timeout)
             .field("programs", &self.programs)
+            .field("local", &self.local)
             .finish_non_exhaustive()
     }
 }
@@ -192,6 +195,15 @@ impl RemoteClient {
             runner,
             timeout,
             programs,
+            local: false,
+        }
+    }
+
+    /// A client for the Mac this app runs on: the same scripts, run locally.
+    pub fn local(runner: Arc<dyn CommandRunner>, timeout: Duration) -> Self {
+        Self {
+            local: true,
+            ..Self::new(runner, timeout, Programs::default())
         }
     }
 
@@ -212,6 +224,15 @@ impl RemoteClient {
         script: &str,
     ) -> Result<(Vec<String>, String)> {
         let connection = connection.into();
+        if self.local {
+            if connection.windows {
+                return Err(RemoteError(format!(
+                    "{}: Windows scripts can't run on this Mac.",
+                    connection.id
+                )));
+            }
+            return Ok((vec!["/bin/bash".into(), "-s".into()], script.to_string()));
+        }
         let target = self.require_target(connection)?;
         let (remote_command, input) = if connection.windows {
             (

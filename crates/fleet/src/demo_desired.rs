@@ -69,6 +69,16 @@ service_mode = "launchagent"
 labels = ["fleet", "macos-build"]
 runners = [{ name = "mini-03-01", directory = "runner-01" }]
 
+# The Mac the app runs on: read locally, without SSH.
+[[hosts]]
+id = "dev-laptop"
+platform = "darwin-arm64"
+ssh = "localhost"
+root = "~/gh-runners/acme-demo"
+service_mode = "launchagent"
+labels = ["fleet", "macos-build"]
+runners = []
+
 [[rollout]]
 repo = "acme-demo/web"
 state = "merged"
@@ -212,6 +222,7 @@ pub fn plan_inputs(now: DateTime<Utc>) -> FleetPlanInputs {
         inventory: Some(Ok(inventory)),
         snapshot: Some(snapshot()),
         checked_at: Some(checked),
+        this_mac_hosts: ["dev-laptop".to_string()].into(),
         ..Default::default()
     }
 }

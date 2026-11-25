@@ -192,6 +192,31 @@ fn boots_and_services_use_observed_changes_not_uptime_jitter_or_missing_data() {
 }
 
 #[test]
+fn a_failed_read_of_this_mac_is_not_an_ssh_outage() {
+    let (_dir, mut store) = store();
+    let failed = |v: &mut FleetView, mac: bool| {
+        v.machines[0].this_mac = mac;
+        v.machines[0].connection = MachineConnection::Error {
+            detail: "failed".into(),
+        };
+    };
+    for (mac, expected) in [(true, None), (false, Some(FleetEventKind::SshUnavailable))] {
+        let mut v = view(now());
+        v.machines[0].this_mac = mac;
+        store.deliver(&v, now());
+        failed(&mut v, mac);
+        v.generated_at = now() + Duration::minutes(1);
+        store.deliver(&v, v.generated_at);
+        let events = store.events(None, None, v.generated_at);
+        let ssh = events
+            .iter()
+            .find(|e| e.kind == FleetEventKind::SshUnavailable)
+            .map(|e| e.kind.clone());
+        assert_eq!(ssh, expected, "this_mac = {mac}");
+    }
+}
+
+#[test]
 fn demo_disabled_hosts_and_target_changes_do_not_inherit_alerts() {
     let (_dir, mut store) = store();
     let mut v = view(now());

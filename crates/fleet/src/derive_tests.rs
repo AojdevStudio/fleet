@@ -39,6 +39,7 @@ impl Fixture {
             ago(5),
             TailnetSnapshot {
                 self_node_id: Some("nSelf".into()),
+                self_names: Default::default(),
                 local_online: Some(true),
                 tailnet_name: None,
                 peers: vec![peer("nSelf", "my-mac", "macOS", true)],
@@ -452,6 +453,7 @@ fn the_board_counts_each_runner_and_job_once() {
         .machines
         .iter()
         .flat_map(|m| &m.runners)
+        .chain(&view.pool_runners)
         .chain(&view.unmatched_runners)
         .filter(|r| matches!(r.activity, RunnerActivity::Busy { .. }))
         .count();
@@ -773,12 +775,19 @@ fn discovery_and_demo_cover_current_stale_offline_and_failed_ssh() {
     let names: Vec<_> = view.machines.iter().map(|m| m.display_name.as_str()).collect();
     assert_eq!(
         names,
-        ["build-linux-01", "mac-mini-02", "mac-mini-03", "studio", "win-builder"]
+        [
+            "build-linux-01",
+            "dev-laptop",
+            "mac-mini-02",
+            "mac-mini-03",
+            "studio",
+            "win-builder"
+        ]
     );
-    // Tailnet peers no inventory host claims are never machines and never raise an issue.
+    // This Mac, and tailnet peers no inventory host claims, never raise an issue.
     let issues = serde_json::to_string(&view.issues).unwrap();
-    let outside = ["dev-laptop", "home-nas", "spare-ubuntu", "iphone"];
-    assert!(outside.iter().all(|name| !issues.contains(name)), "{issues}");
+    let quiet = ["dev-laptop", "home-nas", "spare-ubuntu", "iphone"];
+    assert!(quiet.iter().all(|name| !issues.contains(name)), "{issues}");
 }
 
 #[test]
@@ -985,3 +994,6 @@ fn identity_conflicts_do_not_reuse_previously_checked_local_facts() {
     assert!(studio.runners.iter().all(|r| r.local.is_none()));
     assert!(studio.desired.as_ref().unwrap().plan.iter().all(|item| item.blocked));
 }
+
+#[path = "derive_pool_tests.rs"]
+mod pools;

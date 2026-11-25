@@ -60,18 +60,26 @@ pub(crate) fn derive_without_issues(
     let mut matched: HashSet<String> = HashSet::new();
     let fleet = machines::assemble(config, obs, plan, checked.as_ref(), &gh, &mut matched, now);
 
-    let mut unmatched_runners: Vec<RunnerView> = gh
+    let pools = crate::runner_up::view(obs);
+    let places = pools.as_ref().map_or(&[][..], |p| p.places.as_slice());
+    let (mut pool_runners, mut unmatched_runners): (Vec<RunnerView>, Vec<RunnerView>) = gh
         .runners
         .iter()
         .filter(|r| !matched.contains(&r.key))
-        .map(|r| runner_view(r.key.clone(), None, Some(r), None, &gh))
-        .collect();
+        .map(|r| {
+            let mut view = runner_view(r.key.clone(), None, Some(r), None, &gh);
+            view.place = crate::runner_up::place_for_runner(&r.runner.name, places).map(|p| p.id.clone());
+            view
+        })
+        .partition(|r| r.place.is_some());
     unmatched_runners.sort_by_key(|r| (r.org.clone(), r.name.to_lowercase(), r.key.clone()));
+    pool_runners.sort_by_key(|r| (r.place.clone(), r.name.to_lowercase(), r.key.clone()));
 
     let all_runners: Vec<&RunnerView> = fleet
         .iter()
         .flat_map(|m| m.runners.iter())
-        .chain(unmatched_runners.iter())
+        .chain(&pool_runners)
+        .chain(&unmatched_runners)
         .collect();
     let queue = queue_view(config, obs, &gh, &all_runners, now);
     let summary = summarize(&fleet, &all_runners, &queue);
@@ -84,6 +92,7 @@ pub(crate) fn derive_without_issues(
         issues: Vec::new(),
         machines: fleet,
         unmatched_runners,
+        pool_runners,
         queue,
         orgs: org_statuses(config, obs),
         tailnet: TailnetStatusView {
@@ -95,7 +104,7 @@ pub(crate) fn derive_without_issues(
         },
         plan: plan_status(plan, checked.as_ref()),
         monitoring: crate::monitoring::FleetMonitoring::default(),
-        pools: crate::runner_up::view(obs),
+        pools,
         rollout,
     };
     if source == DataSource::Demo {
@@ -372,6 +381,7 @@ fn runner_view(
         name,
         org,
         machine_id: machine_id.map(str::to_string),
+        place: None,
         installed: match local_fresh {
             Some(l) if l.configured => Tri::Yes,
             Some(_) => Tri::No,

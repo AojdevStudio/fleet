@@ -529,6 +529,7 @@ async fn ssh_aliases_resolve_to_their_tailnet_machine() {
     let engine = Arc::try_unwrap(f.engine).unwrap().with_tailscale_source(|| async {
         Ok(TailnetSnapshot {
             self_node_id: None,
+            self_names: Default::default(),
             local_online: Some(true),
             tailnet_name: None,
             peers: vec![TailnetPeer {
@@ -884,6 +885,7 @@ async fn execution_rejects_a_new_peer_ownership_blocker_even_when_plan_items_are
         async move {
             Ok(TailnetSnapshot {
                 self_node_id: None,
+                self_names: Default::default(),
                 local_online: Some(true),
                 tailnet_name: None,
                 peers,

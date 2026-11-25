@@ -40,7 +40,7 @@ export function RunnerDetail({ runner: r, view }: { runner: RunnerView; view: Fl
         title={<CopyValue value={r.name} label="Runner name" className="font-mono text-[18px]" />}
         status={<Pill tone={st.tone} hollow={st.hollow}>{st.label}</Pill>}
         subtitle={<>
-          {machine ? <button className="underline-offset-2 hover:text-ink hover:underline" onClick={() => select({ kind: "machine", id: machine.id })}>{machine.displayName}</button> : "Not linked to a machine"}
+          {machine ? <button className="underline-offset-2 hover:text-ink hover:underline" onClick={() => select({ kind: "machine", id: machine.id })}>{machine.displayName}</button> : r.place ? `Pool place ${r.place}` : "Not linked to a machine"}
           {r.org && <> · <CopyValue value={r.org} label="Organization" /></>}{gh && ` · ${gh.os}`}
         </>}
         actions={actions.length > 0 && actions.map((a) => <Button key={a.label} small variant={a.danger ? "danger" : "default"} disabled={busy || change.preparing || !!a.disabled} title={a.disabled} onClick={() => change.open(a.request)}>

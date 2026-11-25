@@ -2,7 +2,7 @@
 //! its tailnet peer, SSH observations and GitHub runners. A tailnet peer no
 //! host claims is never observed.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::machine::{MachineReport, OsFamily};
 use chrono::{DateTime, Utc};
@@ -12,7 +12,8 @@ use crate::desired::model::{FleetPlanAction, Host, Inventory, PlanItem, Platform
 use crate::desired::plan::generate_plan;
 use crate::desired::state::build_status_rows;
 use crate::fleet_plan::{
-    DesiredRunnerRole, FleetPlanInputs, MachineDesired, RunnerDesired, host_identity_conflicts, peer_for_host,
+    DesiredRunnerRole, FleetPlanInputs, MachineDesired, RunnerDesired, host_identity_conflicts, is_self_destination,
+    peer_for_host,
 };
 use crate::model::*;
 
@@ -22,6 +23,7 @@ struct Slot<'a> {
     peer: Option<&'a TailnetPeer>,
     host: &'a Host,
     identity_error: Option<String>,
+    this_mac: bool,
 }
 
 /// The last check's status rows and plan items, by runner and by host.
@@ -96,7 +98,8 @@ pub(super) fn assemble(
         now,
     };
 
-    let slots = slots(&peers, inventory, &plan.ssh_hosts);
+    let self_names = snapshot.map(|s| s.self_names.clone()).unwrap_or_default();
+    let slots = slots(&peers, &self_names, inventory, plan);
     let mut fleet = Vec::new();
     for slot in &slots {
         let mut view = machine_view(slot, &ctx, matched);
@@ -118,10 +121,12 @@ pub(super) fn assemble(
 }
 
 /// One slot per inventory host, matched to its tailnet peer.
+/// A host that is this Mac is read locally and gets no tailnet peer.
 fn slots<'a>(
     peers: &'a [TailnetPeer],
+    self_names: &BTreeSet<String>,
     inventory: &'a Inventory,
-    ssh_hosts: &BTreeMap<String, String>,
+    plan: &FleetPlanInputs,
 ) -> Vec<Slot<'a>> {
     let mut slots: Vec<Slot<'a>> = Vec::new();
 
@@ -129,18 +134,25 @@ fn slots<'a>(
         let resolved = host
             .ssh_target
             .as_deref()
-            .and_then(|t| ssh_hosts.get(t))
+            .and_then(|t| plan.ssh_hosts.get(t))
             .map(String::as_str);
-        let peer = peer_for_host(host, resolved, peers);
+        let this_mac = plan.this_mac_hosts.contains(&host.id);
+        // An entry at this Mac's tailnet name is no remote peer, even one that shares its short name.
+        let peer = if this_mac || is_self_destination(host, resolved, self_names) {
+            None
+        } else {
+            peer_for_host(host, resolved, peers)
+        };
         slots.push(Slot {
             id: peer.map_or_else(|| inventory_machine_key(&host.id), |p| tailnet_machine_key(&p.node_id)),
             peer,
             host,
             identity_error: None,
+            this_mac,
         });
     }
 
-    let conflicts = host_identity_conflicts(inventory, ssh_hosts, peers);
+    let conflicts = host_identity_conflicts(inventory, &plan.ssh_hosts, peers, &plan.this_mac_hosts, self_names);
     for slot in &mut slots {
         if let Some(error) = conflicts.get(&slot.host.id) {
             slot.identity_error = Some(error.clone());
@@ -224,6 +236,7 @@ fn machine_view(slot: &Slot<'_>, ctx: &DeriveCtx<'_>, matched: &mut HashSet<Stri
         ),
         os_version: report.and_then(|r| r.value.os_version.clone()),
         tailnet: slot.peer.cloned(),
+        this_mac: slot.this_mac,
         connection,
         health,
         diagnostics: report.map(|r| crate::machine_diagnostics::MachineDiagnostics {

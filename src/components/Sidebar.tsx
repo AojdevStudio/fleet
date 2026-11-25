@@ -64,11 +64,15 @@ export function Sidebar({ view, filtered, selection }: { view: FleetView; filter
         <Heading title="Machines" count={filtered.machines.length} />
         {view.machines.length === 0 && !searching && <EmptyLine>{view.plan.inventoryError ? "The inventory couldn't be loaded. The overview says why." : "Add machines to the inventory to see them here."}</EmptyLine>}
         {filtered.machines.map((m) => <MachineRows key={m.id} m={m} open={searching || !collapsed.has(m.id)} searching={searching} isSelected={isSelected} />)}
+        {filtered.poolRunners.length > 0 && <>
+          <Heading title="Pool runners" count={filtered.poolRunners.length} open={searching || open.pools} onToggle={() => setOpen("pools", !open.pools)} />
+          {(searching || open.pools) && filtered.poolRunners.map((r) => <RunnerRow key={r.key} r={r} isSelected={isSelected} />)}
+        </>}
         {filtered.unmatchedRunners.length > 0 && <>
           <Heading title="Not linked to a machine" count={filtered.unmatchedRunners.length} open={searching || open.unlinked} onToggle={() => setOpen("unlinked", !open.unlinked)} />
           {(searching || open.unlinked) && filtered.unmatchedRunners.map((r) => <RunnerRow key={r.key} r={r} isSelected={isSelected} />)}
         </>}
-        {searching && !filtered.machines.length && !filtered.unmatchedRunners.length && <EmptyLine>No machines or runners match “{query}”.</EmptyLine>}
+        {searching && !filtered.machines.length && !filtered.poolRunners.length && !filtered.unmatchedRunners.length && <EmptyLine>No machines or runners match “{query}”.</EmptyLine>}
       </nav>
       <Footer view={view} />
     </aside>

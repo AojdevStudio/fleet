@@ -35,15 +35,17 @@ interface NavItem {
 export interface OpenGroups {
   /** Runners GitHub lists that aren't on any machine. */
   unlinked: boolean;
+  /** Runners in a runner-up pool place. */
+  pools: boolean;
 }
 
 export function findMachine(view: FleetView, id: string | null): MachineView | undefined {
   return id ? view.machines.find((m) => m.id === id) : undefined;
 }
 
-/** Every runner: those on machines, then those not linked to one. */
+/** Every runner: those on machines, those in pool places, then those not linked to either. */
 export function allRunners(view: FleetView): RunnerView[] {
-  return [...view.machines.flatMap((m) => m.runners), ...view.unmatchedRunners];
+  return [...view.machines.flatMap((m) => m.runners), ...view.poolRunners, ...view.unmatchedRunners];
 }
 
 export function findRunner(view: FleetView, key: string): RunnerView | undefined {
@@ -64,6 +66,7 @@ export function filterNavView(view: FleetView, query: string): FleetView {
       const runners = m.runners.filter(runnerMatches);
       return runners.length ? [{ ...m, runners }] : [];
     }),
+    poolRunners: view.poolRunners.filter((r) => runnerMatches(r) || matches([r.place])),
     unmatchedRunners: view.unmatchedRunners.filter(runnerMatches),
   };
 }
@@ -77,6 +80,9 @@ export function flattenNav(view: FleetView, collapsed: ReadonlySet<string>, open
     if (!collapsed.has(m.id)) {
       for (const r of m.runners) items.push({ selection: { kind: "runner", key: r.key }, parent: m.id });
     }
+  }
+  if (open.pools) {
+    for (const r of view.poolRunners) items.push({ selection: { kind: "runner", key: r.key } });
   }
   if (open.unlinked) {
     for (const r of view.unmatchedRunners) items.push({ selection: { kind: "runner", key: r.key } });

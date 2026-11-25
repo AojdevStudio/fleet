@@ -2,11 +2,11 @@
   "generatedAt": "2026-10-03T12:00:00Z",
   "source": "demo",
   "summary": {
-    "machines": 5,
-    "machinesConnected": 2,
-    "runners": 9,
-    "runnersOnline": 6,
-    "runnersBusy": 2,
+    "machines": 6,
+    "machinesConnected": 3,
+    "runners": 11,
+    "runnersOnline": 8,
+    "runnersBusy": 3,
     "runnersOffline": 1,
     "runnersUnknown": 2,
     "queuedJobs": 6,
@@ -163,6 +163,7 @@
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoHostKeyForPreviewOnly"
         ]
       },
+      "thisMac": false,
       "connection": {
         "kind": "stale",
         "checkedAt": "2026-10-03T11:54:00Z",
@@ -313,6 +314,7 @@
           "name": "linux-01-a",
           "org": "acme-demo",
           "machineId": "ts:nLinux",
+          "place": null,
           "installed": "unknown",
           "connected": "yes",
           "activity": {
@@ -382,6 +384,7 @@
           "name": "linux-01-b",
           "org": "acme-demo",
           "machineId": "ts:nLinux",
+          "place": null,
           "installed": "unknown",
           "connected": "yes",
           "activity": {
@@ -512,6 +515,177 @@
       }
     },
     {
+      "id": "inv:dev-laptop",
+      "displayName": "dev-laptop",
+      "description": null,
+      "host": "localhost",
+      "os": "macos",
+      "osVersion": "macOS 15.6",
+      "tailnet": null,
+      "thisMac": true,
+      "connection": {
+        "kind": "connected",
+        "checkedAt": "2026-10-03T11:59:57Z"
+      },
+      "health": {
+        "asOf": "2026-10-03T11:59:57Z",
+        "stale": false,
+        "cpuPercent": 22.0,
+        "loadAverage": [
+          2.2,
+          1.8333333333333333,
+          1.5714285714285714
+        ],
+        "logicalCores": 12,
+        "memoryTotalBytes": 36000000000,
+        "memoryAvailableBytes": 15000000000,
+        "disks": [
+          {
+            "mountPoint": "/",
+            "totalBytes": 994000000000,
+            "availableBytes": 410000000000
+          }
+        ],
+        "uptimeSecs": 792000,
+        "bootId": "demo-boot-session"
+      },
+      "diagnostics": {
+        "asOf": "2026-10-03T11:59:57Z",
+        "stale": false,
+        "checks": [
+          {
+            "id": "tailscale-install",
+            "group": "network",
+            "title": "Tailscale installation",
+            "status": "info",
+            "value": "CLI + daemon",
+            "detail": "CLI: /usr/local/bin/tailscale. GUI installations can also include a CLI."
+          },
+          {
+            "id": "tailscale-version",
+            "group": "network",
+            "title": "Tailscale version",
+            "status": "info",
+            "value": "1.90.0",
+            "detail": "Version reported by the local Tailscale daemon."
+          },
+          {
+            "id": "tailscale-state",
+            "group": "network",
+            "title": "Tailscale connection",
+            "status": "pass",
+            "value": "Running",
+            "detail": "Local daemon state from tailscale status."
+          },
+          {
+            "id": "tailscale-ssh",
+            "group": "network",
+            "title": "Tailscale SSH",
+            "status": "pass",
+            "value": "Enabled",
+            "detail": "The local RunSSH preference is enabled. Tailnet access rules still control who can connect."
+          },
+          {
+            "id": "power-sleep",
+            "group": "power",
+            "title": "Sleep on AC power",
+            "status": "pass",
+            "value": "Never",
+            "detail": "Automatic sleep interrupts remote access and jobs. This timeout does not cover lid actions or every standby policy."
+          },
+          {
+            "id": "power-displaysleep",
+            "group": "power",
+            "title": "Display off on AC power",
+            "status": "info",
+            "value": "After 10 minutes",
+            "detail": "Display sleep is separate from system sleep; Modern Standby devices may also change connectivity when the display turns off."
+          },
+          {
+            "id": "power-recovery",
+            "group": "power",
+            "title": "Restart after power failure",
+            "status": "pass",
+            "value": "Enabled",
+            "detail": "AC autorestart setting from pmset. Availability depends on the Mac model."
+          },
+          {
+            "id": "power-wake",
+            "group": "power",
+            "title": "Wake for network access",
+            "status": "info",
+            "value": "Enabled",
+            "detail": "Wake-on-network setting from pmset. This does not guarantee wake through Tailscale."
+          },
+          {
+            "id": "ssh-identity",
+            "group": "system",
+            "title": "SSH account",
+            "status": "info",
+            "value": "ci",
+            "detail": "Account used for this read-only inspection."
+          },
+          {
+            "id": "architecture",
+            "group": "system",
+            "title": "Architecture",
+            "status": "info",
+            "value": "arm64",
+            "detail": "Architecture reported by the operating system."
+          },
+          {
+            "id": "disk-space",
+            "group": "system",
+            "title": "Disk space",
+            "status": "pass",
+            "value": "At least 10% free",
+            "detail": "/: 381.8 GiB free of 925.7 GiB"
+          }
+        ]
+      },
+      "monitoring": {
+        "machineKey": "inv:dev-laptop",
+        "maintenanceUntil": null,
+        "alerts": [],
+        "events": [
+          {
+            "id": "00000000000000000002",
+            "machineKey": "inv:dev-laptop",
+            "machineName": "dev-laptop",
+            "at": "2026-10-03T10:00:00Z",
+            "kind": "monitoringStarted",
+            "detail": "Started observing this machine. Earlier events are not known."
+          }
+        ]
+      },
+      "runners": [],
+      "warnings": [],
+      "desired": {
+        "host": {
+          "id": "dev-laptop",
+          "platform": "darwin-arm64",
+          "sshTarget": "localhost",
+          "sshSetting": "localhost",
+          "root": "~/gh-runners/acme-demo",
+          "serviceMode": "launchagent",
+          "labels": [
+            "fleet",
+            "macos-build"
+          ],
+          "runners": [],
+          "serviceAccount": null,
+          "enabled": true,
+          "sshTransport": "openssh"
+        },
+        "plan": [],
+        "pendingChanges": 0,
+        "error": null,
+        "checkedAt": "2026-10-03T11:59:57Z",
+        "checks": [],
+        "checksAt": null
+      }
+    },
+    {
       "id": "ts:nMini",
       "displayName": "mac-mini-02",
       "description": null,
@@ -531,6 +705,7 @@
         "tags": [],
         "sshHostKeys": []
       },
+      "thisMac": false,
       "connection": {
         "kind": "connected",
         "checkedAt": "2026-10-03T11:59:56Z"
@@ -687,7 +862,7 @@
         ],
         "events": [
           {
-            "id": "00000000000000000008",
+            "id": "00000000000000000009",
             "machineKey": "inv:mac-mini-02",
             "machineName": "mac-mini-02",
             "at": "2026-10-03T11:48:00Z",
@@ -695,7 +870,7 @@
             "detail": "/: 5.7% free (13.0 GiB of 228.2 GiB)."
           },
           {
-            "id": "00000000000000000002",
+            "id": "00000000000000000003",
             "machineKey": "inv:mac-mini-02",
             "machineName": "mac-mini-02",
             "at": "2026-10-03T10:00:00Z",
@@ -710,6 +885,7 @@
           "name": "mini-02",
           "org": "acme-demo",
           "machineId": "ts:nMini",
+          "place": null,
           "installed": "yes",
           "connected": "yes",
           "activity": {
@@ -851,6 +1027,7 @@
         "tags": [],
         "sshHostKeys": []
       },
+      "thisMac": false,
       "connection": {
         "kind": "error",
         "detail": "SSH permission denied. Check the host's SSH login and tailnet access."
@@ -863,7 +1040,7 @@
         "alerts": [],
         "events": [
           {
-            "id": "00000000000000000003",
+            "id": "00000000000000000004",
             "machineKey": "inv:mac-mini-03",
             "machineName": "mac-mini-03",
             "at": "2026-10-03T10:00:00Z",
@@ -878,6 +1055,7 @@
           "name": "mini-03-01",
           "org": "acme-demo",
           "machineId": "ts:nNew",
+          "place": null,
           "installed": "unknown",
           "connected": "unknown",
           "activity": {
@@ -992,6 +1170,7 @@
         "tags": [],
         "sshHostKeys": []
       },
+      "thisMac": false,
       "connection": {
         "kind": "connected",
         "checkedAt": "2026-10-03T11:59:54Z"
@@ -1142,7 +1321,7 @@
         "alerts": [],
         "events": [
           {
-            "id": "00000000000000000007",
+            "id": "00000000000000000008",
             "machineKey": "inv:studio",
             "machineName": "studio",
             "at": "2026-10-03T11:23:00Z",
@@ -1150,7 +1329,7 @@
             "detail": "studio-1: inactive → running."
           },
           {
-            "id": "00000000000000000006",
+            "id": "00000000000000000007",
             "machineKey": "inv:studio",
             "machineName": "studio",
             "at": "2026-10-03T11:22:00Z",
@@ -1158,7 +1337,7 @@
             "detail": "A different operating-system boot session was observed."
           },
           {
-            "id": "00000000000000000004",
+            "id": "00000000000000000005",
             "machineKey": "inv:studio",
             "machineName": "studio",
             "at": "2026-10-03T10:00:00Z",
@@ -1173,6 +1352,7 @@
           "name": "studio-1",
           "org": "acme-demo",
           "machineId": "ts:nStudio",
+          "place": null,
           "installed": "yes",
           "connected": "yes",
           "activity": {
@@ -1257,6 +1437,7 @@
           "name": "studio-2",
           "org": "acme-demo",
           "machineId": "ts:nStudio",
+          "place": null,
           "installed": "yes",
           "connected": "yes",
           "activity": {
@@ -1326,6 +1507,7 @@
           "name": "Studio-Old-2",
           "org": "acme-demo",
           "machineId": "ts:nStudio",
+          "place": null,
           "installed": "yes",
           "connected": "unknown",
           "activity": {
@@ -1484,6 +1666,7 @@
         "tags": [],
         "sshHostKeys": []
       },
+      "thisMac": false,
       "connection": {
         "kind": "offline",
         "lastSeen": "2026-10-03T09:00:00Z"
@@ -1650,7 +1833,7 @@
         "alerts": [],
         "events": [
           {
-            "id": "00000000000000000005",
+            "id": "00000000000000000006",
             "machineKey": "inv:win-builder",
             "machineName": "win-builder",
             "at": "2026-10-03T10:00:00Z",
@@ -1665,6 +1848,7 @@
           "name": "win-builder",
           "org": "acme-demo",
           "machineId": "ts:nWin",
+          "place": null,
           "installed": "unknown",
           "connected": "no",
           "activity": {
@@ -1773,6 +1957,7 @@
       "name": "cloud-gpu-1",
       "org": "acme-demo",
       "machineId": null,
+      "place": null,
       "installed": "unknown",
       "connected": "yes",
       "activity": {
@@ -1796,6 +1981,83 @@
       },
       "local": null,
       "currentJob": null,
+      "warnings": [],
+      "desired": null
+    }
+  ],
+  "poolRunners": [
+    {
+      "key": "gh:acme-demo:602",
+      "name": "runner-up-ci-kvm-1-1795573490",
+      "org": "acme-demo",
+      "machineId": null,
+      "place": "ci-kvm-1",
+      "installed": "unknown",
+      "connected": "yes",
+      "activity": {
+        "kind": "idle"
+      },
+      "github": {
+        "id": 602,
+        "status": "online",
+        "busy": false,
+        "labels": [
+          "self-hosted",
+          "Linux",
+          "central-linux-kvm"
+        ],
+        "os": "Linux",
+        "version": "2.329.0",
+        "ephemeral": false,
+        "asOf": "2026-10-03T11:59:51Z",
+        "stale": false
+      },
+      "local": null,
+      "currentJob": null,
+      "warnings": [],
+      "desired": null
+    },
+    {
+      "key": "gh:acme-demo:601",
+      "name": "runner-up-ci-linux-1-1795573483",
+      "org": "acme-demo",
+      "machineId": null,
+      "place": "ci-linux-1",
+      "installed": "unknown",
+      "connected": "yes",
+      "activity": {
+        "kind": "busy",
+        "since": "2026-10-03T11:53:40Z"
+      },
+      "github": {
+        "id": 601,
+        "status": "online",
+        "busy": true,
+        "labels": [
+          "self-hosted",
+          "Linux",
+          "central-linux"
+        ],
+        "os": "Linux",
+        "version": "2.329.0",
+        "ephemeral": false,
+        "asOf": "2026-10-03T11:59:51Z",
+        "stale": false
+      },
+      "local": null,
+      "currentJob": {
+        "id": 9010,
+        "name": "test / linux",
+        "workflowName": "CI",
+        "repo": "acme-demo/web",
+        "branch": "main",
+        "startedAt": "2026-10-03T11:53:40Z",
+        "htmlUrl": "https://github.com/acme-demo/web/actions/runs/90100/job/9010",
+        "labels": [
+          "self-hosted",
+          "central-linux"
+        ]
+      },
       "warnings": [],
       "desired": null
     }
@@ -2034,7 +2296,7 @@
     ],
     "events": [
       {
-        "id": "00000000000000000008",
+        "id": "00000000000000000009",
         "machineKey": "inv:mac-mini-02",
         "machineName": "mac-mini-02",
         "at": "2026-10-03T11:48:00Z",
@@ -2042,7 +2304,7 @@
         "detail": "/: 5.7% free (13.0 GiB of 228.2 GiB)."
       },
       {
-        "id": "00000000000000000007",
+        "id": "00000000000000000008",
         "machineKey": "inv:studio",
         "machineName": "studio",
         "at": "2026-10-03T11:23:00Z",
@@ -2050,7 +2312,7 @@
         "detail": "studio-1: inactive → running."
       },
       {
-        "id": "00000000000000000006",
+        "id": "00000000000000000007",
         "machineKey": "inv:studio",
         "machineName": "studio",
         "at": "2026-10-03T11:22:00Z",
@@ -2058,7 +2320,7 @@
         "detail": "A different operating-system boot session was observed."
       },
       {
-        "id": "00000000000000000005",
+        "id": "00000000000000000006",
         "machineKey": "inv:win-builder",
         "machineName": "win-builder",
         "at": "2026-10-03T10:00:00Z",
@@ -2066,7 +2328,7 @@
         "detail": "Started observing this machine. Earlier events are not known."
       },
       {
-        "id": "00000000000000000004",
+        "id": "00000000000000000005",
         "machineKey": "inv:studio",
         "machineName": "studio",
         "at": "2026-10-03T10:00:00Z",
@@ -2074,7 +2336,7 @@
         "detail": "Started observing this machine. Earlier events are not known."
       },
       {
-        "id": "00000000000000000003",
+        "id": "00000000000000000004",
         "machineKey": "inv:mac-mini-03",
         "machineName": "mac-mini-03",
         "at": "2026-10-03T10:00:00Z",
@@ -2082,9 +2344,17 @@
         "detail": "Started observing this machine. Earlier events are not known."
       },
       {
-        "id": "00000000000000000002",
+        "id": "00000000000000000003",
         "machineKey": "inv:mac-mini-02",
         "machineName": "mac-mini-02",
+        "at": "2026-10-03T10:00:00Z",
+        "kind": "monitoringStarted",
+        "detail": "Started observing this machine. Earlier events are not known."
+      },
+      {
+        "id": "00000000000000000002",
+        "machineKey": "inv:dev-laptop",
+        "machineName": "dev-laptop",
         "at": "2026-10-03T10:00:00Z",
         "kind": "monitoringStarted",
         "detail": "Started observing this machine. Earlier events are not known."

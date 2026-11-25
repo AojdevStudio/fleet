@@ -12,7 +12,11 @@ export type MachineView = {
 /**
  * Stable selection key: `ts:<tailscale node id>`, `inv:<inventory host>`
  */
-id: string, displayName: string, description: string | null, host: string, os: OsFamily | null, osVersion: string | null, tailnet: TailnetPeer | null, connection: MachineConnection, health: HealthView | null, diagnostics: MachineDiagnostics | null, monitoring: FleetMachineMonitoring, runners: Array<RunnerView>, warnings: Array<string>, 
+id: string, displayName: string, description: string | null, host: string, os: OsFamily | null, osVersion: string | null, tailnet: TailnetPeer | null, 
+/**
+ * The Mac this app runs on. It is read locally, never over SSH.
+ */
+thisMac: boolean, connection: MachineConnection, health: HealthView | null, diagnostics: MachineDiagnostics | null, monitoring: FleetMachineMonitoring, runners: Array<RunnerView>, warnings: Array<string>, 
 /**
  * What the inventory declares for this machine, if it's a fleet host.
  */

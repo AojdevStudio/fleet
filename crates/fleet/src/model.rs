@@ -3,7 +3,7 @@
 //! Observations are facts with timestamps. The view is a pure function of
 //! (config, observations, now) — see `derive.rs`.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::machine::{DiskStats, MachineReport, OsFamily};
 use chrono::{DateTime, Utc};
@@ -175,7 +175,11 @@ pub struct PoolsObservation {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TailnetSnapshot {
+    /// The node this app runs on. It is also in `peers`.
     pub self_node_id: Option<String>,
+    /// That node's MagicDNS name and tailnet IPs, lowercase and without a final dot.
+    /// Only the identity check uses them. They never match a peer or route a host.
+    pub self_names: BTreeSet<String>,
     pub local_online: Option<bool>,
     pub tailnet_name: Option<String>,
     pub peers: Vec<TailnetPeer>,
@@ -371,8 +375,11 @@ pub struct FleetView {
     pub issues: Vec<crate::issues::FleetIssue>,
     /// The inventory's hosts. Nothing outside the inventory is a machine.
     pub machines: Vec<MachineView>,
-    /// GitHub runners not tied to any machine (e.g. hosted runner pools).
+    /// GitHub runners not tied to any machine or pool place.
     pub unmatched_runners: Vec<RunnerView>,
+    /// GitHub runners in a runner-up place, each with its `place`.
+    #[serde(default)]
+    pub pool_runners: Vec<RunnerView>,
     pub queue: QueueView,
     /// Desired state from `inventory/fleet.toml`: errors, last check, the current change.
     pub plan: crate::fleet_plan::FleetPlanStatus,
@@ -414,6 +421,8 @@ pub struct MachineView {
     pub os: Option<OsFamily>,
     pub os_version: Option<String>,
     pub tailnet: Option<TailnetPeer>,
+    /// The Mac this app runs on. It is read locally, never over SSH.
+    pub this_mac: bool,
     pub connection: MachineConnection,
     pub health: Option<HealthView>,
     pub diagnostics: Option<crate::machine_diagnostics::MachineDiagnostics>,
@@ -514,6 +523,8 @@ pub struct RunnerView {
     pub name: String,
     pub org: Option<String>,
     pub machine_id: Option<String>,
+    /// The runner-up place this pool runner runs in.
+    pub place: Option<String>,
     pub installed: Tri,
     pub connected: Tri,
     pub activity: RunnerActivity,

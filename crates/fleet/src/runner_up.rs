@@ -33,8 +33,8 @@ use crate::model::{Observations, count_u32};
 const CONFIG_MARKER: &str = "@@RUNNER_UP_CONFIG@@";
 /// Separates the config file from `tart list` in the script's output.
 const TART_MARKER: &str = "@@RUNNER_UP_TART@@";
-/// Tart clones of runner-up places carry this prefix before the place id.
-const CLONE_PREFIX: &str = "runner-up-";
+/// Tart clones and GitHub runners of runner-up places carry this prefix before the place id.
+const PLACE_PREFIX: &str = "runner-up-";
 
 /// What a place is doing, from its status line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -338,7 +338,7 @@ pub fn parse_tart_list(text: &str) -> Option<Vec<TartVm>> {
     Some(
         vms.into_iter()
             .map(|vm| TartVm {
-                place: vm.name.strip_prefix(CLONE_PREFIX).map(str::to_string),
+                place: vm.name.strip_prefix(PLACE_PREFIX).map(str::to_string),
                 running: vm.running,
                 name: vm.name,
             })
@@ -409,6 +409,18 @@ pub fn pools_view(
         places,
         tart_vms: report.tart.clone(),
     }
+}
+
+/// The place a GitHub runner runs in. runner-up names each one-job runner
+/// `runner-up-<place id>-<number>`, so the place id is the text between the
+/// prefix and the last dash. It links only when it is exactly the id of a
+/// place in `places`.
+pub fn place_for_runner<'a>(name: &str, places: &'a [PlaceView]) -> Option<&'a PlaceView> {
+    let (id, number) = name.strip_prefix(PLACE_PREFIX)?.rsplit_once('-')?;
+    if number.is_empty() || !number.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    places.iter().find(|p| p.id == id)
 }
 
 /// The pools view from the latest observations, when the inventory names a coordinator.

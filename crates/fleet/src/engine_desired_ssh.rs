@@ -48,8 +48,13 @@ impl SshTransportIdentity {
         })
     }
 
-    pub(super) fn hostname(&self) -> &str {
+    pub(crate) fn hostname(&self) -> &str {
         &self.hostname
+    }
+
+    /// The account SSH logs in as.
+    pub(crate) fn user(&self) -> Option<&str> {
+        self.configuration.iter().find_map(|line| line.strip_prefix("user "))
     }
 }
 

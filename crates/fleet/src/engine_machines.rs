@@ -57,7 +57,14 @@ impl Engine {
         self
     }
 
+    /// Replace the local runner for the host that is this Mac (tests).
+    pub fn with_this_mac_source(mut self, source: Arc<dyn crate::this_mac::LocalSource>) -> Self {
+        self.this_mac = source;
+        self
+    }
+
     /// Read health and runner state of enabled inventory hosts, with at most four concurrent SSH sessions.
+    /// The host that is this Mac is read locally instead.
     /// Concurrent refresh requests coalesce; failures preserve the last good data.
     pub async fn poll_machines(&self) {
         let Ok(_poll) = self.machine_poll.try_lock() else {
@@ -77,22 +84,29 @@ impl Engine {
             return;
         }
 
-        if let Ok(inventory) = self.read_inventory().await {
-            self.resolve_ssh_hosts(&inventory).await;
-        }
+        // Routes come from this inventory read, so a host edited since the
+        // view was built waits for the next poll instead of taking the old route.
+        let Ok(inventory) = self.read_inventory().await else {
+            return;
+        };
+        let this_mac = self.resolve_ssh_hosts(&inventory).await.this_mac;
         let view = self.view();
         let targets = view
             .machines
             .into_iter()
             .filter(|m| machine.is_none_or(|id| m.id == id || m.preferences_key() == id))
-            .filter(|m| m.tailnet.as_ref().is_none_or(|p| p.online))
-            .filter_map(|m| m.desired.map(|d| d.host))
-            .filter(|host| host.enabled)
-            .map(|host| (inventory_machine_key(&host.id), host))
+            .filter_map(|m| m.desired.map(|d| (d.host, m.tailnet)))
+            .filter(|(host, tailnet)| this_mac.contains(&host.id) || tailnet.as_ref().is_none_or(|p| p.online))
+            .filter(|(host, _)| host.enabled)
+            .filter(|(host, _)| inventory.hosts.contains(host))
+            .map(|(host, _)| (inventory_machine_key(&host.id), host))
             .collect::<Vec<_>>();
-        let source = &self.machine_source;
         let mut reads = stream::iter(targets.into_iter().map(|(id, target)| {
-            let source = source.clone();
+            let source: Arc<dyn MachineSource> = if this_mac.contains(&target.id) {
+                self.this_mac.clone()
+            } else {
+                self.machine_source.clone()
+            };
             async move {
                 let inspected = target.clone();
                 let result = tokio::task::spawn_blocking(move || source.inspect(&inspected))

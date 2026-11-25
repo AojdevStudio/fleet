@@ -3,7 +3,7 @@ import type { MachineView } from "../../bindings/MachineView";
 import { useNow } from "../../hooks";
 import { changes } from "../../lib/desired";
 import { plural, timeAgo } from "../../lib/format";
-import { hasTailscaleSsh, type Tone } from "../../lib/status";
+import { hasTailscaleSsh, THIS_MAC, type Tone } from "../../lib/status";
 import { Stat, StatStrip } from "../ui";
 import { CopyValue } from "../CopyValue";
 
@@ -14,12 +14,14 @@ interface Fact {
   hollow?: boolean;
 }
 
-/** Tailnet reachability, the last SSH read, and inventory drift. */
+/** Tailnet reachability, the last SSH read (a local read on this Mac), and inventory drift. */
 export function MachineGlance({ m }: { m: MachineView }) {
   const now = useNow();
   const t = m.tailnet;
   const sshTarget = m.desired?.host.sshTarget;
-  const tailnet: Fact = !t
+  const tailnet: Fact = m.thisMac
+    ? { tone: "muted", value: "Not used", sub: THIS_MAC, hollow: true }
+    : !t
     ? { tone: "bad", value: "Not found", sub: sshTarget ? <CopyValue value={sshTarget} label="SSH target" truncate /> : "no tailnet match" }
     : t.online
       ? { tone: "ok", value: "Online", sub: hasTailscaleSsh(m) ? "Tailscale SSH on" : "SSH over the tailnet" }
@@ -32,7 +34,7 @@ export function MachineGlance({ m }: { m: MachineView }) {
       : c.kind === "stale"
         ? { tone: "warn", value: "Stale", sub: `last read ${timeAgo(c.checkedAt, now)}`, hollow: true }
         : c.kind === "error"
-          ? { tone: "bad", value: "Couldn't connect", sub: <CopyValue value={c.detail} label="SSH error" truncate /> }
+          ? { tone: "bad", value: m.thisMac ? "Couldn't read" : "Couldn't connect", sub: <CopyValue value={c.detail} label={m.thisMac ? "Error" : "SSH error"} truncate /> }
           : c.kind === "offline"
             ? { tone: "muted", value: "Offline", sub: "machine is offline", hollow: true }
             : c.kind === "disabled"
@@ -56,7 +58,7 @@ export function MachineGlance({ m }: { m: MachineView }) {
   return (
     <StatStrip cols={3}>
       <Stat label="Tailnet" {...tailnet} />
-      <Stat label="SSH" {...ssh} />
+      <Stat label={m.thisMac ? "Local read" : "SSH"} {...ssh} />
       <Stat label="Inventory" {...inventory} />
     </StatStrip>
   );

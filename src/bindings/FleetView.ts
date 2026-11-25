@@ -22,9 +22,13 @@ issues: Array<FleetIssue>,
  */
 machines: Array<MachineView>, 
 /**
- * GitHub runners not tied to any machine (e.g. hosted runner pools).
+ * GitHub runners not tied to any machine or pool place.
  */
-unmatchedRunners: Array<RunnerView>, queue: QueueView, 
+unmatchedRunners: Array<RunnerView>, 
+/**
+ * GitHub runners in a runner-up place, each with its `place`.
+ */
+poolRunners: Array<RunnerView>, queue: QueueView, 
 /**
  * Desired state from `inventory/fleet.toml`: errors, last check, the current change.
  */

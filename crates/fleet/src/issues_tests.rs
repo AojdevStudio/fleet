@@ -539,3 +539,41 @@ fn the_demo_shows_one_cleared_item() {
     );
     assert_eq!(view.summary.attention as usize, view.issues.len() - 1);
 }
+
+#[test]
+fn this_macs_failed_read_never_reads_as_an_ssh_problem() {
+    let mut view = one_machine();
+    let machine = &mut view.machines[0];
+    machine.this_mac = true;
+    machine.connection = MachineConnection::Error {
+        detail: "permission denied".into(),
+    };
+    attach(&mut view, |_| false);
+    let issue = issue(&view, &format!("{}:connection", view.machines[0].id));
+    assert!(issue.title.ends_with(": the local check failed"), "{}", issue.title);
+    assert!(issue.action.contains("without SSH"), "{}", issue.action);
+    assert!(!view.issues.iter().any(|i| i.title.contains("SSH unavailable")));
+
+    let now = Utc::now();
+    let (config, observations) = crate::demo::dataset(now);
+    let plan = crate::demo_desired::plan_inputs(now);
+    let demo = crate::derive::derive(&config, &observations, &plan, now, DataSource::Live);
+    view.machines[0].connection = MachineConnection::Connected { checked_at: now };
+    view.machines[0].desired.clone_from(&demo.machines[0].desired);
+    let desired = view.machines[0].desired.as_mut().unwrap();
+    desired.error = None;
+    desired.plan.clear();
+    desired.checks = vec![DoctorCheck::new(
+        &desired.host.id,
+        "runner-probe",
+        crate::desired::model::CheckStatus::Fail,
+        "probe failed",
+    )];
+    attach(&mut view, |_| false);
+    let check = view
+        .issues
+        .iter()
+        .find(|i| i.id.ends_with(":doctor:runner-probe"))
+        .unwrap();
+    assert!(check.action.contains("without SSH"), "{}", check.action);
+}

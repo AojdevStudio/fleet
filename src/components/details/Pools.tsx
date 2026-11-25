@@ -1,9 +1,11 @@
+import type { FleetView } from "../../bindings/FleetView";
 import type { RunnerUpPoolsView } from "../../bindings/RunnerUpPoolsView";
 import { plural } from "../../lib/format";
 import { Card, Section, TimeAgo } from "../ui";
+import { List, RunnerLine } from "./shared";
 
-/** runner-up central pools: ephemeral places per pool, read from the coordinator. */
-export function Pools({ pools }: { pools: RunnerUpPoolsView }) {
+/** runner-up central pools: ephemeral places per pool, read from the coordinator, and the runners in each place. */
+export function Pools({ pools, view }: { pools: RunnerUpPoolsView; view: FleetView }) {
   const running = pools.tartVms?.filter((vm) => vm.running).length;
   return (
     <Section title="Central pools" count={pools.pools.length}>
@@ -39,6 +41,28 @@ export function Pools({ pools }: { pools: RunnerUpPoolsView }) {
         {running === undefined ? " · tart VMs unknown" : ` · ${running} of ${plural(pools.tartVms?.length ?? 0, "tart VM")} running`}
       </p>
       {pools.error && <p className="mt-1 break-words text-[12px] text-bad selectable">{pools.error}</p>}
+      <PlaceRunners pools={pools} view={view} />
     </Section>
+  );
+}
+
+/** Pool runners under the place their name names. Places render in place id order. */
+function PlaceRunners({ pools, view }: { pools: RunnerUpPoolsView; view: FleetView }) {
+  const places = pools.places
+    .map((place) => ({ place, runners: view.poolRunners.filter((r) => r.place === place.id) }))
+    .filter((p) => p.runners.length > 0);
+  if (!places.length) return null;
+  return (
+    <div className="mt-4 space-y-3">
+      {places.map(({ place, runners }) => (
+        <div key={place.id}>
+          <h3 className="mb-1.5 px-0.5 text-[12px] text-ink-2">
+            <span className="font-mono font-medium text-ink">{place.id}</span>
+            {` · ${place.provider} on ${place.machine} · ${place.pools.join(", ")}`}
+          </h3>
+          <List>{runners.map((r) => <RunnerLine key={r.key} r={r} view={view} />)}</List>
+        </div>
+      ))}
+    </div>
   );
 }

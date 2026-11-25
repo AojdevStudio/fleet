@@ -42,6 +42,8 @@ pub struct Engine {
     desired_changed: tokio::sync::watch::Sender<u64>,
     desired_io: desired::DesiredIo,
     machine_source: Arc<dyn crate::machine::MachineSource>,
+    /// Runs reads and runner scripts for the inventory host that is this Mac.
+    this_mac: Arc<dyn crate::this_mac::LocalSource>,
     pool_source: Arc<dyn crate::runner_up::PoolSource>,
     machine_poll: tokio::sync::Mutex<()>,
     desired_refresh_gate: tokio::sync::Mutex<()>,
@@ -101,6 +103,7 @@ impl Engine {
             desired_changed: tokio::sync::watch::channel(0).0,
             desired_io: desired::DesiredIo::default(),
             machine_source: Arc::new(crate::machine::remote_client()),
+            this_mac: Arc::new(crate::this_mac::local_client()),
             pool_source: Arc::new(crate::machine::remote_client()),
             machine_poll: tokio::sync::Mutex::new(()),
             desired_refresh_gate: tokio::sync::Mutex::new(()),

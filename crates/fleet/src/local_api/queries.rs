@@ -213,10 +213,15 @@ pub(super) fn flat_runners(view: &FleetView) -> Vec<FlatRunner> {
                 runner: r.clone(),
             })
         })
-        .chain(view.unmatched_runners.iter().map(|r| FlatRunner {
-            machine_name: None,
-            runner: r.clone(),
-        }))
+        .chain(
+            view.pool_runners
+                .iter()
+                .chain(&view.unmatched_runners)
+                .map(|r| FlatRunner {
+                    machine_name: None,
+                    runner: r.clone(),
+                }),
+        )
         .collect()
 }
 

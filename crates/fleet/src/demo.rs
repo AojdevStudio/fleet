@@ -60,6 +60,19 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
         },
         offline(gh(401, "win-builder", false, &["self-hosted", "Windows", "X64"])),
         gh(501, "cloud-gpu-1", false, &["self-hosted", "Linux", "X64", "gpu"]),
+        // One-job runners in runner-up places, linked to their place by name.
+        gh(
+            601,
+            "runner-up-ci-linux-1-1795573483",
+            true,
+            &["self-hosted", "Linux", "central-linux"],
+        ),
+        gh(
+            602,
+            "runner-up-ci-kvm-1-1795573490",
+            false,
+            &["self-hosted", "Linux", "central-linux-kvm"],
+        ),
     ];
 
     let jobs = vec![
@@ -162,13 +175,25 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
             None,
             ago(52 * 60),
         ),
+        job(
+            9010,
+            601,
+            "test / linux",
+            "CI",
+            "acme-demo/web",
+            "in_progress",
+            &["self-hosted", "central-linux"],
+            Some(ago(6 * 60 + 20)),
+            ago(7 * 60),
+        ),
     ];
 
     let mut obs = Observations {
         tailscale: Some(Timed::new(
             ago(4),
             TailnetSnapshot {
-                self_node_id: Some("nThisMac".into()),
+                self_node_id: Some("nLaptop".into()),
+                self_names: Default::default(),
                 local_online: Some(true),
                 tailnet_name: Some("demo.ts.net".into()),
                 peers,
@@ -220,6 +245,7 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
     for (id, os, cpu, memory, disk, age, error) in [
         ("studio", OsFamily::Macos, 38.5, (64, 21), (994, 312), 6, None),
         ("mac-mini-02", OsFamily::Macos, 71.0, (16, 3), (245, 14), 4, None),
+        ("dev-laptop", OsFamily::Macos, 22.0, (36, 15), (994, 410), 3, None),
         (
             "build-linux-01",
             OsFamily::Linux,

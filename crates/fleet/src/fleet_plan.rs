@@ -150,6 +150,8 @@ pub struct FleetPlanInputs {
     pub host_checked_at: BTreeMap<String, DateTime<Utc>>,
     /// SSH target → the hostname SSH resolves it to.
     pub ssh_hosts: BTreeMap<String, String>,
+    /// Inventory hosts that are this Mac ([`crate::this_mac::hosts`]).
+    pub this_mac_hosts: BTreeSet<String>,
     pub doctor: Option<DoctorView>,
     pub refreshing: bool,
     pub doctor_running: bool,
@@ -185,33 +187,52 @@ fn peer_named<'a>(name: &str, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPee
         })
 }
 
+/// Whether the host's SSH destination is exactly this Mac's tailnet name or IP
+/// ([`crate::model::TailnetSnapshot::self_names`]). The `ssh -G` hostname decides when it is known.
+pub fn is_self_destination(host: &Host, ssh_hostname: Option<&str>, self_names: &BTreeSet<String>) -> bool {
+    ssh_hostname
+        .or_else(|| host.ssh_target.as_deref().and_then(|target| target.rsplit('@').next()))
+        .is_some_and(|name| self_names.contains(&name.trim_end_matches('.').to_ascii_lowercase()))
+}
+
 /// Hosts that share a tailnet peer or SSH destination must not own independent execution targets.
+/// Two hosts that are both this Mac conflict too: a host in `this_mac_hosts`, and a host
+/// whose destination [`is_self_destination`].
 pub fn host_identity_conflicts(
     inventory: &Inventory,
     ssh_hosts: &BTreeMap<String, String>,
     peers: &[TailnetPeer],
+    this_mac_hosts: &BTreeSet<String>,
+    self_names: &BTreeSet<String>,
 ) -> BTreeMap<String, String> {
     let mut owners: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for host in &inventory.hosts {
         let resolved = host.ssh_target.as_ref().and_then(|target| ssh_hosts.get(target));
-        if let Some(peer) = peer_for_host(host, resolved.map(String::as_str), peers) {
-            owners
-                .entry(format!("peer:{}", peer.node_id))
-                .or_default()
-                .insert(host.id.clone());
-        }
-        for target in host
+        let hostnames: Vec<String> = host
             .ssh_target
             .as_deref()
             .into_iter()
             .chain(resolved.map(String::as_str))
+            .map(|target| {
+                target
+                    .rsplit('@')
+                    .next()
+                    .unwrap_or(target)
+                    .trim_end_matches('.')
+                    .to_ascii_lowercase()
+            })
+            .collect();
+        let owner = if this_mac_hosts.contains(&host.id)
+            || is_self_destination(host, resolved.map(String::as_str), self_names)
         {
-            let hostname = target
-                .rsplit('@')
-                .next()
-                .unwrap_or(target)
-                .trim_end_matches('.')
-                .to_ascii_lowercase();
+            Some("this-mac".to_string())
+        } else {
+            peer_for_host(host, resolved.map(String::as_str), peers).map(|p| format!("peer:{}", p.node_id))
+        };
+        if let Some(owner) = owner {
+            owners.entry(owner).or_default().insert(host.id.clone());
+        }
+        for hostname in hostnames {
             owners
                 .entry(format!("ssh:{hostname}"))
                 .or_default()
