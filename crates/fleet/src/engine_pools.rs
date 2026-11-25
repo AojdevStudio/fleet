@@ -31,6 +31,7 @@ impl Engine {
             self.obs.write_locked().pools = None;
             return;
         };
+        self.resolve_ssh_hosts(&inventory).await;
         let ssh = self.pool_source.clone();
         let local: Arc<dyn PoolSource> = self.this_mac.clone();
         let local_hosts = self.this_mac_hosts(&inventory);

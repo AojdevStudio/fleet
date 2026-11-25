@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use fleet::desired::model::Host;
 use fleet::desired::remote::RemoteError;
+use fleet::engine::desired::DesiredIo;
 use fleet::engine::{Engine, MemorySecrets};
 use fleet::runner_up::{PoolSource, fixture};
 
@@ -54,7 +55,12 @@ fn engine(dir: &std::path::Path, source: Arc<FakeCoordinator>) -> Engine {
     std::fs::write(dir.join("fleet.toml"), INVENTORY).unwrap();
     let engine = Engine::load(dir.join("config.json"), Arc::new(MemorySecrets::default()))
         .unwrap()
-        .with_pool_source(source);
+        .with_pool_source(source)
+        .with_desired_io(DesiredIo {
+            boundaries: Arc::new(|_| panic!("pool reads never use runner operations")),
+            sleep: |_| panic!("no operation waits"),
+            resolve_ssh_transport: Arc::new(|_| None),
+        });
     engine
         .set_inventory_path(Some(dir.join("fleet.toml").display().to_string()))
         .unwrap();

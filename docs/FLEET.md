@@ -287,10 +287,10 @@ are verified. Don't also enable `services.github-runners` for inventory runners.
 ### The Mac the app runs on
 
 The app can list the Mac it runs on as a fleet machine without SSH to itself, so Remote Login
-can stay off. A host is this Mac when its written `ssh` target is `localhost`, `127.0.0.1` or
-`::1`, or when the name SSH connects to (what `ssh -G` resolves, else the written target) is
-exactly this Mac's tailnet DNS name, hostname or tailnet IP. A name that only starts with the
-same label doesn't count. A target that names a login, such as `ci@localhost`, must name the
+can stay off. A host is this Mac when the name SSH connects to (what `ssh -G` resolves, else
+the written target) is `localhost`, `127.0.0.1` or `::1`, or is exactly this Mac's MagicDNS
+name, the first label of that name, or a tailnet IP. The OS hostname doesn't count, and neither
+does a longer name that only starts with the same label. A target that names a login, such as `ci@localhost`, must name the
 account the app runs as, because local scripts run as that account. A Windows host never is, and
 two inventory hosts that are both this Mac are an identity conflict. For that host the app runs the same health probe, runner probe, checks,
 runner scripts and runner-up reads as local processes (`/bin/bash -s`) instead of over SSH. Its

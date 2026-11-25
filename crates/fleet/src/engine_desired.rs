@@ -285,6 +285,7 @@ impl Engine {
         let inventory = self.read_inventory().await?;
         self.desired.locked().doctor_running = true;
         self.view_changed();
+        self.resolve_ssh_hosts(&inventory).await;
         let (github, remote) = self.boundaries(&inventory);
         let scope = host.clone();
         let result = run_blocking("run the host checks", move || {
@@ -315,6 +316,7 @@ impl Engine {
     pub async fn desired_logs(&self, runner: String, lines: u32) -> Result<String, EngineError> {
         self.ensure_live_desired()?;
         let inventory = self.read_inventory().await?;
+        self.resolve_ssh_hosts(&inventory).await;
         let (github, remote) = self.boundaries(&inventory);
         let sleep = self.desired_io.sleep;
         run_blocking("read the runner log", move || {

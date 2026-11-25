@@ -1,10 +1,10 @@
 //! The Mac this app runs on, when the inventory lists it as a host.
 //!
-//! One rule says which host that is. The host's written `ssh` target is
-//! `localhost`, `127.0.0.1` or `::1`, or the name SSH connects to (its `ssh -G`
-//! hostname, else the written target) is exactly the tailnet self node's DNS
-//! name, hostname or a tailnet IP. A target that names a login (`ci@...`) must
-//! name the account the app runs as. A Windows host never is. The app never
+//! One rule says which host that is. The name SSH connects to (its `ssh -G`
+//! hostname, else the written target) is `localhost`, `127.0.0.1` or `::1`, or
+//! exactly the tailnet self node's MagicDNS name, the first label of that name,
+//! or a tailnet IP. A target that names a login (`ci@...`) must name the
+//! account the app runs as. A Windows host never is. The app never
 //! opens SSH to that host: its health probe, runner probe, checks, runner
 //! scripts and runner-up reads run as local processes with `/bin/bash -s`.
 
@@ -56,16 +56,21 @@ pub fn is_this_mac(
     if host.is_windows() || login.is_some_and(|l| Some(l) != app_user) {
         return false;
     }
-    if LOOPBACK.iter().any(|l| written.eq_ignore_ascii_case(l)) {
+    let name = ssh_hostname.unwrap_or(written).trim_end_matches('.');
+    if LOOPBACK.iter().any(|l| name.eq_ignore_ascii_case(l)) {
         return true;
     }
     let Some(node) = tailnet.and_then(self_node) else {
         return false;
     };
-    let name = ssh_hostname.unwrap_or(written).trim_end_matches('.');
-    name.eq_ignore_ascii_case(&node.hostname)
-        || node.dns_name.as_deref().is_some_and(|d| d.eq_ignore_ascii_case(name))
-        || node.ips.iter().any(|ip| ip == name)
+    // MagicDNS names are unique on the tailnet. The OS hostname is not.
+    node.dns_name.as_deref().is_some_and(|dns| {
+        dns.eq_ignore_ascii_case(name)
+            || dns
+                .split('.')
+                .next()
+                .is_some_and(|short| short.eq_ignore_ascii_case(name))
+    }) || node.ips.iter().any(|ip| ip == name)
 }
 
 /// The tailnet node an inventory host's SSH target names. Every host that is

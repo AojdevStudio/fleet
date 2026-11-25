@@ -62,6 +62,9 @@ fn this_mac_is_the_tailnet_self_node_or_a_loopback_target() {
         ("other-login", "darwin-arm64", "admin@localhost"),
         // Written like this Mac, but SSH resolves it to another machine.
         ("redirected", "darwin-arm64", "laptop.example.ts.net"),
+        ("redirected-loopback", "darwin-arm64", "localhost"),
+        // This Mac's OS hostname. Only its MagicDNS name, laptop, counts.
+        ("os-name", "darwin-arm64", "macbook"),
     ]);
     let ssh_hosts = BTreeMap::from([
         ("me".to_string(), "laptop.example.ts.net".to_string()),
@@ -69,8 +72,10 @@ fn this_mac_is_the_tailnet_self_node_or_a_loopback_target() {
             "laptop.example.ts.net".to_string(),
             "builder.example.ts.net".to_string(),
         ),
+        ("localhost".to_string(), "builder.example.ts.net".to_string()),
     ]);
-    let tailnet = tailnet();
+    let mut tailnet = tailnet();
+    tailnet.peers[0].hostname = "macbook".into();
     assert_eq!(
         hosts(&inventory, &ssh_hosts, Some(&tailnet), Some("ci")),
         BTreeSet::from(["alias", "laptop", "loop", "v4", "v6"].map(String::from))
@@ -104,6 +109,10 @@ fn only_this_macs_hosts_get_the_self_node_and_two_of_them_conflict() {
         ("loop", "darwin-arm64", "localhost"),
     ]);
     assert_eq!(conflicts(&twice).into_keys().collect::<Vec<_>>(), ["laptop", "loop"]);
+    // Two loopback entries conflict even without a tailnet read.
+    let loopbacks = self::inventory(&[("a", "darwin-arm64", "localhost"), ("b", "darwin-arm64", "127.0.0.1")]);
+    let offline = crate::fleet_plan::host_identity_conflicts(&loopbacks, &BTreeMap::new(), None, None);
+    assert_eq!(offline.into_keys().collect::<Vec<_>>(), ["a", "b"]);
 }
 
 #[test]

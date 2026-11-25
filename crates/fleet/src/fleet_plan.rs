@@ -196,11 +196,15 @@ pub fn host_identity_conflicts(
     let mut owners: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for host in &inventory.hosts {
         let resolved = host.ssh_target.as_ref().and_then(|target| ssh_hosts.get(target));
-        if let Some(peer) = crate::this_mac::host_peer(host, resolved.map(String::as_str), tailnet, app_user) {
-            owners
-                .entry(format!("peer:{}", peer.node_id))
-                .or_default()
-                .insert(host.id.clone());
+        let resolved_name = resolved.map(String::as_str);
+        // Every host that is this Mac runs on one machine, tailnet or not.
+        let owner = if crate::this_mac::is_this_mac(host, resolved_name, tailnet, app_user) {
+            Some("this-mac".to_string())
+        } else {
+            crate::this_mac::host_peer(host, resolved_name, tailnet, app_user).map(|p| format!("peer:{}", p.node_id))
+        };
+        if let Some(owner) = owner {
+            owners.entry(owner).or_default().insert(host.id.clone());
         }
         for target in host
             .ssh_target
