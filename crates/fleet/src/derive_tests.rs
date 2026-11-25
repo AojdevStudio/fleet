@@ -567,12 +567,13 @@ fn add_machine_and_the_machine_row_agree_when_ssh_sends_a_target_elsewhere() {
     let view = f.view();
     let row = view.machines.iter().find(|m| m.display_name == "box").unwrap();
     assert_eq!(row.id, "ts:nBuild");
+    // `nBox` would repeat the inventory's `ssh = "box.example.ts.net"`, so it isn't offered either.
     let offered: Vec<_> = view.tailnet_devices.iter().map(|d| d.node_id.as_str()).collect();
-    assert_eq!(offered, ["nBox", "nSpare"]);
+    assert_eq!(offered, ["nSpare"]);
 }
 
 #[test]
-fn add_machine_offers_the_same_hostname_device_the_machine_row_did_not_take() {
+fn add_machine_offers_neither_the_row_device_nor_the_device_the_ssh_target_names() {
     let text = "[organization]\nname = \"acme\"\nurl = \"https://github.com/acme\"\nrunner_group = \"trusted\"\n\n\
                 [[hosts]]\nid = \"box\"\nplatform = \"linux-x64\"\nssh = \"box.example.ts.net.\"\nroot = \"~/gh-runners/acme\"\n\
                 service_mode = \"systemd\"\nlabels = [\"fleet\", \"linux-build\"]\n";
@@ -594,13 +595,13 @@ fn add_machine_offers_the_same_hostname_device_the_machine_row_did_not_take() {
     ]);
     let view = f.view();
     let row = view.machines.iter().find(|m| m.display_name == "box").unwrap();
-    let other = match row.id.as_str() {
-        "ts:nBox" => "nBox1",
-        "ts:nBox1" => "nBox",
-        id => panic!("the box row matched no box device: {id}"),
-    };
-    let offered: Vec<_> = view.tailnet_devices.iter().map(|d| d.node_id.as_str()).collect();
-    assert_eq!(offered, [other]);
+    assert!(
+        ["ts:nBox", "ts:nBox1"].contains(&row.id.as_str()),
+        "the box row matched no box device: {}",
+        row.id
+    );
+    // The row's device is taken, and `nBox` would repeat `ssh = "box.example.ts.net."`.
+    assert!(view.tailnet_devices.is_empty(), "{:?}", view.tailnet_devices);
 }
 
 #[test]

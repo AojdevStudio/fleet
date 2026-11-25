@@ -46,6 +46,31 @@ pub(crate) fn unmatched_host_names_device<'a>(
     })
 }
 
+/// Whether some host's written or `ssh -G` SSH name is exactly `peer`'s MagicDNS name or one of its
+/// tailnet IPs. Such a device's entry would repeat an SSH target the inventory already has, so it
+/// is never offered, whichever device that host's machine row shows.
+pub(crate) fn ssh_target_reaches_device(
+    hosts: &[Host],
+    ssh_hosts: &BTreeMap<String, String>,
+    peer: &TailnetPeer,
+) -> bool {
+    let device: HashSet<String> = peer
+        .dns_name
+        .as_deref()
+        .into_iter()
+        .chain(peer.ips.iter().map(String::as_str))
+        .map(normalized)
+        .collect();
+    hosts.iter().any(|host| {
+        let written = host.ssh_target.as_deref();
+        let resolved = written.and_then(|t| ssh_hosts.get(t)).map(String::as_str);
+        [written, resolved]
+            .into_iter()
+            .flatten()
+            .any(|name| device.contains(&normalized(name)))
+    })
+}
+
 /// A DNS name's first label. An IP address has none, so it stays whole.
 fn first_label(name: &str) -> &str {
     if name.parse::<IpAddr>().is_ok() {

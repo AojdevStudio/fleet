@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::add_machine::{TailnetDeviceView, device_view, unmatched_host_names_device};
+use crate::add_machine::{TailnetDeviceView, device_view, ssh_target_reaches_device, unmatched_host_names_device};
 use crate::machine::{MachineReport, OsFamily};
 use chrono::{DateTime, Utc};
 
@@ -130,8 +130,9 @@ pub(super) fn assemble(
 }
 
 /// Tailnet devices for Add machine, by name: those no inventory host names. A host that
-/// `peer_for_host` matches excludes that device only, as its machine row shows it. Entries never
-/// reuse an inventory host ID.
+/// `peer_for_host` matches excludes that device only, as its machine row shows it. A device whose
+/// exact name or IP is already some host's SSH target is never offered. Entries never reuse an
+/// inventory host ID.
 fn devices(
     peers: &[TailnetPeer],
     inventory: &Inventory,
@@ -152,6 +153,7 @@ fn devices(
     let mut unnamed: Vec<_> = peers
         .iter()
         .filter(|p| !matched.contains(p.node_id.as_str()))
+        .filter(|p| !ssh_target_reaches_device(&inventory.hosts, ssh_hosts, p))
         .filter(|p| !unmatched_host_names_device(unmatched.iter().copied(), ssh_hosts, p))
         .collect();
     unnamed.sort_by_key(|p| (p.hostname.to_lowercase(), p.node_id.clone()));
