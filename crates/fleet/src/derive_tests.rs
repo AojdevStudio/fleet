@@ -56,6 +56,7 @@ impl Fixture {
         self.obs.github.entry("acme".into()).or_default().jobs = Some(Timed::new(
             at,
             JobScan {
+                started_at: at,
                 repos_scanned: vec!["web".into()],
                 truncated: false,
                 jobs,
@@ -260,7 +261,7 @@ fn a_job_is_stuck_after_waiting_past_the_limit_only_while_a_matching_runner_is_i
         ))
     );
 
-    // The wait counts up to the last job scan, since the job may have started after it.
+    // The wait counts up to when the last job scan began, since the job may have started after it.
     f.jobs(
         ago(6 * 60),
         vec![created(limit + 4, job(12, None, "queued", MAC, None))],
@@ -271,6 +272,18 @@ fn a_job_is_stuck_after_waiting_past_the_limit_only_while_a_matching_runner_is_i
         stuck(&f.view(), 12).map(|s| s.reason),
         Some(QueueStuckReason::WaitedPastLimit)
     );
+    // A slow scan that finished past the limit but began before it.
+    f.jobs(ago(20), vec![created(limit + 1, job(12, None, "queued", MAC, None))]);
+    f.obs
+        .github
+        .get_mut("acme")
+        .unwrap()
+        .jobs
+        .as_mut()
+        .unwrap()
+        .value
+        .started_at = ago(140);
+    assert_eq!(stuck(&f.view(), 12), None);
     f.jobs(
         ago(20),
         vec![

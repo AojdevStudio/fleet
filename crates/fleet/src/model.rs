@@ -241,6 +241,9 @@ pub struct GhRunner {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct JobScan {
+    /// When the scan began. A queued job may start while the scan runs, so its
+    /// wait is counted only up to here.
+    pub started_at: DateTime<Utc>,
     pub repos_scanned: Vec<String>,
     /// True when repositories, runs, or jobs were skipped by a cap or access failure.
     pub truncated: bool,
@@ -506,8 +509,8 @@ pub struct JobView {
 #[serde(rename_all = "camelCase")]
 pub struct QueueView {
     pub jobs: Vec<QueuedJobView>,
-    /// Queued jobs whose labels no self-hosted runner in the org could ever match
-    /// (typically GitHub-hosted `ubuntu-latest`). Counted, not listed.
+    /// Queued jobs that match no observed runner by label and don't ask for
+    /// `self-hosted` (typically GitHub-hosted `ubuntu-latest`). Counted, not listed.
     pub other_queued: u32,
     /// False when job data is missing or stale for some org.
     pub complete: bool,
@@ -523,8 +526,9 @@ pub struct QueuedJobView {
     pub org: String,
     pub job: JobView,
     pub created_at: Option<DateTime<Utc>>,
-    /// Runners that can take the job: every job label is on the runner, and a
-    /// repository runner belongs to the job's repository.
+    /// Runners that match the job: every job label is on the runner, and a
+    /// repository runner belongs to the job's repository. Runner-group access
+    /// isn't checked.
     pub compatible_runners: Vec<String>,
     pub compatible_online: u32,
     pub compatible_idle: u32,

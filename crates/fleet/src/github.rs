@@ -494,6 +494,7 @@ impl GithubClient {
         kind: AccountKind,
         scope: &RepoScope,
     ) -> Result<JobScan, GithubError> {
+        let started_at = chrono::Utc::now();
         let mut truncated = false;
         let repos = match scope {
             RepoScope::None => return Ok(JobScan::default()),
@@ -546,6 +547,7 @@ impl GithubClient {
         }
         jobs.sort_by_key(|j| j.id);
         Ok(JobScan {
+            started_at,
             repos_scanned: repos,
             truncated,
             jobs,

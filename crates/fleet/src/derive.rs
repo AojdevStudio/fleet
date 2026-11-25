@@ -7,7 +7,7 @@
 //! - A current job is shown only when GitHub's jobs API links it to the runner.
 //! - Elapsed time alone never marks a running job as stuck. A queued job is
 //!   stuck when no runner matches it, or when it had waited past
-//!   [`STUCK_AFTER`] at the last job scan while a matching runner is idle.
+//!   [`STUCK_AFTER`] when the last job scan began while a matching runner is idle.
 
 use std::collections::{HashMap, HashSet};
 
@@ -467,7 +467,11 @@ fn queue_view(
                 Some(QueueStuckReason::OtherRepository)
             } else if online.is_empty() {
                 Some(QueueStuckReason::RunnersOffline)
-            } else if idle > 0 && job.created_at.is_some_and(|at| jobs.at - at > STUCK_AFTER) {
+            } else if idle > 0
+                && job
+                    .created_at
+                    .is_some_and(|at| jobs.value.started_at - at > STUCK_AFTER)
+            {
                 Some(QueueStuckReason::WaitedPastLimit)
             } else {
                 None

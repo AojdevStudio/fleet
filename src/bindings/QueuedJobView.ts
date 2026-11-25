@@ -4,8 +4,9 @@ import type { QueueStuck } from "./QueueStuck";
 
 export type QueuedJobView = { org: string, job: JobView, createdAt: string | null, 
 /**
- * Runners that can take the job: every job label is on the runner, and a
- * repository runner belongs to the job's repository.
+ * Runners that match the job: every job label is on the runner, and a
+ * repository runner belongs to the job's repository. Runner-group access
+ * isn't checked.
  */
 compatibleRunners: Array<string>, compatibleOnline: number, compatibleIdle: number, 
 /**

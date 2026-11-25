@@ -3,8 +3,8 @@ import type { QueuedJobView } from "./QueuedJobView";
 
 export type QueueView = { jobs: Array<QueuedJobView>, 
 /**
- * Queued jobs whose labels no self-hosted runner in the org could ever match
- * (typically GitHub-hosted `ubuntu-latest`). Counted, not listed.
+ * Queued jobs that match no observed runner by label and don't ask for
+ * `self-hosted` (typically GitHub-hosted `ubuntu-latest`). Counted, not listed.
  */
 otherQueued: number, 
 /**

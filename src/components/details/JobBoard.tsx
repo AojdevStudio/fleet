@@ -33,7 +33,7 @@ export function JobBoard({ view }: { view: FleetView }) {
           {board.upNext.map((q) => <QueuedRow key={`${q.org}:${q.job.id}`} q={q} />)}
         </Column>
         <Column title="Stuck" tone="warn" count={board.stuck.length}
-          note={`No runner matches, or over ${limit} min with one idle`}
+          note={`No match online, or over ${limit} min with one idle`}
           empty="Nothing is stuck.">
           {board.stuck.map((q) => <QueuedRow key={`${q.org}:${q.job.id}`} q={q} />)}
         </Column>

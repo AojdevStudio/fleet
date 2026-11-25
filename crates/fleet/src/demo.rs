@@ -196,6 +196,7 @@ pub fn dataset(now: DateTime<Utc>) -> (AppConfig, Observations) {
             jobs: Some(Timed::new(
                 ago(21),
                 JobScan {
+                    started_at: ago(23),
                     repos_scanned: vec![
                         "ios-app".into(),
                         "web".into(),

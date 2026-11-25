@@ -95,7 +95,7 @@ for any repository. `compatibleOnline` and `compatibleIdle` count the online and
 | `otherRepository` | Runners have the job's labels, but each is registered to another repository |
 | `noLabelMatch` | No observed runner has every label the job asks for |
 | `runnersOffline` | Every matching runner is offline or has no recent status |
-| `waitedPastLimit` | A matching runner is idle, and the job had waited over `stuckAfterSecs` (30 minutes) at the last job scan |
+| `waitedPastLimit` | A matching runner is idle, and the job had waited over `stuckAfterSecs` (30 minutes) when the last job scan began |
 
 A job waiting while every matching runner is working is not stuck. A job without a
 creation time is never `waitedPastLimit`. Runner-group access isn't in the API, so a job can
