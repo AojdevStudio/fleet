@@ -86,13 +86,10 @@ impl Engine {
 
         // Routes come from this inventory read, so a host edited since the
         // view was built waits for the next poll instead of taking the old route.
-        let (inventory, this_mac) = match self.read_inventory().await {
-            Ok(inventory) => {
-                let this_mac = self.resolve_ssh_hosts(&inventory).await.this_mac;
-                (Some(inventory), this_mac)
-            }
-            Err(_) => (None, Default::default()),
+        let Ok(inventory) = self.read_inventory().await else {
+            return;
         };
+        let this_mac = self.resolve_ssh_hosts(&inventory).await.this_mac;
         let view = self.view();
         let targets = view
             .machines
@@ -101,7 +98,7 @@ impl Engine {
             .filter_map(|m| m.desired.map(|d| (d.host, m.tailnet)))
             .filter(|(host, tailnet)| this_mac.contains(&host.id) || tailnet.as_ref().is_none_or(|p| p.online))
             .filter(|(host, _)| host.enabled)
-            .filter(|(host, _)| inventory.as_ref().is_none_or(|i| i.hosts.contains(host)))
+            .filter(|(host, _)| inventory.hosts.contains(host))
             .map(|(host, _)| (inventory_machine_key(&host.id), host))
             .collect::<Vec<_>>();
         let mut reads = stream::iter(targets.into_iter().map(|(id, target)| {

@@ -63,7 +63,7 @@ pub fn is_this_mac(host: &Host, resolved: Option<&SshTransportIdentity>, app_use
     };
     host.ssh_transport == SshTransport::Openssh
         && !host.is_windows()
-        && LOOPBACK.contains(&host.ssh_setting.as_str())
+        && written_loopback(host)
         && is_loopback(resolved.hostname())
         && app_user.is_some_and(|user| resolved.user() == Some(user))
 }
@@ -72,7 +72,12 @@ pub fn is_this_mac(host: &Host, resolved: Option<&SshTransportIdentity>, app_use
 /// written `ssh` value is loopback and the app's account is unknown, so it
 /// might be.
 pub fn change_refused(host: &Host, this_mac: &BTreeSet<String>, app_user: Option<&str>) -> bool {
-    this_mac.contains(&host.id) || (app_user.is_none() && LOOPBACK.contains(&host.ssh_setting.as_str()))
+    this_mac.contains(&host.id) || (app_user.is_none() && written_loopback(host))
+}
+
+/// Whether the host's written `ssh` value is one this Mac can have.
+pub fn written_loopback(host: &Host) -> bool {
+    LOOPBACK.contains(&host.ssh_setting.as_str())
 }
 
 /// The ids of the inventory hosts that are this Mac. `resolved` maps each

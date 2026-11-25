@@ -76,6 +76,8 @@ impl Default for DesiredIo {
 pub(super) struct SshResolution {
     pub(super) transports: BTreeMap<String, SshTransportIdentity>,
     pub(super) this_mac: BTreeSet<String>,
+    /// The app's account as this resolution read it, so routing and refusals agree.
+    account: Option<&'static str>,
 }
 
 impl SshResolution {
@@ -89,8 +91,8 @@ impl SshResolution {
 }
 
 /// Refuses every runner change on this Mac, and on a loopback host while the app's account is unknown.
-fn refuse_this_mac(this_mac: &BTreeSet<String>, host: &Host) -> Result<(), EngineError> {
-    if crate::this_mac::change_refused(host, this_mac, crate::this_mac::app_user()) {
+fn refuse_this_mac(ssh: &SshResolution, host: &Host) -> Result<(), EngineError> {
+    if crate::this_mac::change_refused(host, &ssh.this_mac, ssh.account) {
         return Err(EngineError::Invalid(crate::this_mac::CHANGE_REFUSED.into()));
     }
     Ok(())
@@ -271,9 +273,11 @@ impl Engine {
                 return SshResolution::default();
             }
         };
+        let account = crate::this_mac::app_user();
         let resolution = SshResolution {
-            this_mac: crate::this_mac::hosts(inventory, &resolved, crate::this_mac::app_user()),
+            this_mac: crate::this_mac::hosts(inventory, &resolved, account),
             transports: resolved,
+            account,
         };
         let mut store = self.desired.locked();
         store.ssh_hosts = resolution.hostnames();
@@ -373,7 +377,7 @@ impl Engine {
         let host_id = request_host(&request, &inventory)?;
         let host = inventory.find_host(&host_id).map_err(|e| EngineError::NotFound(e.0))?;
         let ssh = self.resolve_ssh_hosts(&inventory).await;
-        refuse_this_mac(&ssh.this_mac, host)?;
+        refuse_this_mac(&ssh, host)?;
         self.refuse_disabled(&request)?;
         let snapshot = self
             .fresh_snapshot(&inventory, Some(&host_id), ssh.this_mac.clone())
@@ -481,7 +485,7 @@ impl Engine {
         let host_id = request_host(&reviewed.request, &inventory)?;
         let host = inventory.find_host(&host_id).map_err(|e| EngineError::NotFound(e.0))?;
         let ssh = self.resolve_ssh_hosts(&inventory).await;
-        refuse_this_mac(&ssh.this_mac, host)?;
+        refuse_this_mac(&ssh, host)?;
         if host.ssh_transport == SshTransport::Openssh {
             let transport = host.ssh_target.as_ref().and_then(|target| ssh.transports.get(target));
             if transport.is_none() || transport != review.ssh_transport.as_ref() {

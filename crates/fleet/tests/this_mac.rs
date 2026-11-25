@@ -323,6 +323,19 @@ async fn a_runner_change_on_this_mac_is_refused() {
 }
 
 #[tokio::test]
+async fn an_entry_edited_away_from_localhost_stops_being_this_mac_before_the_next_resolve() {
+    let f = fixture(&format!("{ORGANIZATION}{}{MINI}", laptop("localhost")));
+    check_everything(&f).await;
+    assert!(machine(&f.engine, "laptop").this_mac);
+    let path = f._dir.path().join("fleet.toml");
+    std::fs::write(&path, format!("{ORGANIZATION}{}{MINI}", laptop("laptop-remote"))).unwrap();
+    // The view reloads the edited file before any new SSH resolution and drops the old route.
+    let laptop = machine(&f.engine, "laptop");
+    assert_eq!(laptop.desired.unwrap().host.ssh_setting, "laptop-remote");
+    assert!(!laptop.this_mac);
+}
+
+#[tokio::test]
 async fn a_remote_peer_that_shares_this_macs_hostname_still_matches() {
     let f = fixture(&format!("{ORGANIZATION}{}{MINI}", laptop("localhost")));
     {
