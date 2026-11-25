@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::desired::model::{DoctorCheck, FleetSnapshot, Host, Inventory, Organization, PlanItem, StatusRow};
-use crate::model::{TailnetPeer, TailnetSnapshot};
+use crate::model::TailnetPeer;
 
 /// A change the user can review and run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -150,6 +150,8 @@ pub struct FleetPlanInputs {
     pub host_checked_at: BTreeMap<String, DateTime<Utc>>,
     /// SSH target → the hostname SSH resolves it to.
     pub ssh_hosts: BTreeMap<String, String>,
+    /// Inventory hosts that are this Mac ([`crate::this_mac::hosts`]).
+    pub this_mac_hosts: BTreeSet<String>,
     pub doctor: Option<DoctorView>,
     pub refreshing: bool,
     pub doctor_running: bool,
@@ -186,22 +188,20 @@ fn peer_named<'a>(name: &str, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPee
 }
 
 /// Hosts that share a tailnet peer or SSH destination must not own independent execution targets.
-/// Peers come from [`crate::this_mac::host_peer`], so two hosts that are both this Mac conflict.
+/// Two hosts that are both this Mac conflict too.
 pub fn host_identity_conflicts(
     inventory: &Inventory,
     ssh_hosts: &BTreeMap<String, String>,
-    tailnet: Option<&TailnetSnapshot>,
-    app_user: Option<&str>,
+    peers: &[TailnetPeer],
+    this_mac_hosts: &BTreeSet<String>,
 ) -> BTreeMap<String, String> {
     let mut owners: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for host in &inventory.hosts {
         let resolved = host.ssh_target.as_ref().and_then(|target| ssh_hosts.get(target));
-        let resolved_name = resolved.map(String::as_str);
-        // Every host that is this Mac runs on one machine, tailnet or not.
-        let owner = if crate::this_mac::is_this_mac(host, resolved_name, tailnet, app_user) {
+        let owner = if this_mac_hosts.contains(&host.id) {
             Some("this-mac".to_string())
         } else {
-            crate::this_mac::host_peer(host, resolved_name, tailnet, app_user).map(|p| format!("peer:{}", p.node_id))
+            peer_for_host(host, resolved.map(String::as_str), peers).map(|p| format!("peer:{}", p.node_id))
         };
         if let Some(owner) = owner {
             owners.entry(owner).or_default().insert(host.id.clone());

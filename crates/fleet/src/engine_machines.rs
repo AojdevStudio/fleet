@@ -92,7 +92,7 @@ impl Engine {
             .machines
             .into_iter()
             .filter(|m| machine.is_none_or(|id| m.id == id || m.preferences_key() == id))
-            .filter(|m| m.tailnet.as_ref().is_none_or(|p| p.online))
+            .filter(|m| m.this_mac || m.tailnet.as_ref().is_none_or(|p| p.online))
             .filter_map(|m| m.desired.map(|d| (d.host, m.this_mac)))
             .filter(|(host, _)| host.enabled)
             .map(|(host, this_mac)| (inventory_machine_key(&host.id), host, this_mac))

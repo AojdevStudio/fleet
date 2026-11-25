@@ -287,14 +287,21 @@ are verified. Don't also enable `services.github-runners` for inventory runners.
 ### The Mac the app runs on
 
 The app can list the Mac it runs on as a fleet machine without SSH to itself, so Remote Login
-can stay off. A host is this Mac when the name SSH connects to (what `ssh -G` resolves, else
-the written target) is `localhost`, `127.0.0.1` or `::1`, or is exactly this Mac's MagicDNS
-name, the first label of that name, or a tailnet IP. The OS hostname doesn't count, and neither
-does a longer name that only starts with the same label. A target that names a login, such as `ci@localhost`, must name the
-account the app runs as, because local scripts run as that account. A Windows host never is, and
-two inventory hosts that are both this Mac are an identity conflict. For that host the app runs the same health probe, runner probe, checks,
-runner scripts and runner-up reads as local processes (`/bin/bash -s`) instead of over SSH. Its
-runners link by their `host-<id>` label as on any host.
+can stay off. A host is this Mac only when all of these hold:
+
+- Its `ssh` target is exactly `localhost`, `127.0.0.1` or `::1`, with no `user@` part.
+- Its `ssh_transport` is `openssh` (the default), and it isn't a Windows host.
+- `ssh -G` for that target still names a loopback address as its `hostname`, and its `user` is
+  the account the app runs as. A `HostName` or `User` line in `~/.ssh/config` can change either.
+
+Any other host is checked over SSH, even one named like this Mac on the tailnet. Two inventory
+hosts that are both this Mac are an identity conflict.
+
+The app only reads this Mac. It runs the same health probe, runner probe, checks, runner logs
+and runner-up reads as local processes (`/bin/bash -s`), and Tailscale's own status never hides
+it. It refuses every runner change there (apply, restart, retire, decommission) with "The app
+doesn't change runners on the Mac it runs on. Use Runner Fleet on this Mac." Its runners link by
+their `host-<id>` label as on any host.
 
 ```toml
 [[hosts]]

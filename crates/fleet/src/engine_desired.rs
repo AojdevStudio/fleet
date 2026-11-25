@@ -155,33 +155,43 @@ impl Engine {
             .map_err(|e| EngineError::Invalid(e.0))
     }
 
-    /// The `gh` and SSH boundaries. The host that is this Mac goes to the local runner instead of SSH.
+    /// The `gh` and SSH boundaries for reads. The host that is this Mac is read locally instead of over SSH.
     fn boundaries(&self, inventory: &Inventory) -> (Arc<dyn FleetGithub>, Arc<dyn FleetRemote>) {
         let (github, ssh) = (self.desired_io.boundaries)(inventory);
         let remote = crate::this_mac::LocalOrSsh {
             ssh,
             local: self.this_mac.clone(),
-            local_hosts: self.this_mac_hosts(inventory),
+            local_hosts: self.this_mac_hosts(),
         };
         (github, Arc::new(remote))
     }
 
-    /// The inventory hosts that are this Mac, from the latest tailnet read and SSH resolution.
-    pub(super) fn this_mac_hosts(&self, inventory: &Inventory) -> std::collections::BTreeSet<String> {
-        let ssh_hosts = self.desired.locked().ssh_hosts.clone();
-        crate::this_mac::hosts(
-            inventory,
-            &ssh_hosts,
-            self.obs.read_locked().tailscale.as_ref().map(|t| &t.value),
-            crate::this_mac::app_user().as_deref(),
-        )
+    /// The inventory hosts that are this Mac, from the last SSH resolution.
+    pub(super) fn this_mac_hosts(&self) -> std::collections::BTreeSet<String> {
+        self.desired.locked().this_mac_hosts.clone()
+    }
+
+    /// Refuses every runner change on this Mac. Call it after `resolve_ssh_hosts`.
+    fn refuse_this_mac(&self, host_id: &str) -> Result<(), EngineError> {
+        if self.this_mac_hosts().contains(host_id) {
+            return Err(EngineError::Invalid(crate::this_mac::CHANGE_REFUSED.into()));
+        }
+        Ok(())
     }
 
     fn host_identity_conflict(&self, inventory: &Inventory, host_id: &str) -> Option<String> {
-        let ssh_hosts = self.desired.locked().ssh_hosts.clone();
-        let obs = self.obs.read_locked();
-        let tailnet = obs.tailscale.as_ref().map(|t| &t.value);
-        host_identity_conflicts(inventory, &ssh_hosts, tailnet, crate::this_mac::app_user().as_deref()).remove(host_id)
+        let (ssh_hosts, this_mac_hosts) = {
+            let store = self.desired.locked();
+            (store.ssh_hosts.clone(), store.this_mac_hosts.clone())
+        };
+        let peers = self
+            .obs
+            .read_locked()
+            .tailscale
+            .as_ref()
+            .map(|snapshot| snapshot.value.peers.clone())
+            .unwrap_or_default();
+        host_identity_conflicts(inventory, &ssh_hosts, &peers, &this_mac_hosts).remove(host_id)
     }
 
     fn ensure_live_desired(&self) -> Result<(), EngineError> {
@@ -247,10 +257,14 @@ impl Engine {
                 return BTreeMap::new();
             }
         };
-        self.desired.locked().ssh_hosts = resolved
+        let this_mac_hosts = crate::this_mac::hosts(inventory, &resolved, crate::this_mac::app_user().as_deref());
+        let mut store = self.desired.locked();
+        store.ssh_hosts = resolved
             .iter()
             .map(|(target, identity)| (target.clone(), identity.hostname().to_string()))
             .collect();
+        store.this_mac_hosts = this_mac_hosts;
+        drop(store);
         resolved
     }
 
@@ -341,6 +355,7 @@ impl Engine {
         let host_id = request_host(&request, &inventory)?;
         let host = inventory.find_host(&host_id).map_err(|e| EngineError::NotFound(e.0))?;
         let transports = self.resolve_ssh_hosts(&inventory).await;
+        self.refuse_this_mac(&host_id)?;
         let snapshot = self.fresh_snapshot(&inventory, Some(&host_id)).await?;
         self.desired
             .locked()
@@ -447,6 +462,7 @@ impl Engine {
         let host_id = request_host(&reviewed.request, &inventory)?;
         let host = inventory.find_host(&host_id).map_err(|e| EngineError::NotFound(e.0))?;
         let transports = self.resolve_ssh_hosts(&inventory).await;
+        self.refuse_this_mac(&host_id)?;
         if host.ssh_transport == SshTransport::Openssh {
             let transport = host.ssh_target.as_ref().and_then(|target| transports.get(target));
             if transport.is_none() || transport != review.ssh_transport.as_ref() {
@@ -501,7 +517,8 @@ impl Engine {
     fn spawn_change(self: &Arc<Self>, inventory: Inventory, request: ChangeRequest, host_id: String, secrets: Secrets) {
         let engine = self.clone();
         tokio::spawn(async move {
-            let (github, remote) = engine.boundaries(&inventory);
+            // Changes go over SSH only: the review and the recheck refused this Mac.
+            let (github, remote) = (engine.desired_io.boundaries)(&inventory);
             let sleep = engine.desired_io.sleep;
             let result = run_blocking("finish the change", move || {
                 let ops = Ops {

@@ -515,25 +515,13 @@
       }
     },
     {
-      "id": "ts:nLaptop",
+      "id": "inv:dev-laptop",
       "displayName": "dev-laptop",
       "description": null,
-      "host": "dev-laptop",
+      "host": "localhost",
       "os": "macos",
       "osVersion": "macOS 15.6",
-      "tailnet": {
-        "nodeId": "nLaptop",
-        "hostname": "dev-laptop",
-        "dnsName": "dev-laptop.demo.ts.net",
-        "os": "macOS",
-        "ips": [
-          "100.64.0.0"
-        ],
-        "online": true,
-        "lastSeen": null,
-        "tags": [],
-        "sshHostKeys": []
-      },
+      "tailnet": null,
       "thisMac": true,
       "connection": {
         "kind": "connected",
@@ -676,8 +664,8 @@
         "host": {
           "id": "dev-laptop",
           "platform": "darwin-arm64",
-          "sshTarget": "dev-laptop",
-          "sshSetting": "dev-laptop",
+          "sshTarget": "localhost",
+          "sshSetting": "localhost",
           "root": "~/gh-runners/acme-demo",
           "serviceMode": "launchagent",
           "labels": [

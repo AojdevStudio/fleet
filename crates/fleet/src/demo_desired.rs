@@ -73,7 +73,7 @@ runners = [{ name = "mini-03-01", directory = "runner-01" }]
 [[hosts]]
 id = "dev-laptop"
 platform = "darwin-arm64"
-ssh = "dev-laptop"
+ssh = "localhost"
 root = "~/gh-runners/acme-demo"
 service_mode = "launchagent"
 labels = ["fleet", "macos-build"]
@@ -222,6 +222,7 @@ pub fn plan_inputs(now: DateTime<Utc>) -> FleetPlanInputs {
         inventory: Some(Ok(inventory)),
         snapshot: Some(snapshot()),
         checked_at: Some(checked),
+        this_mac_hosts: ["dev-laptop".to_string()].into(),
         ..Default::default()
     }
 }

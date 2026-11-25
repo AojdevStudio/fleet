@@ -73,10 +73,6 @@ pub fn start(app: AppHandle, engine: Arc<Engine>) -> Poller {
         let engine = engine.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(Duration::from_secs(3)).await;
-            // The tailnet read says which host is this Mac, so it isn't checked over SSH.
-            if !engine.tailnet_available() {
-                engine.poll_tailscale().await;
-            }
             if let Err(e) = engine.desired_refresh(None).await {
                 tracing::info!("desired-state check skipped: {e}");
             }

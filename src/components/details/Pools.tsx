@@ -46,7 +46,7 @@ export function Pools({ pools, view }: { pools: RunnerUpPoolsView; view: FleetVi
   );
 }
 
-/** Pool runners under the place their name names, in the coordinator's place order. */
+/** Pool runners under the place their name names. Places render in place id order. */
 function PlaceRunners({ pools, view }: { pools: RunnerUpPoolsView; view: FleetView }) {
   const places = pools.places
     .map((place) => ({ place, runners: view.poolRunners.filter((r) => r.place === place.id) }))
