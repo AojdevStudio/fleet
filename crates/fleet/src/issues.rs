@@ -717,7 +717,7 @@ pub(crate) mod rules {
         use QueueStuckReason::*;
         let (action, kind) = match reason {
             None => (
-                "Wait for GitHub to send the runner list, then open the job on the board.",
+                "Check that the organization's GitHub sign-in can read its runners, then select Check now.",
                 "runners-unknown",
             ),
             Some(OtherRepository) => (
@@ -725,11 +725,11 @@ pub(crate) mod rules {
                 "other-repository",
             ),
             Some(NoLabelMatch) => (
-                "Give a runner every label the job asks for, or change the labels in the workflow.",
+                "Give every label the job asks for to a runner its repository and workflow can use, or change the workflow's labels.",
                 "no-label-match",
             ),
             Some(RunnersOffline) => (
-                "Bring a matching runner online. The board shows which runners match.",
+                "Bring a matching runner online. `compatibleRunners` in /v1/queue names them.",
                 "runners-offline",
             ),
             Some(WaitedPastLimit) => ("Open the job on the board to see why it waits.", "waited-past-limit"),
