@@ -452,7 +452,7 @@ fn discovery_and_demo_cover_current_stale_offline_and_failed_ssh() {
 }
 
 #[test]
-fn add_machine_leaves_out_any_device_a_host_names() {
+fn add_machine_leaves_out_matched_devices_and_any_device_an_unmatched_host_names() {
     let host = |id: &str, ssh: &str, extra: &str| {
         format!(
             "[[hosts]]\nid = \"{id}\"\nplatform = \"linux-x64\"\nssh = \"{ssh}\"\n{extra}root = \"~/gh-runners/acme\"\n\
@@ -461,11 +461,12 @@ fn add_machine_leaves_out_any_device_a_host_names() {
     };
     let text = [
         "[organization]\nname = \"acme\"\nurl = \"https://github.com/acme\"\nrunner_group = \"trusted\"\n".into(),
-        host("alpha", "lan-box.home", ""),
+        host("alpha", "alpha-lan.home", ""),
         host("beta", "runner@Beta-Box.ts.net.", ""),
         host("gamma", "gamma-alias", ""),
         host("delta", "delta.ts.net", "enabled = false\n"),
         host("builder.site", "lan-two.home", ""),
+        host("epsilon", "lan-box.home", ""),
     ]
     .join("\n");
     let mut f = Fixture::new();
@@ -480,7 +481,7 @@ fn add_machine_leaves_out_any_device_a_host_names() {
         ..peer("nGamma", "unrelated", "linux", true)
     };
     f.obs.tailscale.as_mut().unwrap().value.peers.extend([
-        // The host ID names it.
+        // Its host matches no device, and the host ID names it.
         peer("nAlpha", "alpha", "linux", true),
         // Its MagicDNS name is the written SSH target.
         TailnetPeer {
@@ -491,7 +492,7 @@ fn add_machine_leaves_out_any_device_a_host_names() {
         by_ip,
         // A disabled host still names its device.
         peer("nDelta", "delta", "linux", true),
-        // A machine row matches an SSH name by its first label, so the device isn't offered.
+        // The machine row for `epsilon` matches it by its SSH name's first label.
         peer("nLanBox", "lan-box", "linux", true),
         // A host ID is compared whole: `builder.site` doesn't name `builder`.
         peer("nBuilder", "builder", "linux", true),
@@ -500,8 +501,8 @@ fn add_machine_leaves_out_any_device_a_host_names() {
     let view = f.view();
     let offered: Vec<_> = view.tailnet_devices.iter().map(|d| d.node_id.as_str()).collect();
     assert_eq!(offered, ["nBuilder", "nSpare"]);
-    let lan_box = view.machines.iter().find(|m| m.display_name == "alpha").unwrap();
-    assert_eq!(lan_box.id, "ts:nLanBox");
+    let epsilon = view.machines.iter().find(|m| m.display_name == "epsilon").unwrap();
+    assert_eq!(epsilon.id, "ts:nLanBox");
 }
 
 #[test]
@@ -541,7 +542,7 @@ fn pasting_one_entry_keeps_a_device_with_the_same_hostname_offered() {
 }
 
 #[test]
-fn an_ssh_config_that_sends_an_exact_target_elsewhere_excludes_the_real_destination() {
+fn add_machine_and_the_machine_row_agree_when_ssh_sends_a_target_elsewhere() {
     let text = "[organization]\nname = \"acme\"\nurl = \"https://github.com/acme\"\nrunner_group = \"trusted\"\n\n\
                 [[hosts]]\nid = \"box\"\nplatform = \"linux-x64\"\nssh = \"box.example.ts.net\"\nroot = \"~/gh-runners/acme\"\n\
                 service_mode = \"systemd\"\nlabels = [\"fleet\", \"linux-build\"]\n";
@@ -564,8 +565,42 @@ fn an_ssh_config_that_sends_an_exact_target_elsewhere_excludes_the_real_destinat
         peer("nSpare", "spare", "linux", true),
     ]);
     let view = f.view();
+    let row = view.machines.iter().find(|m| m.display_name == "box").unwrap();
+    assert_eq!(row.id, "ts:nBuild");
     let offered: Vec<_> = view.tailnet_devices.iter().map(|d| d.node_id.as_str()).collect();
-    assert_eq!(offered, ["nSpare"]);
+    assert_eq!(offered, ["nBox", "nSpare"]);
+}
+
+#[test]
+fn add_machine_offers_the_same_hostname_device_the_machine_row_did_not_take() {
+    let text = "[organization]\nname = \"acme\"\nurl = \"https://github.com/acme\"\nrunner_group = \"trusted\"\n\n\
+                [[hosts]]\nid = \"box\"\nplatform = \"linux-x64\"\nssh = \"box.example.ts.net.\"\nroot = \"~/gh-runners/acme\"\n\
+                service_mode = \"systemd\"\nlabels = [\"fleet\", \"linux-build\"]\n";
+    let mut f = Fixture::new();
+    f.plan.inventory = Some(Ok(crate::desired::inventory::parse_inventory(
+        text,
+        &Default::default(),
+    )
+    .unwrap()));
+    f.obs.tailscale.as_mut().unwrap().value.peers.extend([
+        TailnetPeer {
+            dns_name: Some("box-1.example.ts.net".into()),
+            ..peer("nBox1", "box", "linux", true)
+        },
+        TailnetPeer {
+            dns_name: Some("box.example.ts.net".into()),
+            ..peer("nBox", "box", "linux", true)
+        },
+    ]);
+    let view = f.view();
+    let row = view.machines.iter().find(|m| m.display_name == "box").unwrap();
+    let offered: Vec<_> = view
+        .tailnet_devices
+        .iter()
+        .map(|d| format!("ts:{}", d.node_id))
+        .collect();
+    assert_eq!(offered.len(), 1);
+    assert_ne!(offered[0], row.id);
 }
 
 #[test]

@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::add_machine::{TailnetDeviceView, device_view, exact_names, inventory_names_device};
+use crate::add_machine::{TailnetDeviceView, device_view, unmatched_host_names_device};
 use crate::machine::{MachineReport, OsFamily};
 use chrono::{DateTime, Utc};
 
@@ -129,18 +129,30 @@ pub(super) fn assemble(
     }
 }
 
-/// Tailnet devices for Add machine, by name: those no inventory host names. Entries never reuse
-/// an inventory host ID.
+/// Tailnet devices for Add machine, by name: those no inventory host names. A host that
+/// `peer_for_host` matches excludes that device only, as its machine row shows it. Entries never
+/// reuse an inventory host ID.
 fn devices(
     peers: &[TailnetPeer],
     inventory: &Inventory,
     ssh_hosts: &BTreeMap<String, String>,
 ) -> Vec<TailnetDeviceView> {
     let mut host_ids = inventory.hosts.iter().map(|h| h.id.clone()).collect();
-    let exact = peers.iter().flat_map(exact_names).collect();
+    let mut matched = HashSet::new();
+    let mut unmatched = Vec::new();
+    for host in &inventory.hosts {
+        let resolved = host.ssh_target.as_deref().and_then(|t| ssh_hosts.get(t));
+        match peer_for_host(host, resolved.map(String::as_str), peers) {
+            Some(peer) => {
+                matched.insert(peer.node_id.as_str());
+            }
+            None => unmatched.push(host),
+        }
+    }
     let mut unnamed: Vec<_> = peers
         .iter()
-        .filter(|p| !inventory_names_device(&inventory.hosts, ssh_hosts, &exact, p))
+        .filter(|p| !matched.contains(p.node_id.as_str()))
+        .filter(|p| !unmatched_host_names_device(unmatched.iter().copied(), ssh_hosts, p))
         .collect();
     unnamed.sort_by_key(|p| (p.hostname.to_lowercase(), p.node_id.clone()));
     unnamed

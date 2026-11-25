@@ -10,59 +10,40 @@ use ts_rs::TS;
 use crate::desired::model::{Host, Platform, SshTransport};
 use crate::model::TailnetPeer;
 
-/// Whether any inventory host plausibly names `peer`, so Add machine leaves it out. An offer is
-/// only a paste suggestion, so any sign of a match is enough. The device's MagicDNS name, its
-/// short name (MagicDNS label or Tailscale hostname) and its tailnet IPs are compared with each
-/// host's `id`, its written `ssh` target without the user part, and the hostname `ssh -G` resolved
-/// that target to. An SSH name also matches by its first DNS label, as `peer_for_host` does for
-/// machine rows, so a device shown as a machine is never offered. The comparison ignores case and
-/// a final dot. Disabled and decommissioned hosts count too, because they are still in the inventory.
-///
-/// A host whose effective SSH name (the one `ssh -G` resolved, else the written target) is exactly
-/// some device's MagicDNS name or tailnet IP (`exact` holds those of every device) names that
-/// device only. Tailscale can give two devices the same hostname, so
-/// pasting one device's entry must not hide the other.
+/// Whether an inventory host that `peer_for_host` matched to no device plausibly names `peer`, so
+/// Add machine leaves it out. Hosts that `peer_for_host` did match are handled by the caller: each
+/// excludes its own device and nothing else, the same device its machine row shows. An offer is
+/// only a paste suggestion, so for the other hosts any sign of a match is enough. The device's
+/// MagicDNS name, its short name (MagicDNS label or Tailscale hostname) and its tailnet IPs are
+/// compared with each host's `id`, its written `ssh` target without the user part, and the
+/// hostname `ssh -G` resolved that target to, also by first DNS label. The comparison ignores case
+/// and a final dot. Disabled and decommissioned hosts count too, because they are still in the
+/// inventory.
 ///
 /// Known limit: an alias that resolves to a LAN address or a LAN name unlike the device's names
 /// doesn't exclude the device, so the user checks before pasting an entry.
-pub(crate) fn inventory_names_device(
-    hosts: &[Host],
+pub(crate) fn unmatched_host_names_device<'a>(
+    hosts: impl IntoIterator<Item = &'a Host>,
     ssh_hosts: &BTreeMap<String, String>,
-    exact: &HashSet<String>,
     peer: &TailnetPeer,
 ) -> bool {
-    let own_exact = exact_names(peer);
     let label = peer.dns_name.as_deref().and_then(|d| d.split('.').next());
-    let device: HashSet<String> = [label, Some(peer.hostname.as_str())]
+    let device: HashSet<String> = [peer.dns_name.as_deref(), label, Some(peer.hostname.as_str())]
         .into_iter()
         .flatten()
-        .map(normalized)
-        .chain(own_exact.iter().cloned())
-        .collect();
-    hosts.iter().any(|host| {
-        let written = host.ssh_target.as_deref();
-        let resolved = written.and_then(|t| ssh_hosts.get(t)).map(String::as_str);
-        let names: Vec<String> = [written, resolved].into_iter().flatten().map(normalized).collect();
-        if let Some(effective) = resolved.or(written).map(normalized)
-            && exact.contains(&effective)
-        {
-            return own_exact.contains(&effective);
-        }
-        device.contains(&normalized(&host.id))
-            || names
-                .iter()
-                .any(|name| device.contains(name) || device.contains(first_label(name)))
-    })
-}
-
-/// A device's MagicDNS name and tailnet IPs, normalized: the names that reach it and no other.
-pub(crate) fn exact_names(peer: &TailnetPeer) -> HashSet<String> {
-    peer.dns_name
-        .as_deref()
-        .into_iter()
         .chain(peer.ips.iter().map(String::as_str))
         .map(normalized)
-        .collect()
+        .collect();
+    hosts.into_iter().any(|host| {
+        let written = host.ssh_target.as_deref();
+        let resolved = written.and_then(|t| ssh_hosts.get(t)).map(String::as_str);
+        device.contains(&normalized(&host.id))
+            || [written, resolved]
+                .into_iter()
+                .flatten()
+                .map(normalized)
+                .any(|name| device.contains(&name) || device.contains(first_label(&name)))
+    })
 }
 
 /// A DNS name's first label. An IP address has none, so it stays whole.
