@@ -131,6 +131,8 @@ struct Fixture {
     /// How many times the fake `ssh -G` ran.
     ssh_resolves: Arc<AtomicUsize>,
     tailnet: Arc<Mutex<TailnetSnapshot>>,
+    /// When set, the fake `tailscale status` fails with this text.
+    tailnet_error: Arc<Mutex<Option<String>>>,
 }
 
 fn fixture(inventory: &str) -> Fixture {
@@ -163,6 +165,8 @@ fn fixture_answering(inventory: &str, local_output: String) -> Fixture {
     let ssh_resolves = Arc::new(AtomicUsize::new(0));
     let resolves = ssh_resolves.clone();
     let snapshot = tailnet.clone();
+    let tailnet_error = Arc::new(Mutex::new(None::<String>));
+    let failure = tailnet_error.clone();
     let engine = Engine::load(dir.path().join("config.json"), Arc::new(MemorySecrets::default()))
         .unwrap()
         .with_machine_source(ssh_health.clone())
@@ -183,8 +187,11 @@ fn fixture_answering(inventory: &str, local_output: String) -> Fixture {
             }),
         })
         .with_tailscale_source(move || {
-            let snapshot = snapshot.lock().unwrap().clone();
-            async move { Ok(snapshot) }
+            let result = match failure.lock().unwrap().clone() {
+                Some(error) => Err(error),
+                None => Ok(snapshot.lock().unwrap().clone()),
+            };
+            async move { result }
         });
     engine.set_inventory_path(Some(path.display().to_string())).unwrap();
     Fixture {
@@ -197,6 +204,7 @@ fn fixture_answering(inventory: &str, local_output: String) -> Fixture {
         ssh_config,
         ssh_resolves,
         tailnet,
+        tailnet_error,
     }
 }
 
@@ -397,7 +405,7 @@ async fn an_entry_at_this_macs_tailnet_ip_conflicts_with_its_loopback_entry() {
             runner: "tailnet-01".into(),
         })
     };
-    // Before the first tailnet read ends, the app can't tell whether the entry is this Mac.
+    // Before a tailnet read succeeds, the app can't tell whether the entry is this Mac.
     let pending = restart_tailnet().await.unwrap();
     assert!(!pending.ready);
     assert!(
@@ -405,6 +413,17 @@ async fn an_entry_at_this_macs_tailnet_ip_conflicts_with_its_loopback_entry() {
         "{:?}",
         pending.blockers
     );
+    // A failed tailnet read doesn't tell the app this Mac's names either.
+    *f.tailnet_error.lock().unwrap() = Some("tailscale status timed out".into());
+    f.engine.poll_tailscale().await;
+    let failed = restart_tailnet().await.unwrap();
+    assert!(!failed.ready);
+    assert!(
+        failed.blockers.iter().any(|b| b.contains("tailnet names yet")),
+        "{:?}",
+        failed.blockers
+    );
+    *f.tailnet_error.lock().unwrap() = None;
     f.engine.poll_tailscale().await;
     let review = restart_tailnet().await.unwrap();
     assert!(!review.ready);
