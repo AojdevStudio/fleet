@@ -14,8 +14,8 @@ use crate::model::TailnetPeer;
 /// The rule for which tailnet devices Add machine offers, sorted by name, each with its entry.
 ///
 /// What it covers:
-/// - `peers` never holds this Mac's own node (the tailnet parser leaves it out), so this Mac is
-///   never offered.
+/// - `peers` never holds this Mac's own node: Tailscale reports it apart from its peers, and
+///   machine assembly also drops the self node by ID. So this Mac is never offered.
 /// - A device that `peer_for_host` gives to an inventory host is not offered. That is the device
 ///   the host's machine row shows.
 /// - A device whose MagicDNS name, tailnet IP, or entry `ssh` value equals any host's written or
@@ -82,16 +82,14 @@ fn unmatched_host_names_device(hosts: &[&Host], ssh_hosts: &BTreeMap<String, Str
     })
 }
 
-/// Whether some host's written or `ssh -G` SSH name is exactly `peer`'s MagicDNS name, one of its
-/// tailnet IPs, or the `ssh` value its entry would use.
+/// Whether some host's written or `ssh -G` SSH name is exactly `peer`'s MagicDNS name or one of
+/// its tailnet IPs. Its entry's `ssh` value is always one of those.
 fn ssh_target_reaches_device(hosts: &[Host], ssh_hosts: &BTreeMap<String, String>, peer: &TailnetPeer) -> bool {
-    let address = peer.address();
     let device: HashSet<String> = peer
         .dns_name
         .as_deref()
         .into_iter()
         .chain(peer.ips.iter().map(String::as_str))
-        .chain([address.as_str()])
         .map(normalized)
         .collect();
     hosts.iter().any(|host| {
@@ -113,15 +111,21 @@ fn first_label(name: &str) -> &str {
 }
 
 /// The host part, lowercase, without a final dot, and an IP address in its canonical spelling.
+/// An `ssh://` URI loses its scheme, user and port.
 fn normalized(name: &str) -> String {
-    let name = name
-        .rsplit('@')
-        .next()
-        .unwrap_or(name)
-        .trim_end_matches('.')
-        .to_ascii_lowercase();
-    let bare = name.trim_start_matches('[').trim_end_matches(']');
-    bare.parse::<IpAddr>().map_or(name.clone(), |ip| ip.to_string())
+    let name = name.trim().to_ascii_lowercase();
+    let (uri, name) = name
+        .strip_prefix("ssh://")
+        .map_or((false, name.as_str()), |rest| (true, rest));
+    let host = name.rsplit('@').next().unwrap_or(name);
+    let host = match host.strip_prefix('[') {
+        Some(bracketed) => bracketed.split(']').next().unwrap_or(bracketed),
+        None if uri => host.split(':').next().unwrap_or(host),
+        None => host,
+    }
+    .trim_end_matches('.');
+    host.parse::<IpAddr>()
+        .map_or_else(|_| host.to_string(), |ip| ip.to_string())
 }
 
 /// A tailnet device no inventory host claims, with the `[[hosts]]` entry that adds it.
@@ -134,7 +138,8 @@ pub struct TailnetDeviceView {
     pub inventory_entry: String,
 }
 
-/// `None` for a device no inventory platform fits, such as a phone. `taken` holds the host IDs
+/// `None` for a device no inventory platform fits, such as a phone, and for a device with neither
+/// a MagicDNS name nor a tailnet IP, since its entry would have no unique `ssh` target. `taken` holds the host IDs
 /// already in use, so a pasted entry never duplicates one. This entry's ID is added to it.
 fn device_view(peer: &TailnetPeer, organization: &str, taken: &mut HashSet<String>) -> Option<TailnetDeviceView> {
     let platform = match peer.os.to_ascii_lowercase().as_str() {
@@ -143,6 +148,7 @@ fn device_view(peer: &TailnetPeer, organization: &str, taken: &mut HashSet<Strin
         "windows" => Platform::WindowsX64,
         _ => return None,
     };
+    let ssh = peer.dns_name.clone().or_else(|| peer.ips.first().cloned())?;
     let root = if platform.is_windows() {
         format!("C:\\gh-runners\\{organization}")
     } else {
@@ -163,7 +169,7 @@ fn device_view(peer: &TailnetPeer, organization: &str, taken: &mut HashSet<Strin
         "[[hosts]]\nid = {}\nplatform = {}{platform_note}\nssh = {}\nssh_transport = {}\nroot = {}\nservice_mode = {}\n",
         quote(&unique_host_id(&peer.hostname, taken)),
         quote(platform.as_str()),
-        quote(&peer.address()),
+        quote(&ssh),
         quote(transport.as_str()),
         quote(&root),
         quote(platform.service_modes()[0].as_str()),
@@ -267,9 +273,15 @@ mod tests {
     }
 
     #[test]
-    fn devices_no_platform_fits_are_not_offered() {
+    fn devices_no_platform_fits_or_without_an_ssh_target_are_not_offered() {
         assert!(device_view(&peer("phone", "iOS", Vec::new()), "acme", &mut HashSet::new()).is_none());
         assert!(device_view(&peer("tv", "android", Vec::new()), "acme", &mut HashSet::new()).is_none());
+        let bare = TailnetPeer {
+            dns_name: None,
+            ips: Vec::new(),
+            ..peer("bare", "linux", Vec::new())
+        };
+        assert!(device_view(&bare, "acme", &mut HashSet::new()).is_none());
     }
 
     #[test]

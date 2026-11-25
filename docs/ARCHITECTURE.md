@@ -49,8 +49,10 @@ machine joins the fleet only when the inventory gets a `[[hosts]]` entry for it
 ([FLEET.md](FLEET.md)). Without a loaded inventory there are no machines.
 Add machine (`add_machine.rs`) lists desktop and server devices by name from the tailnet
 snapshot, in `FleetView.tailnetDevices`, each with a `[[hosts]]` entry whose ID no inventory host
-or other entry uses. `tailnet_devices` holds the whole matching rule in one function. This Mac's
-own node is never a peer, so it is never offered. A host that `peer_for_host` matches leaves out
+or other entry uses. `tailnet_devices` holds the whole matching rule in one function. Tailscale
+reports this Mac apart from its peers, and machine assembly also drops the self node by ID, so
+this Mac is never offered. An entry's `ssh` is the device's MagicDNS name, else its tailnet IP. A
+device with neither gets no entry. A host that `peer_for_host` matches leaves out
 the device its machine row shows. A device whose exact MagicDNS name or tailnet IP is already a
 host's SSH target is never offered, so a pasted entry can't repeat one. For a host matched to no
 device, any device the host plausibly names (by `id`, written SSH target or `ssh -G` hostname,
