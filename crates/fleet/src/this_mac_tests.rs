@@ -119,6 +119,32 @@ fn two_hosts_that_are_both_this_mac_conflict() {
     assert_eq!(conflicts.into_keys().collect::<Vec<_>>(), ["a", "b"]);
 }
 
+#[test]
+fn the_ssh_hostname_decides_whether_an_entry_is_this_macs_tailnet_name() {
+    use crate::model::TailnetPeer;
+    // `alias` is written as this Mac's tailnet IP, but `ssh -G` sends it to the box that `box` names.
+    let inventory = inventory(&[
+        ("alias", "darwin-arm64", "100.64.0.1"),
+        ("box", "darwin-arm64", "box.example.ts.net"),
+    ]);
+    let ssh_hosts = BTreeMap::from([("100.64.0.1".to_string(), "100.64.0.9".to_string())]);
+    let peers = [TailnetPeer {
+        node_id: "nBox".into(),
+        hostname: "box".into(),
+        dns_name: Some("box.example.ts.net".into()),
+        os: "macOS".into(),
+        ips: vec!["100.64.0.9".into()],
+        online: true,
+        last_seen: None,
+        tags: vec![],
+        ssh_host_keys: vec![],
+    }];
+    let self_names = BTreeSet::from(["100.64.0.1".to_string()]);
+    let conflicts =
+        crate::fleet_plan::host_identity_conflicts(&inventory, &ssh_hosts, &peers, &BTreeSet::new(), &self_names);
+    assert_eq!(conflicts.into_keys().collect::<Vec<_>>(), ["alias", "box"]);
+}
+
 fn routed(inventory: &Inventory) -> (LocalOrSsh, FakeFleet, Arc<RecordingRunner>) {
     let ssh = FakeFleet::default();
     let local = RecordingRunner::new(|_| "RFD\tdisk\tpass\tlocal\n".into());

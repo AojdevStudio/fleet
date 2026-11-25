@@ -187,9 +187,17 @@ fn peer_named<'a>(name: &str, peers: &'a [TailnetPeer]) -> Option<&'a TailnetPee
         })
 }
 
+/// Whether the host's SSH destination is exactly this Mac's tailnet name or IP
+/// ([`crate::model::TailnetSnapshot::self_names`]). The `ssh -G` hostname decides when it is known.
+pub fn is_self_destination(host: &Host, ssh_hostname: Option<&str>, self_names: &BTreeSet<String>) -> bool {
+    ssh_hostname
+        .or_else(|| host.ssh_target.as_deref().and_then(|target| target.rsplit('@').next()))
+        .is_some_and(|name| self_names.contains(&name.trim_end_matches('.').to_ascii_lowercase()))
+}
+
 /// Hosts that share a tailnet peer or SSH destination must not own independent execution targets.
-/// Two hosts that are both this Mac conflict too: a host in `this_mac_hosts`, and a host whose
-/// SSH name is exactly one of `self_names` ([`crate::model::TailnetSnapshot::self_names`]).
+/// Two hosts that are both this Mac conflict too: a host in `this_mac_hosts`, and a host
+/// whose destination [`is_self_destination`].
 pub fn host_identity_conflicts(
     inventory: &Inventory,
     ssh_hosts: &BTreeMap<String, String>,
@@ -214,7 +222,9 @@ pub fn host_identity_conflicts(
                     .to_ascii_lowercase()
             })
             .collect();
-        let owner = if this_mac_hosts.contains(&host.id) || hostnames.iter().any(|name| self_names.contains(name)) {
+        let owner = if this_mac_hosts.contains(&host.id)
+            || is_self_destination(host, resolved.map(String::as_str), self_names)
+        {
             Some("this-mac".to_string())
         } else {
             peer_for_host(host, resolved.map(String::as_str), peers).map(|p| format!("peer:{}", p.node_id))

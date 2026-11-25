@@ -12,7 +12,8 @@ use crate::desired::model::{FleetPlanAction, Host, Inventory, PlanItem, Platform
 use crate::desired::plan::generate_plan;
 use crate::desired::state::build_status_rows;
 use crate::fleet_plan::{
-    DesiredRunnerRole, FleetPlanInputs, MachineDesired, RunnerDesired, host_identity_conflicts, peer_for_host,
+    DesiredRunnerRole, FleetPlanInputs, MachineDesired, RunnerDesired, host_identity_conflicts, is_self_destination,
+    peer_for_host,
 };
 use crate::model::*;
 
@@ -136,7 +137,8 @@ fn slots<'a>(
             .and_then(|t| plan.ssh_hosts.get(t))
             .map(String::as_str);
         let this_mac = plan.this_mac_hosts.contains(&host.id);
-        let peer = if this_mac {
+        // An entry at this Mac's tailnet name is no remote peer, even one that shares its short name.
+        let peer = if this_mac || is_self_destination(host, resolved, self_names) {
             None
         } else {
             peer_for_host(host, resolved, peers)

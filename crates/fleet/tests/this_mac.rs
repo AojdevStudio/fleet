@@ -433,6 +433,20 @@ async fn a_remote_peer_that_shares_this_macs_hostname_still_matches() {
 }
 
 #[tokio::test]
+async fn an_entry_at_this_macs_magicdns_name_takes_no_remote_peer_that_shares_its_short_name() {
+    let f = fixture(&format!("{ORGANIZATION}{}{MINI}", laptop("laptop.demo.ts.net")));
+    {
+        let mut other = peer("nOther", "laptop");
+        other.dns_name = Some("laptop-1.demo.ts.net".into());
+        f.tailnet.lock().unwrap().peers.push(other);
+    }
+    check_everything(&f).await;
+    let laptop = machine(&f.engine, "laptop");
+    assert!(!laptop.this_mac);
+    assert_eq!(laptop.tailnet, None);
+}
+
+#[tokio::test]
 async fn a_host_that_becomes_this_mac_after_review_is_refused_at_execute() {
     let f = fixture(&format!("{ORGANIZATION}{LAPTOP_WITH_RUNNER}{MINI}"));
     f.ssh_config.lock().unwrap().user = other_user();
