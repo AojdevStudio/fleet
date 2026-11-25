@@ -505,6 +505,42 @@ fn add_machine_leaves_out_any_device_a_host_names() {
 }
 
 #[test]
+fn pasting_one_entry_keeps_a_device_with_the_same_hostname_offered() {
+    let org = "[organization]\nname = \"acme\"\nurl = \"https://github.com/acme\"\nrunner_group = \"trusted\"\n";
+    let seed = "[[hosts]]\nid = \"seed\"\nplatform = \"linux-x64\"\nssh = \"seed.lan\"\nroot = \"~/gh-runners/acme\"\n\
+                service_mode = \"systemd\"\nlabels = [\"fleet\", \"linux-build\"]\n";
+    let fixture = |inventory: &str| {
+        let mut f = Fixture::new();
+        f.plan.inventory = Some(Ok(crate::desired::inventory::parse_inventory(
+            inventory,
+            &Default::default(),
+        )
+        .unwrap()));
+        f.obs.tailscale.as_mut().unwrap().value.peers.extend([
+            TailnetPeer {
+                dns_name: Some("box.example.ts.net".into()),
+                ips: vec!["100.64.0.21".into()],
+                ..peer("nBox", "box", "linux", true)
+            },
+            TailnetPeer {
+                dns_name: Some("box-1.example.ts.net".into()),
+                ips: vec!["100.64.0.22".into()],
+                ..peer("nBox1", "box", "linux", true)
+            },
+        ]);
+        f
+    };
+    let before = fixture(&format!("{org}\n{seed}")).view();
+    let offered: Vec<_> = before.tailnet_devices.iter().map(|d| d.node_id.as_str()).collect();
+    assert_eq!(offered, ["nBox", "nBox1"]);
+
+    let pasted = &before.tailnet_devices[0].inventory_entry;
+    let after = fixture(&format!("{org}\n{seed}\n{pasted}")).view();
+    let offered: Vec<_> = after.tailnet_devices.iter().map(|d| d.node_id.as_str()).collect();
+    assert_eq!(offered, ["nBox1"]);
+}
+
+#[test]
 fn a_newer_explicit_check_supersedes_old_poll_runner_facts_and_errors() {
     let (config, mut obs, mut plan) = demo();
     let observation = obs.machines.get_mut("inv:studio").unwrap();

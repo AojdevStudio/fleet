@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::add_machine::{TailnetDeviceView, device_view, inventory_names_device};
+use crate::add_machine::{TailnetDeviceView, device_view, exact_names, inventory_names_device};
 use crate::machine::{MachineReport, OsFamily};
 use chrono::{DateTime, Utc};
 
@@ -137,9 +137,10 @@ fn devices(
     ssh_hosts: &BTreeMap<String, String>,
 ) -> Vec<TailnetDeviceView> {
     let mut host_ids = inventory.hosts.iter().map(|h| h.id.clone()).collect();
+    let exact = peers.iter().flat_map(exact_names).collect();
     let mut unnamed: Vec<_> = peers
         .iter()
-        .filter(|p| !inventory_names_device(&inventory.hosts, ssh_hosts, p))
+        .filter(|p| !inventory_names_device(&inventory.hosts, ssh_hosts, &exact, p))
         .collect();
     unnamed.sort_by_key(|p| (p.hostname.to_lowercase(), p.node_id.clone()));
     unnamed
