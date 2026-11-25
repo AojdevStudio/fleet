@@ -6,8 +6,9 @@
 //! - "Installed" comes from SSH; "connected" and "doing work" come from GitHub.
 //! - A current job is shown only when GitHub's jobs API links it to the runner.
 //! - Elapsed time alone never marks a running job as stuck. A queued job is
-//!   stuck when no runner matches it, or when it had waited past
-//!   [`STUCK_AFTER`] when the last job scan began while a matching runner is idle.
+//!   stuck when no runner matches it, when every match is offline or has no
+//!   fresh status, or when it had waited past [`STUCK_AFTER`] when the last
+//!   job scan began while a matching runner is idle.
 
 use std::collections::{HashMap, HashSet};
 
@@ -490,7 +491,9 @@ fn queue_view(
             });
         }
     }
-    view.jobs.sort_by_key(|q| (q.created_at, q.job.id));
+    // Oldest first. Jobs with no creation time go last.
+    view.jobs
+        .sort_by_key(|q| (q.created_at.is_none(), q.created_at, q.job.id));
     view
 }
 

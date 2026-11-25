@@ -553,9 +553,9 @@ pub enum QueueStuckReason {
     OtherRepository,
     /// No observed runner has every label the job asks for.
     NoLabelMatch,
-    /// Every runner that can take the job is offline or has no fresh data.
+    /// Every matching runner is offline or has no fresh data.
     RunnersOffline,
-    /// A runner that can take the job is idle, and the job has waited past the limit.
+    /// A matching runner is idle, and the job had waited past the limit when the job scan began.
     WaitedPastLimit,
 }
 
