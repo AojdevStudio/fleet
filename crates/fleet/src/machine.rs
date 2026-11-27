@@ -175,6 +175,10 @@ pub fn parse_inspection(host: &Host, output: &str) -> Result<MachineReport, Remo
     if !complete {
         return Err(RemoteError("The SSH health check was interrupted.".into()));
     }
+    // A partial disk list could rate the machine on its healthy mounts alone.
+    if dropped_disk {
+        disks.clear();
+    }
     let os = match fields.get("os").copied() {
         Some("macos") => OsFamily::Macos,
         Some("linux") => OsFamily::Linux,

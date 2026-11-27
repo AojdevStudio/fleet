@@ -167,6 +167,8 @@ fn invalid_metrics_are_dropped_individually_with_a_warning() {
     uptime.uptime_secs = None;
     let mut available = baseline.clone();
     available.memory_available_bytes = None;
+    let mut disks = baseline.clone();
+    disks.disks.clear();
     for (output, expected) in [
         (complete.replace("23.50", "NaN"), &cpu),
         (complete.replace("23.50", "101"), &cpu),
@@ -179,11 +181,11 @@ fn invalid_metrics_are_dropped_individually_with_a_warning() {
         (complete.replace("8000000000", "unreadable"), &available),
         (
             complete.replace("RFM_END", "RFM\tdisk\t/extra\t100\t101\nRFM_END"),
-            &baseline,
+            &disks,
         ),
         (
             complete.replace("RFM_END", "RFM\tdisk\t/extra\t100\tunreadable\nRFM_END"),
-            &baseline,
+            &disks,
         ),
     ] {
         assert_eq!(&parse_inspection(&host, &output).unwrap(), expected);
