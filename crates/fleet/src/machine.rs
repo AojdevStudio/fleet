@@ -138,7 +138,6 @@ pub fn parse_inspection(host: &Host, output: &str) -> Result<MachineReport, Remo
         .ok_or_else(|| RemoteError("The SSH check did not return a complete machine report.".into()))?;
     let mut fields = BTreeMap::new();
     let mut disks = BTreeMap::new();
-    let mut dropped_disk = false;
     let mut complete = false;
     for line in health.lines() {
         if line == "RFM_END" {
@@ -152,21 +151,20 @@ pub fn parse_inspection(host: &Host, output: &str) -> Result<MachineReport, Remo
                 let [mount, total, available] = parts[..] else {
                     return Err(RemoteError("Malformed disk health row.".into()));
                 };
-                if let (Ok(total_bytes), Ok(available_bytes)) = (total.parse(), available.parse())
-                    && total_bytes > 0
-                    && available_bytes <= total_bytes
-                {
-                    disks.insert(
-                        mount.to_string(),
-                        DiskStats {
-                            mount_point: mount.into(),
-                            total_bytes,
-                            available_bytes,
-                        },
-                    );
-                } else {
-                    dropped_disk = true;
+                let invalid = || RemoteError("Invalid disk capacity in the SSH report.".into());
+                let total_bytes: u64 = total.parse().map_err(|_| invalid())?;
+                let available_bytes: u64 = available.parse().map_err(|_| invalid())?;
+                if total_bytes == 0 || available_bytes > total_bytes {
+                    return Err(invalid());
                 }
+                disks.insert(
+                    mount.to_string(),
+                    DiskStats {
+                        mount_point: mount.into(),
+                        total_bytes,
+                        available_bytes,
+                    },
+                );
             } else {
                 fields.insert(name, value);
             }
@@ -174,10 +172,6 @@ pub fn parse_inspection(host: &Host, output: &str) -> Result<MachineReport, Remo
     }
     if !complete {
         return Err(RemoteError("The SSH health check was interrupted.".into()));
-    }
-    // A partial disk list could rate the machine on its healthy mounts alone.
-    if dropped_disk {
-        disks.clear();
     }
     let os = match fields.get("os").copied() {
         Some("macos") => OsFamily::Macos,
@@ -260,7 +254,6 @@ pub fn parse_inspection(host: &Host, output: &str) -> Result<MachineReport, Remo
             || (fields.contains_key("load") && load_average.is_none())
             || (fields.contains_key("cores") && logical_cores.is_none())
             || (fields.contains_key("uptime") && uptime_secs.is_none())
-            || dropped_disk
         {
             vec!["Some health metrics could not be read over SSH.".into()]
         } else {
