@@ -7,11 +7,14 @@ case "$(uname -s)" in
     metric boot_id "$(sysctl -n kern.bootsessionuuid 2>/dev/null)"
     metric os_version "$(sw_vers -productVersion 2>/dev/null)"
     metric cores "$(sysctl -n hw.logicalcpu 2>/dev/null)"
-    metric memory_total "$(sysctl -n hw.memsize 2>/dev/null)"
-    metric memory_available "$(vm_stat 2>/dev/null | awk '
-      /page size of/ { for(i=1;i<=NF;i++) if($i=="of") size=$(i+1) }
-      /^Pages (free|inactive|speculative):/ { gsub(/\./,"",$NF); pages+=$NF; found=1 }
-      END { if(size && found) printf "%.0f",pages*size }')"
+    # The vm_stat queues can overlap. Use the kernel's available-memory percentage.
+    memory_total="$(sysctl -n hw.memsize 2>/dev/null)" || memory_total=
+    memory_percent="$(sysctl -n kern.memorystatus_level 2>/dev/null)" || memory_percent=
+    case "$memory_total" in *[!0-9]*) memory_total= ;; esac
+    case "$memory_percent" in *[!0-9]*) memory_percent= ;; esac
+    metric memory_total "$memory_total"
+    metric memory_available "$(awk -v total="$memory_total" -v percent="$memory_percent" '
+      BEGIN { if(total>0 && percent!="" && percent<=100) printf "%.0f",total*percent/100 }')"
     metric load "$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}')"
     boot="$(sysctl -n kern.boottime 2>/dev/null | awk '{gsub(/,/,"",$4); print $4}')"
     metric uptime "$(awk -v now="$(date +%s)" -v boot="$boot" 'BEGIN {if(boot ~ /^[0-9]+$/ && now>=boot) printf "%.0f",now-boot}')"
