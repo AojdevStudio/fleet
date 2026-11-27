@@ -13,6 +13,69 @@ fn host(id: &str) -> Host {
 const MAC_HEALTH: &str = "RFM\tos\tmacos\nRFM\tos_version\t15.6\nRFM\tcores\t12\nRFM\tcpu\t23.50\nRFM\tload\t1.5 2.0 0.8\nRFM\tmemory_total\t24000000000\nRFM\tmemory_available\t8000000000\nRFM\tuptime\t86400\nRFM\tdisk\t/\t500000000000\t300000000000\nRFM_END\nRFM_RUNNERS\n";
 const MAC_RUNNERS: &str = "RF1\tmini-02\t/Users/ci/gh-runners/acme-demo/runner-01\ttrue\tactive\t2.329.0\n";
 
+#[cfg(unix)]
+#[test]
+fn macos_health_uses_kernel_available_memory_with_overlapping_page_counts() {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
+    use std::process::Command;
+
+    let commands = tempfile::tempdir().unwrap();
+    for (name, script) in [
+        ("uname", "printf 'Darwin\\n'"),
+        ("sw_vers", "printf '27.0.1\\n'"),
+        (
+            "sysctl",
+            r#"case "$2" in
+                hw.memsize) printf '68719476736\n' ;;
+                kern.memorystatus_level) printf '77\n' ;;
+                kern.bootsessionuuid) printf 'boot-session-uuid\n' ;;
+                hw.logicalcpu) printf '12\n' ;;
+                vm.loadavg) printf '{ 1.5 2.0 0.8 }\n' ;;
+                kern.boottime) printf '{ sec = 1000, usec = 0 }\n' ;;
+                *) exit 1 ;;
+            esac"#,
+        ),
+        (
+            "vm_stat",
+            "printf '%s\\n' 'Mach Virtual Memory Statistics: (page size of 16384 bytes)' \
+             'Pages free: 809160.' 'Pages inactive: 3429548.' 'Pages speculative: 74076.'",
+        ),
+        ("top", "printf 'CPU usage: 13.50%% user, 10.00%% sys, 76.50%% idle\\n'"),
+        ("date", "printf '87400\\n'"),
+        (
+            "df",
+            "printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/disk 100 20 80 20%% /\\n'",
+        ),
+    ] {
+        let path = commands.path().join(name);
+        fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let output = Command::new("/bin/sh")
+        .args(["-c", POSIX_HEALTH])
+        .env(
+            "PATH",
+            std::env::join_paths([commands.path(), Path::new("/usr/bin"), Path::new("/bin")]).unwrap(),
+        )
+        .env("HOME", commands.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output.stderr);
+    let health = String::from_utf8(output.stdout).unwrap();
+    let report = parse_inspection(
+        &host("mac-mini-02"),
+        &format!("{health}{RUNNERS_MARKER}\n{MAC_RUNNERS}"),
+    )
+    .unwrap_or_else(|error| panic!("{error}\n{health}"));
+    assert_eq!(
+        (report.memory_total_bytes, report.memory_available_bytes),
+        (Some(68_719_476_736), Some(52_913_997_087))
+    );
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+}
+
 #[test]
 fn parses_health_and_exact_runner_facts() {
     let report = parse_inspection(
