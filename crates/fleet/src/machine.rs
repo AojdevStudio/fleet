@@ -138,6 +138,7 @@ pub fn parse_inspection(host: &Host, output: &str) -> Result<MachineReport, Remo
         .ok_or_else(|| RemoteError("The SSH check did not return a complete machine report.".into()))?;
     let mut fields = BTreeMap::new();
     let mut disks = BTreeMap::new();
+    let mut dropped_disk = false;
     let mut complete = false;
     for line in health.lines() {
         if line == "RFM_END" {
@@ -151,19 +152,21 @@ pub fn parse_inspection(host: &Host, output: &str) -> Result<MachineReport, Remo
                 let [mount, total, available] = parts[..] else {
                     return Err(RemoteError("Malformed disk health row.".into()));
                 };
-                let total_bytes = number::<u64>("disk capacity", total)?;
-                let available_bytes = number::<u64>("available disk space", available)?;
-                if total_bytes == 0 || available_bytes > total_bytes {
-                    return Err(RemoteError("Invalid disk capacity in the SSH report.".into()));
+                if let (Ok(total_bytes), Ok(available_bytes)) = (total.parse(), available.parse())
+                    && total_bytes > 0
+                    && available_bytes <= total_bytes
+                {
+                    disks.insert(
+                        mount.to_string(),
+                        DiskStats {
+                            mount_point: mount.into(),
+                            total_bytes,
+                            available_bytes,
+                        },
+                    );
+                } else {
+                    dropped_disk = true;
                 }
-                disks.insert(
-                    mount.to_string(),
-                    DiskStats {
-                        mount_point: mount.into(),
-                        total_bytes,
-                        available_bytes,
-                    },
-                );
             } else {
                 fields.insert(name, value);
             }
@@ -189,36 +192,27 @@ pub fn parse_inspection(host: &Host, output: &str) -> Result<MachineReport, Remo
         ));
     }
     let get = |name: &str| fields.get(name).copied().filter(|v| !v.is_empty());
-    let cpu_percent = get("cpu").map(|v| number::<f32>("CPU usage", v)).transpose()?;
-    if cpu_percent.is_some_and(|v| !v.is_finite() || !(0.0..=100.0).contains(&v)) {
-        return Err(RemoteError("Invalid CPU usage in the SSH report.".into()));
-    }
-    let load_average = get("load")
-        .map(|v| {
-            let values = v
-                .split_whitespace()
-                .map(|n| number::<f64>("load average", n))
-                .collect::<Result<Vec<_>, _>>()?;
-            let values: [f64; 3] = values
-                .try_into()
-                .map_err(|_| RemoteError("Invalid load average in the SSH report.".into()))?;
-            if values.iter().any(|v| !v.is_finite() || *v < 0.0) {
-                return Err(RemoteError("Invalid load average in the SSH report.".into()));
-            }
-            Ok(values)
-        })
-        .transpose()?;
-    let memory_total_bytes = get("memory_total")
-        .map(|v| number::<u64>("total memory", v))
-        .transpose()?;
-    let memory_available_bytes = get("memory_available")
-        .map(|v| number::<u64>("available memory", v))
-        .transpose()?;
-    if let (Some(total), Some(available)) = (memory_total_bytes, memory_available_bytes)
-        && (total == 0 || available > total)
-    {
-        return Err(RemoteError("Invalid memory capacity in the SSH report.".into()));
-    }
+    let cpu_percent = get("cpu")
+        .and_then(|v| v.parse().ok())
+        .filter(|v| (0.0..=100.0).contains(v));
+    let load_average = get("load").and_then(|v| {
+        let values = v
+            .split_whitespace()
+            .map(str::parse)
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
+        let values: [f64; 3] = values.try_into().ok()?;
+        values.iter().all(|v| v.is_finite() && *v >= 0.0).then_some(values)
+    });
+    let logical_cores = get("cores").and_then(|v| v.parse().ok()).filter(|v| *v > 0);
+    let uptime_secs = get("uptime").and_then(|v| v.parse().ok());
+    let (memory_total_bytes, memory_available_bytes) = match (
+        get("memory_total").and_then(|v| v.parse().ok()),
+        get("memory_available").and_then(|v| v.parse().ok()),
+    ) {
+        (Some(total), available) if total > 0 && available.is_none_or(|v| v <= total) => (Some(total), available),
+        _ => (None, None),
+    };
     let expected: Vec<&str> = host.runner_names().collect();
     let runners = if expected.is_empty() && matches!(runners.trim(), "" | "[]") {
         BTreeMap::new()
@@ -237,10 +231,10 @@ pub fn parse_inspection(host: &Host, output: &str) -> Result<MachineReport, Remo
         os_version: get("os_version").map(str::to_string),
         cpu_percent,
         load_average,
-        logical_cores: get("cores").map(|v| number("CPU count", v)).transpose()?,
+        logical_cores,
         memory_total_bytes,
         memory_available_bytes,
-        uptime_secs: get("uptime").map(|v| number("uptime", v)).transpose()?,
+        uptime_secs,
         boot_id: get("boot_id").map(str::to_string),
         disks: disks.into_values().collect(),
         runners,
@@ -256,18 +250,19 @@ pub fn parse_inspection(host: &Host, output: &str) -> Result<MachineReport, Remo
         } else {
             BTreeMap::new()
         },
-        warnings: if cpu_percent.is_none() || memory_total_bytes.is_none() || memory_available_bytes.is_none() {
+        warnings: if cpu_percent.is_none()
+            || memory_total_bytes.is_none()
+            || memory_available_bytes.is_none()
+            || (fields.contains_key("load") && load_average.is_none())
+            || (fields.contains_key("cores") && logical_cores.is_none())
+            || (fields.contains_key("uptime") && uptime_secs.is_none())
+            || dropped_disk
+        {
             vec!["Some health metrics could not be read over SSH.".into()]
         } else {
             Vec::new()
         },
     })
-}
-
-fn number<T: std::str::FromStr>(name: &str, value: &str) -> Result<T, RemoteError> {
-    value
-        .parse()
-        .map_err(|_| RemoteError(format!("Invalid {name} in the SSH report.")))
 }
 
 #[cfg(test)]

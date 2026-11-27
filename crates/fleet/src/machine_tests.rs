@@ -134,6 +134,63 @@ fn unavailable_metrics_stay_unknown_but_runner_data_survives() {
 }
 
 #[test]
+fn invalid_memory_capacity_does_not_discard_other_machine_data() {
+    let host = host("mac-mini-02");
+    let complete = format!("{MAC_HEALTH}{MAC_RUNNERS}");
+    let mut expected = parse_inspection(&host, &complete).unwrap();
+    expected.memory_total_bytes = None;
+    expected.memory_available_bytes = None;
+    expected.warnings = vec!["Some health metrics could not be read over SSH.".into()];
+    for output in [
+        complete.replace("8000000000", "25000000000"),
+        complete.replace("24000000000", "0"),
+        complete.replace("24000000000", "unreadable"),
+        complete.replace("24000000000", "0").replace("8000000000", ""),
+    ] {
+        assert_eq!(parse_inspection(&host, &output).unwrap(), expected);
+    }
+}
+
+#[test]
+fn invalid_metrics_are_dropped_individually_with_a_warning() {
+    let host = host("mac-mini-02");
+    let complete = format!("{MAC_HEALTH}{MAC_RUNNERS}");
+    let mut baseline = parse_inspection(&host, &complete).unwrap();
+    baseline.warnings = vec!["Some health metrics could not be read over SSH.".into()];
+    let mut cpu = baseline.clone();
+    cpu.cpu_percent = None;
+    let mut load = baseline.clone();
+    load.load_average = None;
+    let mut cores = baseline.clone();
+    cores.logical_cores = None;
+    let mut uptime = baseline.clone();
+    uptime.uptime_secs = None;
+    let mut available = baseline.clone();
+    available.memory_available_bytes = None;
+    for (output, expected) in [
+        (complete.replace("23.50", "NaN"), &cpu),
+        (complete.replace("23.50", "101"), &cpu),
+        (complete.replace("23.50", "unreadable"), &cpu),
+        (complete.replace("1.5 2.0 0.8", "1.5"), &load),
+        (complete.replace("1.5 2.0 0.8", "1.5 -2.0 0.8"), &load),
+        (complete.replace("1.5 2.0 0.8", "1.5 unreadable 0.8"), &load),
+        (complete.replace("cores\t12", "cores\t0"), &cores),
+        (complete.replace("uptime\t86400", "uptime\t-1"), &uptime),
+        (complete.replace("8000000000", "unreadable"), &available),
+        (
+            complete.replace("RFM_END", "RFM\tdisk\t/extra\t100\t101\nRFM_END"),
+            &baseline,
+        ),
+        (
+            complete.replace("RFM_END", "RFM\tdisk\t/extra\t100\tunreadable\nRFM_END"),
+            &baseline,
+        ),
+    ] {
+        assert_eq!(&parse_inspection(&host, &output).unwrap(), expected);
+    }
+}
+
+#[test]
 fn boot_session_identity_survives_health_protocol_parsing() {
     for boot_id in ["boot-session-uuid", "2026-10-08T11:00:00.0000000Z"] {
         let output = format!("RFM\tboot_id\t{boot_id}\n{MAC_HEALTH}{MAC_RUNNERS}");
@@ -183,10 +240,8 @@ fn partial_or_invalid_responses_are_errors_instead_of_healthy_zeros() {
     for output in [
         complete.replace("RFM_END\n", ""),
         complete.replace("RFM_RUNNERS\n", ""),
-        complete.replace("23.50", "NaN"),
-        complete.replace("23.50", "101"),
-        complete.replace("8000000000", "25000000000"),
-        complete.replace("1.5 2.0 0.8", "1.5"),
+        complete.replace("\t300000000000", ""),
+        complete.replace("macos", "unknown"),
         complete.replace("macos", "windows"),
         complete.replace(MAC_RUNNERS, ""),
         complete.replace("mini-02", "other-runner"),
